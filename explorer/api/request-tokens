@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "transaction_hash": "0xfec7896ab01234567890abcdef1234567890abcdef1234567890abcdef12345",
+  "amount": 1000,
+  "recipient": "{{ADDRESS}}",
+  "message": "Successfully sent 1000 tokens to your address. Please wait for the transaction to be included in a block.",
+  "timestamp": 1713718485,
+  "status": "pending",
+  "network": "testnet",
+  "block_confirmation_required": 1
+} 

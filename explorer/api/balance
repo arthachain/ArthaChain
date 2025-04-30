@@ -1,0 +1,8 @@
+{
+  "address": "{{ADDRESS}}",
+  "balance": 5000,
+  "token": "ARTHA",
+  "pending_rewards": 120,
+  "transactions_count": 8,
+  "last_updated": 1713718925
+} 

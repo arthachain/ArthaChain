@@ -1,0 +1,84 @@
+{
+  "chain_id": "arthachain-testnet-1",
+  "timestamp": "2023-12-01T00:00:00Z",
+  "initial_state": {
+    "accounts": {
+      "validator1": {
+        "balance": 1000000000,
+        "nonce": 0
+      },
+      "validator2": {
+        "balance": 1000000000,
+        "nonce": 0
+      },
+      "validator3": {
+        "balance": 1000000000,
+        "nonce": 0
+      },
+      "validator4": {
+        "balance": 1000000000,
+        "nonce": 0
+      },
+      "faucet": {
+        "balance": 10000000000,
+        "nonce": 0
+      }
+    }
+  },
+  "validators": [
+    {
+      "node_id": "validator1",
+      "address": "validator1",
+      "power": 100,
+      "pub_key": "validator1_pubkey"
+    },
+    {
+      "node_id": "validator2",
+      "address": "validator2",
+      "power": 100,
+      "pub_key": "validator2_pubkey"
+    },
+    {
+      "node_id": "validator3",
+      "address": "validator3",
+      "power": 100,
+      "pub_key": "validator3_pubkey"
+    },
+    {
+      "node_id": "validator4",
+      "address": "validator4",
+      "power": 100,
+      "pub_key": "validator4_pubkey"
+    }
+  ],
+  "consensus_params": {
+    "svcp": {
+      "min_score_threshold": 0.5,
+      "max_proposer_candidates": 50,
+      "min_proposer_candidates": 4,
+      "target_block_time": 5,
+      "difficulty_adjustment_window": 10,
+      "initial_pow_difficulty": 2,
+      "device_weight": 0.2,
+      "network_weight": 0.3,
+      "storage_weight": 0.1,
+      "engagement_weight": 0.2,
+      "ai_behavior_weight": 0.2,
+      "base_batch_size": 100
+    },
+    "svbft": {
+      "min_validators": 4,
+      "base_timeout_ms": 1000,
+      "max_timeout_ms": 5000,
+      "timeout_multiplier": 1.5,
+      "view_change_timeout_ms": 3000,
+      "max_batch_size": 200,
+      "adaptive_quorum": true
+    },
+    "sharding": {
+      "max_shards": 1,
+      "primary_shard": 0,
+      "enable_sharding": false
+    }
+  }
+} 

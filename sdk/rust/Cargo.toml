@@ -1,0 +1,18 @@
+[package]
+name = "blockchain-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Rust SDK for interacting with the blockchain"
+authors = ["Blockchain Team"]
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.32", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+thiserror = "1.0"
+hex = "0.4"
+secp256k1 = { version = "0.27", features = ["rand"] }
+rand = "0.8"
+blake3 = "1.5" 

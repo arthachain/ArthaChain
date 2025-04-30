@@ -1,0 +1,30 @@
+[package]
+name = "blockchain_node-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.blockchain_node]
+path = ".."
+
+# Remove the default target
+# [[bin]]
+# name = "fuzz_target_1"
+# path = "fuzz_targets/fuzz_target_1.rs"
+# test = false
+# doc = false
+# bench = false
+
+# Add our data chunking fuzz target
+[[bin]]
+name = "data_chunking"
+path = "fuzz_targets/data_chunking.rs"
+test = false
+doc = false
+bench = false

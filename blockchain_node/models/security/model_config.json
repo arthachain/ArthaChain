@@ -1,0 +1,28 @@
+{
+  "model_version": "0.1.0",
+  "input_features": [
+    "transaction_size",
+    "gas_price",
+    "signature_type",
+    "sender_history",
+    "receiver_history",
+    "network_congestion",
+    "mempool_size"
+  ],
+  "output_features": [
+    "risk_score"
+  ],
+  "weights": {
+    "DeviceHealthScore": 0.15,
+    "NetworkScore": 0.20,
+    "StorageContributionScore": 0.25,
+    "EngagementScore": 0.15,
+    "AIBehaviorScore": 0.25
+  },
+  "thresholds": {
+    "high_risk": 0.75,
+    "medium_risk": 0.4,
+    "low_risk": 0.1
+  },
+  "update_frequency": 3600
+} 

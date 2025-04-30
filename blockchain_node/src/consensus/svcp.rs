@@ -1,0 +1,913 @@
+use crate::ai_engine::security::NodeScore;
+use crate::config::Config;
+use anyhow::{Result, anyhow};
+use log::{debug, info, warn};
+use rand::{thread_rng, Rng, seq::SliceRandom};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, BinaryHeap};
+use std::cmp::Ordering;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::task::JoinHandle;
+use crate::ledger::BlockchainState;
+use crate::ledger::block::{Block, BlockExt};
+use tokio::sync::broadcast;
+use crate::consensus::parallel_processor::ParallelProcessor;
+
+/// Configuration for SVCP
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SVCPConfig {
+    /// Minimum score required to participate in consensus
+    pub min_score_threshold: f32,
+    /// Maximum number of proposer candidates
+    pub max_proposer_candidates: usize,
+    /// Minimum number of proposer candidates
+    pub min_proposer_candidates: usize,
+    /// Target block time in seconds
+    pub target_block_time: u64,
+    /// Difficulty adjustment window (in blocks)
+    pub difficulty_adjustment_window: u64,
+    /// Initial POW difficulty
+    pub initial_pow_difficulty: u64,
+    /// Weight for device score in candidate selection
+    pub device_weight: f32,
+    /// Weight for network score in candidate selection
+    pub network_weight: f32,
+    /// Weight for storage score in candidate selection
+    pub storage_weight: f32,
+    /// Weight for engagement score in candidate selection
+    pub engagement_weight: f32,
+    /// Weight for AI behavior score in candidate selection
+    pub ai_behavior_weight: f32,
+    /// Base batch size for transactions per block
+    pub base_batch_size: usize,
+}
+
+impl Default for SVCPConfig {
+    fn default() -> Self {
+        Self {
+            min_score_threshold: 0.6,
+            max_proposer_candidates: 100,
+            min_proposer_candidates: 10,
+            target_block_time: 15,
+            difficulty_adjustment_window: 10,
+            initial_pow_difficulty: 4,
+            device_weight: 0.2,
+            network_weight: 0.3,
+            storage_weight: 0.1,
+            engagement_weight: 0.2,
+            ai_behavior_weight: 0.2,
+            base_batch_size: 10,
+        }
+    }
+}
+
+/// Result of mining attempt
+#[derive(Debug, Clone)]
+pub enum MiningResult {
+    /// Block was successfully mined
+    Success(Block),
+    /// Mining was interrupted
+    Interrupted,
+    /// Mining failed due to error
+    Error(String),
+}
+
+/// Candidate proposer entry for BinaryHeap ordering
+#[derive(Debug, Clone)]
+struct ProposerCandidate {
+    /// Node ID
+    node_id: String,
+    /// Combined score
+    score: f32,
+    /// Last block proposed timestamp
+    last_proposed: SystemTime,
+}
+
+impl PartialEq for ProposerCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.score.eq(&other.score)
+    }
+}
+
+impl Eq for ProposerCandidate {}
+
+impl PartialOrd for ProposerCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProposerCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // First by last_proposed timestamp (older is better)
+        // Since binary heap pops max elements first, we need to reverse
+        // the comparison to make older timestamps appear first
+        match other.last_proposed.cmp(&self.last_proposed) {
+            Ordering::Equal => {
+                // If timestamps are equal, use score (higher is better)
+                match self.score.partial_cmp(&other.score) {
+                    Some(ordering) => ordering,
+                    None => self.node_id.cmp(&other.node_id), // For stability
+                }
+            }
+            ordering => ordering,
+        }
+    }
+}
+
+/// SVCPMiner implements the Social Verified Consensus Protocol mining
+pub struct SVCPMiner {
+    /// Configuration (saved for potential future use)
+    #[allow(dead_code)]
+    config: Config,
+    /// SVCP specific configuration
+    svcp_config: SVCPConfig,
+    /// Current POW difficulty (bits)
+    current_difficulty: u64,
+    /// Blockchain state
+    state: Arc<RwLock<BlockchainState>>,
+    /// Node scores by node_id
+    node_scores: Arc<Mutex<HashMap<String, NodeScore>>>,
+    /// Selected proposers for current round
+    current_proposers: Arc<Mutex<Vec<String>>>,
+    /// Block times for difficulty adjustment
+    block_times: Arc<Mutex<Vec<(SystemTime, Duration)>>>,
+    /// Channel for sending mined blocks
+    block_sender: mpsc::Sender<Block>,
+    /// Channel for receiving shutdown signal
+    shutdown_receiver: broadcast::Receiver<()>,
+    /// Last update of proposer set
+    last_proposer_update: Arc<Mutex<Instant>>,
+    /// Running flag
+    running: Arc<Mutex<bool>>,
+    /// This node's ID
+    node_id: String,
+    /// Parallel processor for scaling with miner count
+    parallel_processor: Option<ParallelProcessor>,
+    
+    /// Validator count tracker for scaling
+    validator_count: Arc<Mutex<usize>>,
+    
+    /// TPS scaling enabled flag
+    tps_scaling_enabled: bool,
+    
+    /// TPS multiplier per miner (1.5-5.0)
+    tps_multiplier: f32,
+}
+
+impl SVCPMiner {
+    /// Create a new SVCP miner instance
+    pub fn new(
+        config: Config,
+        state: Arc<RwLock<BlockchainState>>,
+        block_sender: mpsc::Sender<Block>,
+        shutdown_receiver: broadcast::Receiver<()>,
+        node_scores: Arc<Mutex<HashMap<String, NodeScore>>>,
+        svcp_config: Option<SVCPConfig>,
+    ) -> Result<Self> {
+        let node_id = config.node_id.clone().ok_or_else(|| anyhow!("Node ID not set in config"))?;
+        let config_clone = svcp_config.clone();
+        
+        // Create default TPS multiplier (can be configured via env var or config)
+        let tps_multiplier = std::env::var("TPS_MULTIPLIER")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(2.0);
+        
+        // Check if TPS scaling is enabled
+        let tps_scaling_enabled = std::env::var("ENABLE_TPS_SCALING")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(true); // Enabled by default
+            
+        // Create parallel processor if scaling is enabled
+        let parallel_processor = if tps_scaling_enabled {
+            Some(ParallelProcessor::new(
+                state.clone(),
+                block_sender.clone(),
+                Some(tps_multiplier),
+            ))
+        } else {
+            None
+        };
+        
+        Ok(Self {
+            config: config.clone(),
+            svcp_config: svcp_config.unwrap_or_default(),
+            current_difficulty: config_clone.unwrap_or_default().initial_pow_difficulty,
+            state,
+            node_scores,
+            current_proposers: Arc::new(Mutex::new(Vec::new())),
+            block_times: Arc::new(Mutex::new(Vec::new())),
+            block_sender,
+            shutdown_receiver,
+            last_proposer_update: Arc::new(Mutex::new(Instant::now())),
+            running: Arc::new(Mutex::new(false)),
+            node_id,
+            parallel_processor,
+            validator_count: Arc::new(Mutex::new(1)),
+            tps_scaling_enabled,
+            tps_multiplier,
+        })
+    }
+    
+    /// Start the SVCP miner
+    pub async fn start(&mut self) -> Result<JoinHandle<()>> {
+        // Set running flag
+        {
+            let mut running = self.running.lock().await;
+            *running = true;
+        }
+        
+        // Start parallel processor if enabled
+        let parallel_handle = if self.tps_scaling_enabled {
+            if let Some(processor) = &self.parallel_processor {
+                Some(processor.start().await?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // Clone shared data for the task
+        let running = self.running.clone();
+        let state = self.state.clone();
+        let node_scores = self.node_scores.clone();
+        let current_proposers = self.current_proposers.clone();
+        let block_times = self.block_times.clone();
+        let last_proposer_update = self.last_proposer_update.clone();
+        let mut shutdown_receiver = std::mem::replace(&mut self.shutdown_receiver, broadcast::channel::<()>(1).1);
+        let block_sender = self.block_sender.clone();
+        let node_id = self.node_id.clone();
+        let svcp_config = self.svcp_config.clone();
+        let mut current_difficulty = self.current_difficulty;
+        let validator_count = self.validator_count.clone();
+        let tps_scaling_enabled = self.tps_scaling_enabled;
+        let parallel_processor = self.parallel_processor.clone();
+        
+        let handle = tokio::spawn(async move {
+            info!("SVCP miner started with difficulty: {}", current_difficulty);
+            
+            // Update proposers at startup
+            if let Err(e) = Self::update_proposer_candidates(&node_scores, &current_proposers, &svcp_config).await {
+                warn!("Failed to update proposer candidates: {}", e);
+            }
+            
+            let mut mining_interval = tokio::time::interval(Duration::from_secs(1));
+            
+            loop {
+                tokio::select! {
+                    _ = mining_interval.tick() => {
+                        // Skip mining if TPS scaling is enabled (parallel processor handles it)
+                        if tps_scaling_enabled {
+                            // Update validator count for parallel processor
+                            if let Some(processor) = &parallel_processor {
+                                let validators = {
+                                    let proposers = current_proposers.lock().await;
+                                    proposers.len().max(1)
+                                };
+                                
+                                // Update validator count in shared state
+                                {
+                                    let mut count = validator_count.lock().await;
+                                    *count = validators;
+                                }
+                                
+                                // Update the processor with current validator count
+                                processor.update_miner_count(validators);
+                                
+                                // Log estimated TPS
+                                let estimated_tps = processor.get_estimated_tps();
+                                debug!("Estimated TPS with {} validators: {:.2}", validators, estimated_tps);
+                            }
+                            
+                            // Skip regular mining as parallel processor handles it
+                            continue;
+                        }
+                        
+                        // Regular mining flow (if TPS scaling is disabled)
+                        
+                        // Check if this node is allowed to propose
+                        let allowed = {
+                            let proposers = current_proposers.lock().await;
+                            proposers.contains(&node_id)
+                        };
+                        
+                        if !allowed {
+                            // Not in proposer set, skip mining
+                            continue;
+                        }
+                        
+                        // Periodically update the proposer candidates
+                        let should_update = {
+                            let last_update = last_proposer_update.lock().await;
+                            last_update.elapsed() > Duration::from_secs(60)
+                        };
+                        
+                        if should_update {
+                            if let Err(e) = Self::update_proposer_candidates(&node_scores, &current_proposers, &svcp_config).await {
+                                warn!("Failed to update proposer candidates: {}", e);
+                            }
+                            
+                            let mut last_update = last_proposer_update.lock().await;
+                            *last_update = Instant::now();
+                        }
+                        
+                        // Try to create a new block to mine
+                        match Self::create_candidate_block(&state, &node_id).await {
+                            Ok(block) => {
+                                // Try to mine the block
+                                let mining_result = Self::mine_block(block.clone(), current_difficulty, running.clone()).await;
+                                
+                                match mining_result {
+                                    MiningResult::Success(mined_block) => {
+                                        info!("Successfully mined block: {}", mined_block.hash());
+                                        
+                                        // Record block time for difficulty adjustment
+                                        {
+                                            let mut times = block_times.lock().await;
+                                            times.push((SystemTime::now(), Duration::from_secs(15)));
+                                            
+                                            // Keep only the last adjustment window
+                                            if times.len() > svcp_config.difficulty_adjustment_window as usize {
+                                                times.remove(0);
+                                            }
+                                        }
+                                        
+                                        // Calculate and apply block reward with trust multiplier
+                                        let _block_hash = mined_block.hash_bytes();
+                                        let proposer_id = mined_block.header.proposer_id.clone();
+                                        
+                                        // Use static method instead of self.calculate_block_reward
+                                        let reward = Self::static_calculate_block_reward(
+                                            _block_hash.as_bytes(),
+                                            &proposer_id,
+                                            &node_scores
+                                        ).await;
+                                        
+                                        info!("Applied block reward of {} tokens to miner {}", 
+                                              reward, proposer_id);
+                                        
+                                        // Send mined block
+                                        if let Err(e) = block_sender.send(mined_block).await {
+                                            warn!("Failed to send mined block: {}", e);
+                                        }
+                                        
+                                        // Adjust difficulty (static method without 'self' access)
+                                        current_difficulty = Self::static_adjust_difficulty(
+                                            &block_times,
+                                            current_difficulty,
+                                            &svcp_config
+                                        ).await.unwrap_or(current_difficulty);
+                                    },
+                                    MiningResult::Interrupted => {
+                                        debug!("Mining interrupted");
+                                    },
+                                    MiningResult::Error(err) => {
+                                        warn!("Mining error: {}", err);
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                warn!("Failed to create candidate block: {}", e);
+                            }
+                        }
+                    },
+                    _ = shutdown_receiver.recv() => {
+                        info!("Received shutdown signal, stopping SVCP miner");
+                        break;
+                    }
+                }
+            }
+            
+            // If we have a parallel processor handle, wait for it
+            if let Some(handle) = parallel_handle {
+                if let Err(e) = handle.await {
+                    warn!("Parallel processor task failed: {:?}", e);
+                }
+            }
+            
+            info!("SVCP miner stopped");
+        });
+        
+        Ok(handle)
+    }
+    
+    /// Update the set of proposer candidates based on node scores
+    async fn update_proposer_candidates(
+        node_scores: &Arc<Mutex<HashMap<String, NodeScore>>>,
+        current_proposers: &Arc<Mutex<Vec<String>>>,
+        svcp_config: &SVCPConfig,
+    ) -> Result<()> {
+        let scores = node_scores.lock().await;
+        
+        // Create a sorted heap of candidates based on scores
+        let mut candidates = BinaryHeap::new();
+        
+        for (node_id, score) in scores.iter() {
+            if score.overall_score >= svcp_config.min_score_threshold {
+                // Calculate weighted score for consensus (may differ from security score)
+                let weighted_score = 
+                    score.device_health_score * svcp_config.device_weight +
+                    score.network_score * svcp_config.network_weight +
+                    score.storage_score * svcp_config.storage_weight +
+                    score.engagement_score * svcp_config.engagement_weight +
+                    score.ai_behavior_score * svcp_config.ai_behavior_weight;
+                
+                candidates.push(ProposerCandidate {
+                    node_id: node_id.clone(),
+                    score: weighted_score,
+                    last_proposed: score.last_updated,
+                });
+            }
+        }
+        
+        // If we don't have enough candidates, warn but continue with what we have
+        if candidates.len() < svcp_config.min_proposer_candidates {
+            warn!("Not enough proposer candidates: {} (min: {})", 
+                candidates.len(), svcp_config.min_proposer_candidates);
+        }
+        
+        // Select top N candidates
+        let mut selected = Vec::new();
+        for _ in 0..candidates.len().min(svcp_config.max_proposer_candidates) {
+            if let Some(candidate) = candidates.pop() {
+                selected.push(candidate.node_id);
+            }
+        }
+        
+        // Update current proposers
+        {
+            let mut proposers = current_proposers.lock().await;
+            *proposers = selected;
+        }
+        
+        info!("Updated proposer candidates: {} nodes selected", 
+            current_proposers.lock().await.len());
+        
+        Ok(())
+    }
+    
+    /// Create a candidate block from current state
+    async fn create_candidate_block(
+        state: &Arc<RwLock<BlockchainState>>,
+        node_id: &str,
+    ) -> Result<Block> {
+        // Get the current blockchain state to build on top of
+        let state_guard = state.read().await;
+        
+        // Get the last block hash and height from state
+        let previous_hash = state_guard.get_latest_block_hash()?;
+        let previous_hash = crate::types::Hash::from_hex(&previous_hash)?;
+        let height = state_guard.get_height()? + 1;
+        
+        // Get pending transactions from the mempool
+        // In a real implementation, this would fetch pending transactions from a mempool
+        let transactions = state_guard.get_pending_transactions(10); // Limit to 10 transactions for now
+        let transactions: Vec<crate::ledger::transaction::Transaction> = transactions.into_iter().map(Into::into).collect();
+        
+        // Get the shard ID from state or config
+        let shard_id = state_guard.get_shard_id();
+        
+        // Create a block using this node as proposer
+        let block = Block::new(
+            previous_hash,
+            transactions,
+            height,
+            4, // Initial difficulty, this should be adjusted based on network conditions
+            node_id.to_string(),
+            shard_id,
+        );
+        
+        Ok(block)
+    }
+    
+    /// Mine a block with proof-of-work
+    async fn mine_block(
+        mut block: Block,
+        difficulty: u64,
+        running: Arc<Mutex<bool>>
+    ) -> MiningResult {
+        // Calculate target threshold based on difficulty
+        let target = 1u64 << (64 - difficulty);
+        let start_time = Instant::now();
+        
+        debug!("Starting mining with difficulty {}, target: {}", difficulty, target);
+        
+        // Try different nonces until we find one that satisfies the difficulty
+        for nonce in 0..u64::MAX {
+            // Check every 100 iterations if we're still running
+            if nonce % 100 == 0 {
+                let is_running = *running.lock().await;
+                if !is_running {
+                    debug!("Mining interrupted after checking {} nonces", nonce);
+                    return MiningResult::Interrupted;
+                }
+            }
+            
+            // Set nonce using the BlockExt trait
+            block.set_nonce(nonce);
+            
+            // Calculate block hash using the BlockExt trait
+            let hash_bytes = block.hash_pow_bytes();
+            
+            // Convert first 8 bytes to u64 for difficulty check
+            let hash_value = if hash_bytes.as_bytes().len() >= 8 {
+                u64::from_be_bytes([
+                    hash_bytes.as_bytes()[0], hash_bytes.as_bytes()[1], hash_bytes.as_bytes()[2], hash_bytes.as_bytes()[3],
+                    hash_bytes.as_bytes()[4], hash_bytes.as_bytes()[5], hash_bytes.as_bytes()[6], hash_bytes.as_bytes()[7],
+                ])
+            } else {
+                // Handle case where hash is shorter than 8 bytes (shouldn't happen with our hash functions)
+                continue;
+            };
+            
+            // Check if hash meets difficulty
+            if hash_value < target {
+                // Found a valid nonce!
+                let duration = start_time.elapsed();
+                debug!("Successfully mined block with nonce {} in {:?}, hash: {}", 
+                       nonce, duration, block.hash());
+                return MiningResult::Success(block);
+            }
+        }
+        
+        MiningResult::Error("Exhausted nonce space".to_string())
+    }
+    
+    /// Stop the mining process
+    pub async fn stop(&self) -> Result<()> {
+        let mut running = self.running.lock().await;
+        *running = false;
+        Ok(())
+    }
+    
+    /// Check if a given node is allowed to propose blocks
+    pub async fn is_allowed_proposer(&self, node_id: &str) -> bool {
+        let proposers = self.current_proposers.lock().await;
+        proposers.contains(&node_id.to_string())
+    }
+    
+    /// Get the current difficulty
+    pub async fn get_difficulty(&self) -> u64 {
+        self.current_difficulty
+    }
+    
+    /// Get the current list of proposers
+    pub async fn get_proposers(&self) -> Vec<String> {
+        self.current_proposers.lock().await.clone()
+    }
+    
+    /// Select proposer for this round using weighted lottery
+    pub async fn select_lottery_winner(&self) -> Option<String> {
+        let proposers = self.current_proposers.lock().await;
+        let scores = self.node_scores.lock().await;
+        
+        if proposers.is_empty() {
+            return None;
+        }
+        
+        // Calculate total weight
+        let mut total_weight = 0.0;
+        let mut weights = Vec::new();
+        
+        for proposer in proposers.iter() {
+            let score = scores.get(proposer).map(|s| s.overall_score).unwrap_or(0.0);
+            weights.push(score);
+            total_weight += score;
+        }
+        
+        if total_weight <= 0.0 {
+            // If no valid weights, choose randomly
+            let mut rng = thread_rng();
+            return proposers.choose(&mut rng).cloned();
+        }
+        
+        // Weighted random selection
+        let mut rng = thread_rng();
+        
+        // Using newer range syntax
+        let selection = rng.gen_range(0.0..total_weight);
+        
+        let mut cumulative = 0.0;
+        for (i, weight) in weights.iter().enumerate() {
+            cumulative += weight;
+            if cumulative >= selection {
+                return Some(proposers[i].clone());
+            }
+        }
+        
+        // Fallback - should not reach here
+        proposers.last().cloned()
+    }
+    
+    /// Get the current estimated TPS based on validator count
+    pub fn get_estimated_tps(&self) -> f32 {
+        if self.tps_scaling_enabled {
+            if let Some(processor) = &self.parallel_processor {
+                return processor.get_estimated_tps();
+            }
+        }
+        
+        // Fallback calculation if parallel processor not available
+        let validator_count = match self.validator_count.try_lock() {
+            Ok(guard) => *guard,
+            Err(_) => 1, // Default to 1 if can't get lock
+        };
+        
+        // Base TPS with one validator
+        let base_tps = self.svcp_config.target_block_time as f32;
+        
+        // Scale by validator count and multiplier
+        base_tps * (validator_count as f32 * self.tps_multiplier)
+    }
+    
+    /// Static version of calculate_block_reward that doesn't require self
+    pub async fn static_calculate_block_reward(
+        _block_hash: &[u8],
+        proposer_id: &str,
+        node_scores: &Arc<Mutex<HashMap<String, NodeScore>>>,
+    ) -> u64 {
+        // Base reward is 50 tokens
+        let base_reward: u64 = 50;
+        
+        // Calculate multiplier based on proposer's trust score
+        let multiplier = Self::static_get_proposer_reward_multiplier(proposer_id, node_scores).await;
+        
+        // Apply multiplier to base reward
+        let total_reward = (base_reward as f32 * multiplier) as u64;
+        
+        // Minimum reward is 10 tokens
+        total_reward.max(10)
+    }
+    
+    /// Static version of get_proposer_reward_multiplier that doesn't require self
+    async fn static_get_proposer_reward_multiplier(
+        proposer_id: &str,
+        node_scores: &Arc<Mutex<HashMap<String, NodeScore>>>,
+    ) -> f32 {
+        // Default multiplier if no score found
+        let default_multiplier = 1.0;
+        
+        // Get proposer's score
+        let scores = node_scores.lock().await;
+        
+        if let Some(score) = scores.get(proposer_id) {
+            // Calculate multiplier based on overall score
+            // Score range is 0-1, but we want multiplier range of 0.5-2.0
+            let range = 0.5..=2.0;
+            let multiplier = *range.start() + (*range.end() - *range.start()) * score.overall_score;
+            
+            // Apply AI behavior specific bonus/penalty
+            let ai_behavior_factor = if score.ai_behavior_score > 0.8 {
+                // Bonus for excellent AI behavior
+                1.2
+            } else if score.ai_behavior_score < 0.3 {
+                // Penalty for poor AI behavior
+                0.8
+            } else {
+                // Neutral for average behavior
+                1.0
+            };
+            
+            return multiplier * ai_behavior_factor;
+        }
+        
+        default_multiplier
+    }
+    
+    /// Adjust difficulty based on recent block times
+    pub async fn adjust_difficulty(&mut self) -> u64 {
+        let locked_block_times = self.block_times.lock().await;
+        
+        // If we don't have enough blocks, return current difficulty
+        if locked_block_times.len() < self.svcp_config.difficulty_adjustment_window as usize {
+            return self.current_difficulty;
+        }
+        
+        // Calculate average block time
+        let mut total_time = Duration::from_secs(0);
+        for i in 1..locked_block_times.len() {
+            let (prev_time, _) = locked_block_times[i-1];
+            let (current_time, _) = locked_block_times[i];
+            
+            // Calculate time between blocks
+            if let Ok(duration) = current_time.duration_since(prev_time) {
+                total_time += duration;
+            }
+        }
+        
+        let avg_block_time = total_time.as_secs_f64() / (locked_block_times.len() - 1) as f64;
+        let target_time = self.svcp_config.target_block_time as f64;
+        
+        // Adjust difficulty based on ratio
+        let ratio = avg_block_time / target_time;
+        
+        // If blocks are too slow, decrease difficulty
+        // If blocks are too fast, increase difficulty
+        let mut new_difficulty = self.current_difficulty as f64;
+        
+        if ratio > 1.2 {
+            // Blocks are too slow, reduce difficulty (max 50% decrease)
+            new_difficulty = new_difficulty * (2.0 - ratio.min(1.5));
+        } else if ratio < 0.8 {
+            // Blocks are too fast, increase difficulty (max 50% increase)
+            new_difficulty = new_difficulty * (2.0 - ratio.max(0.5));
+        }
+        
+        // Ensure difficulty never goes below 1
+        let new_difficulty = new_difficulty.max(1.0) as u64;
+        
+        // Update current difficulty
+        self.current_difficulty = new_difficulty;
+        
+        info!("Adjusted difficulty from {} to {} (avg block time: {:.2}s, target: {}s)",
+              self.current_difficulty, new_difficulty, avg_block_time, target_time);
+        
+        new_difficulty
+    }
+    
+    /// Adjust difficulty based on recent block times (static method)
+    pub async fn static_adjust_difficulty(
+        block_times: &Arc<Mutex<Vec<(SystemTime, Duration)>>>,
+        current_difficulty: u64,
+        svcp_config: &SVCPConfig,
+    ) -> Result<u64> {
+        let locked_block_times = block_times.lock().await;
+        
+        // If we don't have enough blocks, return current difficulty
+        if locked_block_times.len() < svcp_config.difficulty_adjustment_window as usize {
+            return Ok(current_difficulty);
+        }
+        
+        // Calculate average block time
+        let mut total_time = Duration::from_secs(0);
+        for i in 1..locked_block_times.len() {
+            let (prev_time, _) = locked_block_times[i-1];
+            let (current_time, _) = locked_block_times[i];
+            
+            // Calculate time between blocks
+            if let Ok(duration) = current_time.duration_since(prev_time) {
+                total_time += duration;
+            }
+        }
+        
+        let avg_block_time = total_time.as_secs_f64() / (locked_block_times.len() - 1) as f64;
+        let target_time = svcp_config.target_block_time as f64;
+        
+        // Adjust difficulty based on ratio
+        let ratio = avg_block_time / target_time;
+        
+        // If blocks are too slow, decrease difficulty
+        // If blocks are too fast, increase difficulty
+        let mut new_difficulty = current_difficulty as f64;
+        
+        if ratio > 1.2 {
+            // Blocks are too slow, reduce difficulty (max 50% decrease)
+            new_difficulty = new_difficulty * (2.0 - ratio.min(1.5));
+        } else if ratio < 0.8 {
+            // Blocks are too fast, increase difficulty (max 50% increase)
+            new_difficulty = new_difficulty * (2.0 - ratio.max(0.5));
+        }
+        
+        // Ensure difficulty never goes below 1
+        let new_difficulty = new_difficulty.max(1.0) as u64;
+        
+        Ok(new_difficulty)
+    }
+    
+    /// Load validators from genesis file
+    pub async fn load_validators_from_genesis(
+        &mut self,
+        genesis_path: &std::path::Path,
+        node_scores: &Arc<Mutex<HashMap<String, NodeScore>>>,
+    ) -> Result<()> {
+        use std::fs::File;
+        use std::io::BufReader;
+        use serde_json::Value;
+        
+        // Read and parse genesis file
+        let file = File::open(genesis_path)
+            .map_err(|e| anyhow!("Failed to open genesis file: {}", e))?;
+        let reader = BufReader::new(file);
+        let genesis: Value = serde_json::from_reader(reader)
+            .map_err(|e| anyhow!("Failed to parse genesis file: {}", e))?;
+        
+        // Extract validator set
+        if let Some(validator_set) = genesis.get("validator_set").and_then(|v| v.as_array()) {
+            let mut proposers = Vec::new();
+            let mut scores = node_scores.lock().await;
+            
+            for validator in validator_set {
+                if let Some(node_id) = validator.get("node_id").and_then(|v| v.as_str()) {
+                    let power = validator.get("power").and_then(|v| v.as_u64()).unwrap_or(100);
+                    
+                    // Convert power to score (normalized to 0-1 range)
+                    let score = (power as f32) / 100.0;
+                    
+                    // Add to proposers list
+                    proposers.push(node_id.to_string());
+                    
+                    // Create or update node score
+                    let node_score = scores.entry(node_id.to_string()).or_insert_with(|| {
+                        let mut score = NodeScore {
+                            overall_score: 0.7, // Default score
+                            device_health_score: 0.7,
+                            network_score: 0.7,
+                            storage_score: 0.7,
+                            engagement_score: 0.7,
+                            ai_behavior_score: 0.7,
+                            last_updated: SystemTime::now(),
+                            history: Vec::new(),
+                        };
+                        
+                        // Add initial history point
+                        score.history.push((SystemTime::now(), score.overall_score));
+                        score
+                    });
+                    
+                    // Update score based on validator power
+                    node_score.overall_score = node_score.overall_score.max(score);
+                    
+                    info!("Loaded genesis validator: {} with power: {}", node_id, power);
+                }
+            }
+            
+            // Update current proposers
+            let mut current_proposers = self.current_proposers.lock().await;
+            *current_proposers = proposers;
+            
+            info!("Loaded {} validators from genesis", current_proposers.len());
+        }
+        
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_proposer_candidate_ordering() {
+        use std::collections::BinaryHeap;
+        use std::time::{SystemTime, Duration};
+        
+        let now = SystemTime::now();
+        let one_hour_ago = now - Duration::from_secs(3600);
+        let two_hours_ago = now - Duration::from_secs(7200);
+        
+        // Create a few candidates with various scores and last proposed times
+        let candidates = vec![
+            ProposerCandidate {
+                node_id: "node1".to_string(),
+                score: 0.8,
+                last_proposed: now,
+            },
+            ProposerCandidate {
+                node_id: "node2".to_string(),
+                score: 0.9,
+                last_proposed: now,
+            },
+            ProposerCandidate {
+                node_id: "node3".to_string(),
+                score: 0.8,
+                last_proposed: one_hour_ago,
+            },
+            ProposerCandidate {
+                node_id: "node4".to_string(),
+                score: 0.7,
+                last_proposed: two_hours_ago,
+            },
+        ];
+        
+        // Create a binary heap (max heap)
+        let mut heap = BinaryHeap::new();
+        for candidate in candidates {
+            heap.push(candidate);
+        }
+        
+        // Extract in order to see actual ordering
+        // BinaryHeap pops the "greatest" elements first by Ord implementation
+        // So with our implementation prioritizing older timestamps:
+        // - node4 has the oldest timestamp (2 hours ago)
+        // - then node3 (1 hour ago)
+        // - then node2 and node1 (both now, but node2 has higher score)
+        let first = heap.pop().unwrap();
+        let second = heap.pop().unwrap();
+        let third = heap.pop().unwrap();
+        let fourth = heap.pop().unwrap();
+        
+        // Print the actual order to help debugging
+        println!("Actual ordering: {}, {}, {}, {}", 
+                 first.node_id, second.node_id, third.node_id, fourth.node_id);
+                 
+        // Test ordering - older timestamps come first, then higher scores
+        assert_eq!(first.node_id, "node4"); // Oldest timestamp
+        assert_eq!(second.node_id, "node3"); // Second oldest timestamp
+        assert_eq!(third.node_id, "node2"); // Same timestamp as node1, but higher score
+        assert_eq!(fourth.node_id, "node1"); // Same timestamp as node2, but lower score
+    }
+} 

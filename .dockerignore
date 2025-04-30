@@ -1,0 +1,14 @@
+# Exclude these directories to reduce build context size
+target/
+.git/
+data/
+WHITEPAPER/
+.vscode/
+docs/
+explorer/
+
+# Exclude large files
+*.log
+*.tar.gz
+*.zip
+*.db 

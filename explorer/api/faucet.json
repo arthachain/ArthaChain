@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "address": "faucet",
+  "rate_limit": {
+    "requests_per_day": 5,
+    "cooldown_seconds": 3600
+  },
+  "endpoint": "/api/request-tokens",
+  "instructions": "To request tokens, send a POST request to /api/request-tokens with your address in the request body"
+} 
