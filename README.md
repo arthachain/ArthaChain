@@ -171,4 +171,4 @@ The testnet includes a faucet service for obtaining test tokens. To enable it:
    curl -X POST http://localhost:3000/faucet \
      -H "Content-Type: application/json" \
      -d '{"address":"your_address_here"}'
-   ``` 
+   ```
