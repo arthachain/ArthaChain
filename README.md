@@ -42,37 +42,76 @@ The Artha Chain architecture combines several innovative components:
 
 ```bash
 # Clone the repository
-git clone https://github.com/arthachain/arthachain.git
-cd arthachain
+git clone https://github.com/DiigooSai/ArthaChain.git
+cd ArthaChain
+
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get update
+sudo apt-get install -y build-essential librocksdb-dev libssl-dev pkg-config
 
 # Build the project
 cargo build --release
+
+# Build with specific features
+cargo build --release --features "ai_security sharding"
 ```
 
 ### Running a Node
 
 ```bash
 # Run a node with default settings
-./target/release/arthachain
+./target/release/blockchain_node
 
 # Run with custom configuration
-./target/release/arthachain --data-dir /path/to/data --p2p-listen-addr 0.0.0.0:7000
+./target/release/blockchain_node --data-dir ./data --p2p-listen-addr 0.0.0.0:7000
+
+# Run as a genesis node
+./target/release/blockchain_node --is-genesis --genesis-path ./testnet-genesis.json
+
+# Run with Docker
+docker-compose -f docker-compose-simple.yml up
 ```
 
 ### Configuration
 
-Artha Chain can be configured using command-line arguments or environment variables:
+Artha Chain can be configured using command-line arguments, environment variables, or Docker environment settings:
 
-- `--data-dir` / `DATA_DIR`: Data directory for blockchain storage
-- `--p2p-listen-addr` / `P2P_LISTEN_ADDR`: Listen address for P2P network
-- `--rpc-listen-addr` / `RPC_LISTEN_ADDR`: Listen address for RPC server
+#### Core Settings
+- `--data-dir` / `DATA_DIR`: Data directory for blockchain storage (default: `./data`)
+- `--p2p-listen-addr` / `P2P_LISTEN_ADDR`: Listen address for P2P network (default: `0.0.0.0:7000`)
+- `--rpc-listen-addr` / `RPC_LISTEN_ADDR`: Listen address for RPC server (default: `127.0.0.1:8545`)
 - `--bootstrap-peers` / `BOOTSTRAP_PEERS`: Bootstrap peers (comma-separated multiaddresses)
-- `--enable-ai` / `ENABLE_AI`: Enable AI security features
-- `--shard-id` / `SHARD_ID`: Shard ID (0 for primary shard)
-- `--max-shards` / `MAX_SHARDS`: Maximum number of shards
-- `--is-genesis` / `IS_GENESIS`: Run as a genesis node
 
-See the `.env.example` file for more configuration options.
+#### Consensus Settings
+- `--shard-id` / `SHARD_ID`: Shard ID (0 for primary shard)
+- `--max-shards` / `MAX_SHARDS`: Maximum number of shards (default: 4)
+- `--is-genesis` / `IS_GENESIS`: Run as a genesis node
+- `--genesis-path` / `GENESIS_PATH`: Path to genesis configuration file
+
+#### Feature Flags
+- `--enable-ai` / `ENABLE_AI`: Enable AI security features
+- `--enable-metrics` / `ENABLE_METRICS`: Enable Prometheus metrics
+- `--enable-tracing` / `ENABLE_TRACING`: Enable OpenTelemetry tracing
+
+#### Network Settings
+- `--network` / `NETWORK`: Network to connect to (`mainnet`, `testnet`, `devnet`)
+- `--max-peers` / `MAX_PEERS`: Maximum number of P2P connections (default: 50)
+- `--min-peers` / `MIN_PEERS`: Minimum number of P2P connections (default: 3)
+
+#### Docker Configuration
+Use environment variables in `docker-compose.yml` or pass them directly:
+```bash
+docker run -e DATA_DIR=/data -e NETWORK=testnet arthachain/node:latest
+```
+
+For detailed configuration examples, see:
+- `docker-compose.yml` - Full node setup
+- `docker-compose-simple.yml` - Simple single node setup
+- `docker-compose-single.yml` - Development setup
+- `testnet-genesis.json` - Genesis configuration example
 
 ## Development
 
