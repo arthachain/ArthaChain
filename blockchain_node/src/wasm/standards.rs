@@ -19,7 +19,7 @@ pub enum StandardError {
 }
 
 /// Contract standard type
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StandardType {
     /// Token standard
     Token(TokenStandard),
@@ -30,7 +30,7 @@ pub enum StandardType {
 }
 
 /// Token standard type
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TokenStandard {
     /// ERC20 token standard
     ERC20,
@@ -41,7 +41,7 @@ pub enum TokenStandard {
 }
 
 /// Governance standard type
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GovernanceStandard {
     /// DAO governance standard
     DAO,
@@ -52,7 +52,7 @@ pub enum GovernanceStandard {
 }
 
 /// Security standard type
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SecurityStandard {
     /// Access control standard
     AccessControl,

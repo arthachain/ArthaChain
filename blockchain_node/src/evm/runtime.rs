@@ -10,7 +10,8 @@ use log::{debug, info, warn, error};
 use std::collections::HashMap;
 
 #[cfg(feature = "evm-runtime")]
-use evm_runtime::{ExitReason, ExitSucceed, ExitError, Config as EvmRuntimeConfig};
+use evm_runtime::{Config as EvmRuntimeConfig, Machine, ExitReason, ExitSucceed, ExitError};
+use sha3::{Keccak256, Digest};
 
 /// EVM Runtime for executing Solidity smart contracts
 pub struct EvmRuntime {
@@ -33,7 +34,7 @@ impl EvmRuntime {
     pub fn new(storage: Arc<HybridStorage>, config: EvmConfig) -> Self {
         Self {
             backend: EvmBackend::new(storage),
-            config,
+            config: config.clone(),
             block_number: 0,
             block_timestamp: 0,
             gas_limit: config.default_gas_limit,
@@ -96,48 +97,36 @@ impl EvmRuntime {
     ) -> Result<EvmExecutionResult, EvmError> {
         debug!("Executing call to {:?}", target);
         
-        // Check if this is a precompiled contract
-        if let Some(precompile) = self.config.precompiles.get(&target) {
-            debug!("Executing precompiled contract at {:?}", target);
-            
-            // Call the precompiled contract
-            let (return_data, gas_used) = precompile(&data, gas_limit)?;
-            
-            return Ok(EvmExecutionResult {
-                success: true,
-                gas_used,
-                return_data,
-                contract_address: None,
-                logs: Vec::new(),
-                error: None,
-            });
-        }
-        
-        // This is not a precompiled contract, execute in the EVM
         #[cfg(feature = "evm-runtime")]
         {
             // Set up EVM runtime configuration
-            let config = EvmRuntimeConfig::london();
+            let config = EvmRuntimeConfig::istanbul();
             
             // Create a schema for the EVM runtime from our backend
-            // This is a simplified example - in a real implementation, this would be a proper adapter
             let storage_fn = |address: H160, key: H256| -> H256 {
                 // This would call backend.get_storage in a real async implementation
                 H256::zero()
             };
             
-            let mut evm = evm_runtime::Machine::new(
-                &config,
-                &storage_fn,
-                sender,
-                target,
-                value,
-                data.clone(),
-                gas_limit,
+            let mut evm = Machine::new(
+                config,
+                storage_fn,
+                0, // Program counter
+                0, // Stack pointer
             );
             
+            // Set up execution context
+            evm.context_mut().address = target;
+            evm.context_mut().caller = sender;
+            evm.context_mut().value = value;
+            evm.context_mut().data = data.clone();
+            evm.context_mut().gas_limit = gas_limit;
+            
             // Execute the call
-            let (exit_reason, result_data, gas_used) = evm.execute();
+            let (exit_reason, result_data, gas_used) = match evm.execute() {
+                Ok((exit_reason, result_data)) => (exit_reason, result_data, evm.used_gas()),
+                Err(e) => return Err(EvmError::Internal(format!("EVM execution error: {:?}", e))),
+            };
             
             match exit_reason {
                 ExitReason::Succeed(succeed) => {
@@ -146,9 +135,9 @@ impl EvmRuntime {
                     Ok(EvmExecutionResult {
                         success: true,
                         gas_used,
-                        return_data: result_data,
+                        return_data: result_data.to_vec(),
                         contract_address: None,
-                        logs: self.logs.clone(), // Get logs from EVM execution
+                        logs: self.logs.clone(),
                         error: None,
                     })
                 },
@@ -158,7 +147,7 @@ impl EvmRuntime {
                     Ok(EvmExecutionResult {
                         success: false,
                         gas_used,
-                        return_data: result_data,
+                        return_data: result_data.to_vec(),
                         contract_address: None,
                         logs: Vec::new(),
                         error: Some(format!("EVM error: {:?}", error)),
@@ -170,7 +159,7 @@ impl EvmRuntime {
                     Ok(EvmExecutionResult {
                         success: false,
                         gas_used,
-                        return_data: result_data,
+                        return_data: result_data.to_vec(),
                         contract_address: None,
                         logs: Vec::new(),
                         error: Some("Transaction reverted".to_string()),
@@ -182,7 +171,7 @@ impl EvmRuntime {
                     Ok(EvmExecutionResult {
                         success: false,
                         gas_used,
-                        return_data: result_data,
+                        return_data: result_data.to_vec(),
                         contract_address: None,
                         logs: Vec::new(),
                         error: Some(format!("Fatal error: {:?}", fatal)),

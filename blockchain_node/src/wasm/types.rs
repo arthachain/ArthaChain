@@ -11,7 +11,7 @@ use thiserror::Error;
 use std::sync::Arc;
 
 /// WASM Contract Address - Identifies a smart contract on the blockchain
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WasmContractAddress(pub String);
 
 impl WasmContractAddress {
@@ -200,6 +200,22 @@ pub enum WasmError {
     /// Contract not found
     #[error("Contract not found at this address")]
     ContractNotFound,
+    
+    /// Validation error
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+    
+    /// Internal error
+    #[error("Internal error: {0}")]
+    Internal(String),
+    
+    /// Bytecode too large
+    #[error("Bytecode too large")]
+    BytecodeTooLarge,
+    
+    /// Memory error
+    #[error("Memory error: {0}")]
+    MemoryError(String),
 }
 
 impl WasmError {
@@ -219,6 +235,10 @@ impl WasmError {
             WasmError::InvalidUtf8String => 11,
             WasmError::ContractAlreadyExists => 12,
             WasmError::ContractNotFound => 13,
+            WasmError::ValidationError(_) => 14,
+            WasmError::Internal(_) => 15,
+            WasmError::BytecodeTooLarge => 16,
+            WasmError::MemoryError(_) => 17,
         }
     }
 }
@@ -286,13 +306,8 @@ pub struct ContractExecution {
 /// Result of a contract execution
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExecutionResult {
-    /// Return data from the function call
-    pub return_data: Vec<u8>,
-    
-    /// Gas used during execution
+    pub return_data: Option<Vec<u8>>,
     pub gas_used: u64,
-    
-    /// Logs emitted during execution
     pub logs: Vec<ContractLog>,
 }
 
@@ -300,10 +315,10 @@ pub struct ExecutionResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractLog {
     /// Contract address that emitted the log
-    pub contract_address: Address,
+    pub contract_address: WasmContractAddress,
     
     /// Topic (indexed field) for the log
-    pub topic: String,
+    pub topics: Vec<Vec<u8>>,
     
     /// Data payload
     pub data: Vec<u8>,
@@ -691,4 +706,7 @@ pub struct WasmGasConfig {
     
     /// Gas cost for contract creation
     pub create_contract_cost: u64,
+    
+    /// Gas limit
+    pub gas_limit: u64,
 } 

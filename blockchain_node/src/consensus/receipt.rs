@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 
-use super::cross_shard::CrossShardTxStatus;
+use crate::sharding::CrossShardStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionReceipt {
     pub tx_hash: Vec<u8>,
-    pub status: CrossShardTxStatus,
+    pub status: CrossShardStatus,
     pub execution_result: Vec<u8>,
     pub shard_signatures: HashMap<u64, Vec<u8>>,
     pub merkle_proof: Vec<u8>,
@@ -56,7 +56,7 @@ mod tests {
     fn create_test_receipt(tx_hash: Vec<u8>) -> TransactionReceipt {
         TransactionReceipt {
             tx_hash,
-            status: CrossShardTxStatus::Finalized,
+            status: CrossShardStatus::Confirmed,
             execution_result: vec![1, 2, 3, 4],
             shard_signatures: HashMap::new(),
             merkle_proof: vec![5, 6, 7, 8],
@@ -101,7 +101,7 @@ mod tests {
         assert_ne!(chain.merkle_root, first_root);
     }
 
-    fn create_receipt_with_status(tx_hash: Vec<u8>, status: CrossShardTxStatus) -> TransactionReceipt {
+    fn create_receipt_with_status(tx_hash: Vec<u8>, status: CrossShardStatus) -> TransactionReceipt {
         TransactionReceipt {
             tx_hash,
             status,
@@ -124,11 +124,11 @@ mod tests {
         let hash = vec![1, 2, 3, 4];
         
         // Add first receipt
-        let receipt1 = create_receipt_with_status(hash.clone(), CrossShardTxStatus::Pending);
+        let receipt1 = create_receipt_with_status(hash.clone(), CrossShardStatus::Pending);
         chain.add_receipt(receipt1.clone());
         
         // Add second receipt with same hash but different status
-        let receipt2 = create_receipt_with_status(hash.clone(), CrossShardTxStatus::Finalized);
+        let receipt2 = create_receipt_with_status(hash.clone(), CrossShardStatus::Confirmed);
         chain.add_receipt(receipt2.clone());
         
         assert_eq!(chain.receipts.len(), 2);
@@ -155,7 +155,7 @@ mod tests {
         let mut chain = ReceiptChain::new();
         let receipt = TransactionReceipt {
             tx_hash: Vec::new(),
-            status: CrossShardTxStatus::Pending,
+            status: CrossShardStatus::Pending,
             execution_result: Vec::new(),
             shard_signatures: HashMap::new(),
             merkle_proof: Vec::new(),

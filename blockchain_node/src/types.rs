@@ -75,15 +75,22 @@ pub struct Transaction {
     pub hash: CryptoHash,
 }
 
-/// Hash type (32 bytes)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Hash type for blockchain data
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Hash(pub Vec<u8>);
 
 impl Hash {
+    /// Create a new hash from bytes
     pub fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
+    /// Check if the hash is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Get the underlying bytes
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

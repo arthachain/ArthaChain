@@ -1,15 +1,17 @@
-use crate::storage::{HybridStorage, Storage};
+use crate::storage::{Storage, StorageError};
 use crate::evm::types::{EvmAddress, EvmError};
-use anyhow::{Result, anyhow};
+use crate::types::Hash;
 use ethereum_types::{H160, H256, U256};
 use primitive_types::Bytes;
 use std::sync::Arc;
 use log::{debug, error};
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 /// Adapter between SputnikVM and our storage system
 pub struct EvmBackend {
-    /// Reference to our hybrid storage
-    storage: Arc<HybridStorage>,
+    /// Reference to our storage
+    storage: Arc<dyn Storage>,
     /// Cache for account data
     account_cache: std::collections::HashMap<EvmAddress, EvmAccount>,
     /// Cache for storage data
@@ -19,21 +21,25 @@ pub struct EvmBackend {
 }
 
 /// EVM account structure
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EvmAccount {
     /// Account nonce
-    pub nonce: U256,
+    pub nonce: u64,
     /// Account balance
     pub balance: U256,
     /// Account storage root
     pub storage_root: H256,
     /// Account code hash
     pub code_hash: H256,
+    /// Account code
+    pub code: Vec<u8>,
+    /// Account storage
+    pub storage: HashMap<H256, H256>,
 }
 
 impl EvmBackend {
     /// Create a new EVM backend adapter
-    pub fn new(storage: Arc<HybridStorage>) -> Self {
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
         Self {
             storage,
             account_cache: std::collections::HashMap::new(),
@@ -42,156 +48,100 @@ impl EvmBackend {
         }
     }
     
-    /// Get storage key for an EVM account
-    fn account_key(address: &EvmAddress) -> String {
-        format!("evm:account:{}", hex::encode(address.as_bytes()))
-    }
-    
-    /// Get storage key for EVM contract code
-    fn code_key(address: &EvmAddress) -> String {
-        format!("evm:code:{}", hex::encode(address.as_bytes()))
-    }
-    
-    /// Get storage key for EVM contract storage
-    fn storage_key(address: &EvmAddress, index: &H256) -> String {
-        format!("evm:storage:{}:{}", hex::encode(address.as_bytes()), hex::encode(index.as_bytes()))
-    }
-    
     /// Get account data from storage
-    pub async fn get_account(&mut self, address: &EvmAddress) -> Result<EvmAccount, EvmError> {
+    pub fn get_account(&self, address: &EvmAddress) -> Result<EvmAccount, EvmError> {
         // Check cache first
         if let Some(account) = self.account_cache.get(address) {
             return Ok(account.clone());
         }
-        
-        // Try to get from storage
-        let key = Self::account_key(address);
-        match self.storage.retrieve(&key).await {
-            Ok(data) => {
-                // Deserialize account data
+
+        // Generate storage key for account
+        let key = format!("evm:account:{}", hex::encode(address.as_bytes()));
+        let hash = Hash::from_slice(key.as_bytes());
+
+        match self.storage.retrieve_sync(&hash)? {
+            Some(data) => {
                 let account: EvmAccount = bincode::deserialize(&data)
                     .map_err(|e| EvmError::StorageError(format!("Failed to deserialize account: {}", e)))?;
-                
-                // Update cache
-                self.account_cache.insert(*address, account.clone());
-                Ok(account)
-            },
-            Err(_) => {
-                // Account doesn't exist, create a new empty one
-                let account = EvmAccount::default();
-                self.account_cache.insert(*address, account.clone());
                 Ok(account)
             }
+            None => Ok(EvmAccount {
+                nonce: 0,
+                balance: U256::zero(),
+                code: Vec::new(),
+                storage: HashMap::new(),
+                storage_root: H256::zero(),
+                code_hash: H256::zero(),
+            })
         }
     }
     
     /// Update account data in storage
-    pub async fn update_account(&mut self, address: EvmAddress, account: EvmAccount) -> Result<(), EvmError> {
-        // Update cache
-        self.account_cache.insert(address, account.clone());
-        
-        // Serialize and store
-        let key = Self::account_key(&address);
+    pub fn update_account(&mut self, address: EvmAddress, account: EvmAccount) -> Result<(), EvmError> {
+        let key = format!("evm:account:{}", hex::encode(address.as_bytes()));
         let data = bincode::serialize(&account)
             .map_err(|e| EvmError::StorageError(format!("Failed to serialize account: {}", e)))?;
         
-        self.storage.store(&key, &data).await
-            .map_err(|e| EvmError::StorageError(format!("Failed to store account: {}", e)))?;
-        
+        let hash = self.storage.store_sync(&data)?;
+        self.account_cache.insert(address, account);
         Ok(())
     }
     
     /// Get storage value
-    pub async fn get_storage(&mut self, address: &EvmAddress, index: &H256) -> Result<H256, EvmError> {
+    pub fn get_storage(&self, address: &EvmAddress, key: H256) -> Result<H256, EvmError> {
         // Check cache first
-        if let Some(value) = self.storage_cache.get(&(*address, *index)) {
-            return Ok(*value);
+        if let Some(&value) = self.storage_cache.get(&(*address, key)) {
+            return Ok(value);
         }
-        
-        // Try to get from storage
-        let key = Self::storage_key(address, index);
-        match self.storage.retrieve(&key).await {
-            Ok(data) => {
-                if data.len() == 32 {
-                    let mut value = H256::zero();
-                    value.as_bytes_mut().copy_from_slice(&data);
-                    
-                    // Update cache
-                    self.storage_cache.insert((*address, *index), value);
-                    Ok(value)
-                } else {
-                    Err(EvmError::StorageError("Invalid storage value size".to_string()))
-                }
-            },
-            Err(_) => {
-                // Storage slot doesn't exist, return zero
-                let value = H256::zero();
-                self.storage_cache.insert((*address, *index), value);
+
+        let storage_key = format!("evm:storage:{}:{}", hex::encode(address.as_bytes()), hex::encode(key.as_bytes()));
+        let hash = Hash::from_slice(storage_key.as_bytes());
+
+        match self.storage.retrieve_sync(&hash)? {
+            Some(data) => {
+                let mut value = H256::zero();
+                value.as_bytes_mut().copy_from_slice(&data);
                 Ok(value)
             }
+            None => Ok(H256::zero())
         }
     }
     
     /// Set storage value
-    pub async fn set_storage(&mut self, address: &EvmAddress, index: &H256, value: &H256) -> Result<(), EvmError> {
-        // Update cache
-        self.storage_cache.insert((*address, *index), *value);
-        
-        // Store in storage
-        let key = Self::storage_key(address, index);
-        self.storage.store(&key, value.as_bytes()).await
-            .map_err(|e| EvmError::StorageError(format!("Failed to store value: {}", e)))?;
-        
+    pub fn set_storage(&mut self, address: &EvmAddress, key: H256, value: H256) -> Result<(), EvmError> {
+        let storage_key = format!("evm:storage:{}:{}", hex::encode(address.as_bytes()), hex::encode(key.as_bytes()));
+        let hash = self.storage.store_sync(value.as_bytes())?;
+        self.storage_cache.insert((*address, key), value);
         Ok(())
     }
     
     /// Get contract code
-    pub async fn get_code(&mut self, address: &EvmAddress) -> Result<Bytes, EvmError> {
+    pub fn get_code(&self, address: &EvmAddress) -> Result<Vec<u8>, EvmError> {
         // Check cache first
         if let Some(code) = self.code_cache.get(address) {
-            return Ok(code.clone());
+            return Ok(code.to_vec());
         }
-        
-        // Try to get from storage
-        let key = Self::code_key(address);
-        match self.storage.retrieve(&key).await {
-            Ok(data) => {
-                let code = Bytes::from(data);
-                
-                // Update cache
-                self.code_cache.insert(*address, code.clone());
-                Ok(code)
-            },
-            Err(_) => {
-                // No code, return empty bytes
-                let code = Bytes::new();
-                self.code_cache.insert(*address, code.clone());
-                Ok(code)
-            }
+
+        let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
+        let hash = Hash::from_slice(code_key.as_bytes());
+
+        match self.storage.retrieve_sync(&hash)? {
+            Some(code) => Ok(code),
+            None => Ok(Vec::new())
         }
     }
     
     /// Set contract code
-    pub async fn set_code(&mut self, address: &EvmAddress, code: &[u8]) -> Result<(), EvmError> {
-        // Update cache
-        self.code_cache.insert(*address, Bytes::from(code.to_vec()));
-        
-        // Store in storage
-        let key = Self::code_key(address);
-        self.storage.store(&key, code).await
-            .map_err(|e| EvmError::StorageError(format!("Failed to store code: {}", e)))?;
-        
+    pub fn set_code(&mut self, address: &EvmAddress, code: &[u8]) -> Result<(), EvmError> {
+        let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
+        let hash = self.storage.store_sync(code)?;
+        self.code_cache.insert(*address, code.to_vec().into());
         Ok(())
     }
     
     /// Commit changes to storage
     pub async fn commit(&mut self) -> Result<(), EvmError> {
-        // This would be called at the end of a transaction execution
-        // In a more sophisticated implementation, this would be part of a larger
-        // state transition that could be rolled back if needed
         debug!("Committing EVM state changes");
-        
-        // In a real implementation, we could optimize this to only store changes
         Ok(())
     }
     

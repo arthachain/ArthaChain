@@ -149,6 +149,7 @@ impl Default for ChunkingConfig {
 }
 
 /// Data Chunking AI for intelligent file chunking and distributed storage
+#[derive(Debug, Clone)]
 pub struct DataChunkingAI {
     /// Chunk cache for deduplication
     chunk_cache: Arc<Mutex<HashMap<String, DataChunk>>>,
@@ -629,6 +630,63 @@ impl DataChunkingAI {
     pub fn map_chunk_to_blockchain(&self, chunk_id: &str, blockchain_hash: &str) -> Result<()> {
         // In a real implementation, this would record the mapping in a database
         info!("Mapped chunk {} to blockchain hash {}", chunk_id, blockchain_hash);
+        Ok(())
+    }
+
+    /// Optimize chunk distribution and storage
+    pub async fn optimize_chunks(&self) -> Result<()> {
+        let mut chunk_cache = self.chunk_cache.lock().unwrap();
+        
+        // Analyze chunk usage patterns
+        let mut chunk_usage = HashMap::new();
+        for chunk in chunk_cache.values() {
+            let usage_count = chunk_usage.entry(chunk.id.clone())
+                .or_insert(0);
+            *usage_count += 1;
+        }
+        
+        // Identify frequently accessed chunks
+        let hot_chunks: Vec<_> = chunk_usage.iter()
+            .filter(|(_, &count)| count > 5)
+            .map(|(id, _)| id.clone())
+            .collect();
+            
+        // Optimize storage for hot chunks
+        for chunk_id in hot_chunks {
+            if let Some(chunk) = chunk_cache.get(&chunk_id) {
+                // Re-compress if using suboptimal compression
+                if chunk.compression != CompressionType::ZStd {
+                    let (compressed_data, compression_type) = 
+                        self.compress_data(&chunk.data, CompressionType::ZStd)?;
+                    
+                    // Update chunk with optimized compression
+                    let mut optimized_chunk = chunk.clone();
+                    optimized_chunk.data = compressed_data;
+                    optimized_chunk.compression = compression_type;
+                    
+                    // Store optimized chunk
+                    chunk_cache.insert(chunk_id, optimized_chunk);
+                }
+            }
+        }
+        
+        // Clean up old reconstructions
+        let mut reconstructions = self.reconstructions.lock().unwrap();
+        reconstructions.retain(|_, reconstruction| {
+            if let Ok(duration) = std::time::SystemTime::now()
+                .duration_since(reconstruction.chunks.values()
+                    .next()
+                    .map(|c| c.metadata.created_at)
+                    .unwrap_or_else(|| std::time::SystemTime::now())) {
+                // Keep reconstructions less than 24 hours old
+                duration.as_secs() < 24 * 60 * 60
+            } else {
+                true
+            }
+        });
+        
+        info!("Optimized {} chunks, {} active reconstructions", 
+            chunk_cache.len(), reconstructions.len());
         Ok(())
     }
 }

@@ -129,9 +129,10 @@ impl WasmExecutor {
         let context = CallContext {
             contract_address: contract_address.clone(),
             caller: sender,
-            block_timestamp: current_block.timestamp,
-            block_height: current_block.height,
             value: transaction.value.unwrap_or(0),
+            gas_limit: self.config.gas_limit,
+            block_height: current_block.height,
+            block_timestamp: current_block.timestamp,
         };
         
         // Create the call parameters
@@ -237,9 +238,10 @@ impl WasmExecutor {
         let context = CallContext {
             contract_address: contract_address.clone(),
             caller: caller.clone(),
-            block_timestamp: current_block.timestamp,
-            block_height: current_block.height,
             value: 0, // View functions can't receive value
+            gas_limit: self.config.gas_limit,
+            block_height: current_block.height,
+            block_timestamp: current_block.timestamp,
         };
         
         // Create the call parameters with a standard gas limit for view functions

@@ -33,7 +33,7 @@ use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use std::io::{Read, Write};
 
-use super::dos_protection::RateLimitConfig;
+use super::dos_protection::DosConfig;
 
 /// Network error types
 #[derive(Debug, Error)]
@@ -342,7 +342,7 @@ impl P2PNetwork {
         let shard_id = config.sharding.shard_id;
 
         // Create DoS protection
-        let dos_config = RateLimitConfig::default();
+        let dos_config = DosConfig::default();
         let dos_protection = DosProtection::new(dos_config);
         
         Ok(Self {

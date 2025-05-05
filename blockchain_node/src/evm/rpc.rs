@@ -116,7 +116,7 @@ impl EvmRpcService {
         
         // eth_estimateGas
         let executor_clone = executor.clone();
-        io.add_method("eth_estimateGas", move |params: Params| {
+        io.add_method("eth_estimateGas", move |params: Params| async move {
             // Parse parameters
             let call_request: CallRequest = params.parse().map_err(|e| {
                 RpcError::invalid_params(format!("Invalid parameters: {:?}", e))
@@ -146,7 +146,7 @@ impl EvmRpcService {
         
         // eth_sendRawTransaction
         let executor_clone = executor.clone();
-        io.add_method("eth_sendRawTransaction", move |params: Params| {
+        io.add_method("eth_sendRawTransaction", move |params: Params| async move {
             // Parse parameters
             let params: (String,) = params.parse().map_err(|e| {
                 RpcError::invalid_params(format!("Invalid parameters: {:?}", e))
@@ -169,7 +169,7 @@ impl EvmRpcService {
         
         // eth_getTransactionReceipt
         let executor_clone = executor.clone();
-        io.add_method("eth_getTransactionReceipt", move |params: Params| {
+        io.add_method("eth_getTransactionReceipt", move |params: Params| async move {
             // Parse parameters
             let params: (String,) = params.parse().map_err(|e| {
                 RpcError::invalid_params(format!("Invalid parameters: {:?}", e))
@@ -185,7 +185,7 @@ impl EvmRpcService {
         
         // eth_call
         let executor_clone = executor.clone();
-        io.add_method("eth_call", move |params: Params| {
+        io.add_method("eth_call", move |params: Params| async move {
             // Parse parameters
             let params: (CallRequest, String) = params.parse().map_err(|e| {
                 RpcError::invalid_params(format!("Invalid parameters: {:?}", e))

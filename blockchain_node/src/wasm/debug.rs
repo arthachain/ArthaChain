@@ -252,7 +252,7 @@ impl DebugSession {
         }
 
         if let Some(function_breakpoints) = self.breakpoints.get(function) {
-            for bp in function_breakpoints {
+            for bp in function_breakpoints.iter_mut() {
                 if bp.enabled && bp.offset == offset {
                     bp.hit_count += 1;
                     return true;

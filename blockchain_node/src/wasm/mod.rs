@@ -45,6 +45,12 @@ pub const GAS_COST_CREATE_CONTRACT: u64 = 10000;
 /// Creates a default configuration for WASM execution
 pub fn default_config() -> WasmGasConfig {
     WasmGasConfig {
+        max_execution_steps: 1_000_000,
+        storage_read_cost: 100,
+        storage_write_cost: 200,
+        storage_delete_cost: 150,
+        call_base_cost: 500,
+        create_contract_cost: 1000,
         gas_limit: DEFAULT_GAS_LIMIT,
         max_memory_pages: MAX_MEMORY_PAGES,
         gas_per_instruction: 1,
@@ -64,7 +70,7 @@ pub fn validate_wasm_bytecode(bytecode: &[u8]) -> Result<(), WasmError> {
     
     // Check magic bytes (WASM header is \0asm)
     if bytecode.len() < 8 || &bytecode[0..4] != b"\0asm" {
-        return Err(WasmError::InvalidBytecode);
+        return Err(WasmError::InvalidBytecode("Invalid WASM bytecode".to_string()));
     }
     
     Ok(())

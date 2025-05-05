@@ -193,6 +193,7 @@ impl Default for IdentificationConfig {
 }
 
 /// User Identification AI that provides sybil-resistant identity verification
+#[derive(Debug, Clone)]
 pub struct UserIdentificationAI {
     /// User accounts database
     accounts: Arc<Mutex<HashMap<String, UserAccount>>>,
@@ -508,6 +509,48 @@ impl UserIdentificationAI {
         self.model_last_updated = Instant::now();
         
         info!("User Identification AI model updated to version: {}", self.model_version);
+        Ok(())
+    }
+    
+    /// Update user identities and verify their status
+    pub async fn update_identities(&self) -> Result<()> {
+        let mut accounts = self.accounts.lock().unwrap();
+        
+        // Iterate through all accounts and update their status
+        for account in accounts.values_mut() {
+            // Check for expired KYC
+            if account.kyc_verified {
+                if let Ok(duration) = std::time::SystemTime::now()
+                    .duration_since(account.last_auth) {
+                    // If no authentication for 90 days, require KYC reverification
+                    if duration.as_secs() > 90 * 24 * 60 * 60 {
+                        account.kyc_verified = false;
+                        debug!("KYC expired for user {}", account.user_id);
+                    }
+                }
+            }
+            
+            // Remove old devices (not used in 30 days)
+            account.devices.retain(|device| {
+                if let Ok(duration) = std::time::SystemTime::now()
+                    .duration_since(device.last_login) {
+                    duration.as_secs() <= 30 * 24 * 60 * 60
+                } else {
+                    true
+                }
+            });
+            
+            // Reset failed attempts after 24 hours
+            if let Ok(duration) = std::time::SystemTime::now()
+                .duration_since(account.last_auth) {
+                if duration.as_secs() > 24 * 60 * 60 {
+                    account.failed_attempts = 0;
+                    account.is_locked = false;
+                }
+            }
+        }
+        
+        info!("Updated {} user identities", accounts.len());
         Ok(())
     }
     

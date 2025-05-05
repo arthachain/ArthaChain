@@ -11,10 +11,12 @@ use wasmer::AsStoreRef;
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
+use std::cell::RefCell;
 
 use crate::wasm::types::{WasmContractAddress, CallContext, CallParams, CallResult, WasmError};
 use crate::wasm::storage::WasmStorage;
 use crate::storage::Storage;
+use crate::types::{Address, Hash};
 
 /// Amount of gas charged per Wasm instruction
 const GAS_PER_INSTRUCTION: u64 = 1;
@@ -26,14 +28,19 @@ const MAX_MEMORY_PAGES: u32 = 100; // ~6.4MB
 const MAX_EXECUTION_STEPS: u64 = 10_000_000; // 10 million steps
 
 /// WebAssembly runtime environment shared with host functions
-#[derive(Clone)]
 pub struct WasmEnv {
     /// Storage access for the contract
     pub storage: Arc<dyn Storage>,
+    /// Memory for the contract
+    pub memory: RefCell<Vec<u8>>,
     /// Gas meter for metered execution
-    pub gas_meter: Arc<std::sync::Mutex<GasMeter>>,
+    pub gas_meter: GasMeter,
     /// Call context (caller, block info, etc.)
     pub context: CallContext,
+    /// Contract address
+    pub contract_address: Address,
+    /// Caller address
+    pub caller: Address,
 }
 
 /// Gas meter for tracking gas usage during execution
@@ -164,7 +171,14 @@ impl WasmRuntime {
         // Create environment
         let env = WasmEnv {
             storage: wasm_storage.clone(),
-            gas_meter: gas_meter.clone(),
+            memory: RefCell::new(Vec::new()),
+            gas_meter: GasMeter {
+                remaining: params.gas_limit,
+                limit: params.gas_limit,
+                used: 0,
+            },
+            contract_address: contract_address.clone(),
+            caller: context.caller.clone(),
             context: context.clone(),
         };
         
@@ -627,5 +641,69 @@ impl WasmRuntime {
         };
         
         Ok(import_object)
+    }
+}
+
+impl WasmEnv {
+    pub fn new(storage: Arc<dyn Storage>, context: CallContext) -> Self {
+        Self {
+            storage,
+            memory: RefCell::new(Vec::new()),
+            gas_meter: GasMeter::new(context.gas_limit),
+            contract_address: context.contract_address,
+            caller: context.caller,
+            context,
+        }
+    }
+
+    pub fn gas_meter(&self) -> &GasMeter {
+        &self.gas_meter
+    }
+
+    pub fn read_memory(&self, ptr: u32, len: u32) -> Result<Vec<u8>, WasmError> {
+        let memory = self.memory.borrow();
+        let data = memory.get(ptr as usize..(ptr + len) as usize)
+            .ok_or_else(|| WasmError::MemoryError("Memory access out of bounds".to_string()))?
+            .to_vec();
+        Ok(data)
+    }
+
+    pub fn write_to_memory(&self, data: &[u8]) -> Result<u32, WasmError> {
+        let mut memory = self.memory.borrow_mut();
+        let ptr = memory.len() as u32;
+        memory.extend_from_slice(data);
+        Ok(ptr)
+    }
+
+    pub fn contract_address(&self) -> &Address {
+        &self.contract_address
+    }
+
+    pub fn caller(&self) -> &Address {
+        &self.caller
+    }
+
+    pub fn context(&self) -> &CallContext {
+        &self.context
+    }
+
+    pub fn store_data(&self, key: &[u8], value: &[u8]) -> Result<(), WasmError> {
+        let hash = self.storage.store_sync(value)
+            .map_err(|e| WasmError::StorageError(e.to_string()))?;
+        self.storage.store_sync(key)
+            .map_err(|e| WasmError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn load_data(&self, key: &[u8]) -> Result<Option<Vec<u8>>, WasmError> {
+        let hash = Hash::from_slice(key);
+        self.storage.retrieve_sync(&hash)
+            .map_err(|e| WasmError::StorageError(e.to_string()))
+    }
+
+    pub fn delete_data(&self, key: &[u8]) -> Result<(), WasmError> {
+        let hash = Hash::from_slice(key);
+        self.storage.delete_sync(&hash)
+            .map_err(|e| WasmError::StorageError(e.to_string()))
     }
 } 

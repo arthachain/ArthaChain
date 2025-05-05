@@ -15,4 +15,14 @@ pub mod validator_set;
 pub mod validator_rotation;
 pub mod proofs;
 pub mod batch;
-pub mod receipt; 
+pub mod receipt;
+pub mod social_graph;
+pub mod weight_adjustment;
+pub mod advanced_detection;
+
+// Re-export commonly used types
+pub use svcp::{SVCPConfig, SVCPMiner};
+pub use svbft::{SVBFTConfig, SVBFTConsensus};
+pub use social_graph::SocialGraph;
+pub use weight_adjustment::DynamicWeightAdjuster;
+pub use advanced_detection::AdvancedDetectionEngine; 

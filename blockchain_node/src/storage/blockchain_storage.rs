@@ -1,21 +1,16 @@
-use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::any::Any;
+use std::path::Path;
 use async_trait::async_trait;
 use crate::types::Hash;
 use crate::config::Config;
-use super::Storage;
+use super::{Storage, StorageInit, StorageError, StorageBackend, Result};
 use super::RocksDbStorage;
-use super::StorageInit;
-use log::debug;
-use hex;
-use std::path::Path;
-use downcast_rs::Downcast;
-
+use blake3;
 /// Storage for blockchain data
 pub struct BlockchainStorage {
     /// RocksDB storage for on-chain data
-    #[allow(dead_code)]
     rocksdb: Box<dyn Storage>,
     /// In-memory storage for key-value pairs (used in tests)
     memory: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
@@ -38,86 +33,98 @@ impl BlockchainStorage {
         let hash = blake3::hash(data);
         hash.as_bytes().to_vec().try_into().unwrap()
     }
-}
 
-#[async_trait]
-impl StorageInit for BlockchainStorage {
-    async fn init(&mut self, path: Box<dyn AsRef<Path> + Send + Sync>) -> Result<()> {
-        debug!("Initializing BlockchainStorage");
-        
-        // Initialize RocksDB storage
-        if let Some(storage) = Downcast::as_any_mut(&mut *self.rocksdb).downcast_mut::<RocksDbStorage>() {
-            let path_buf = path.as_ref().as_ref().to_path_buf();
-            let box_path = Box::new(path_buf) as Box<dyn AsRef<Path> + Send + Sync>;
-            storage.init(box_path).await?;
-        } else {
-            return Err(anyhow!("Failed to get mutable reference to RocksDB storage"));
-        }
-        
-        // No SVDB field in this struct, so we'll just initialize RocksDB
-        
-        debug!("BlockchainStorage initialized successfully");
+    /// Put a key-value pair
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let mut memory = self.memory.lock().map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+        memory.insert(key.to_vec(), value.to_vec());
         Ok(())
+    }
+    
+    /// Get a value by key
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let db = self.rocksdb.as_any().downcast_ref::<RocksDbStorage>()
+            .ok_or_else(|| StorageError::Other("Failed to downcast to RocksDbStorage".to_string()))?;
+        let value = db.get(key).map(|v| v.clone());
+        Ok(value)
+    }
+    
+    /// Delete a key-value pair
+    pub fn delete(&self, key: &[u8]) -> Result<()> {
+        let mut memory = self.memory.lock().map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+        memory.remove(key);
+        Ok(())
+    }
+    
+    /// Check if a key exists
+    pub fn exists(&self, key: &[u8]) -> Result<bool> {
+        let memory = self.memory.lock().map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+        Ok(memory.contains_key(key))
+    }
+    
+    /// Get all keys with a prefix
+    pub fn get_keys_with_prefix(&self, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let memory = self.memory.lock().map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+        let keys = memory.keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect();
+        Ok(keys)
     }
 }
 
 #[async_trait]
 impl Storage for BlockchainStorage {
     async fn store(&self, data: &[u8]) -> Result<Hash> {
-        let hash = Self::calculate_hash(data);
-        let mut memory = self.memory.lock().unwrap();
-        memory.insert(hash.as_ref().to_vec(), data.to_vec());
-        debug!("Stored data with hash: {}", hex::encode(&hash));
-        Ok(hash)
+        self.rocksdb.store(data).await
     }
 
-    async fn retrieve(&self, hash: &Hash) -> Result<Vec<u8>> {
-        let memory = self.memory.lock().unwrap();
-        match memory.get(hash.as_ref()) {
-            Some(data) => {
-                debug!("Retrieved data for hash: {}", hex::encode(hash));
-                Ok(data.clone())
-            },
-            None => {
-                debug!("Data not found for hash: {}", hex::encode(hash));
-                Err(anyhow!("Data not found for hash: {}", hex::encode(hash)))
-            }
-        }
+    async fn retrieve(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
+        self.rocksdb.retrieve(hash).await
     }
 
     async fn exists(&self, hash: &Hash) -> Result<bool> {
-        let memory = self.memory.lock().unwrap();
-        let exists = memory.contains_key(hash.as_ref());
-        debug!("Checked existence of hash {}: {}", hex::encode(hash), exists);
-        Ok(exists)
+        self.rocksdb.exists(hash).await
     }
 
     async fn delete(&self, hash: &Hash) -> Result<()> {
-        let mut memory = self.memory.lock().unwrap();
-        memory.remove(hash.as_ref());
-        debug!("Deleted data for hash: {}", hex::encode(hash));
-        Ok(())
+        self.rocksdb.delete(hash).await
     }
 
     async fn verify(&self, hash: &Hash, data: &[u8]) -> Result<bool> {
-        let calculated_hash = Self::calculate_hash(data);
-        let matches = calculated_hash == *hash;
-        debug!("Verified data hash {} matches: {}", hex::encode(hash), matches);
-        Ok(matches)
-    }
-    
-    async fn close(&self) -> Result<()> {
-        debug!("Closing blockchain storage");
-        // We don't need to close anything since we're using in-memory storage
-        debug!("Blockchain storage closed successfully");
-        Ok(())
+        self.rocksdb.verify(hash, data).await
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    async fn close(&self) -> Result<()> {
+        self.rocksdb.close().await
+    }
+
+    fn as_any(&self) -> &dyn Any {
         self
     }
-    
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-} 
+}
+
+#[async_trait]
+impl StorageInit for BlockchainStorage {
+    async fn init(&mut self, path: Box<dyn AsRef<Path> + Send + Sync>) -> Result<()> {
+        // Extract the path and convert to PathBuf
+        let path_ref = path.as_ref();
+        let path_buf = path_ref.as_ref().to_path_buf();
+        
+        // Get a mutable reference to the RocksDbStorage
+        if let Some(storage) = self.rocksdb.as_any_mut().downcast_mut::<RocksDbStorage>() {
+            let box_path = Box::new(path_buf) as Box<dyn AsRef<Path> + Send + Sync>;
+            storage.init(box_path).await?;
+        } else {
+            return Err(StorageError::Other("Failed to get mutable reference to RocksDB storage".to_string()));
+        }
+        
+        Ok(())
+    }
+}
+
+impl StorageBackend for BlockchainStorage {} 

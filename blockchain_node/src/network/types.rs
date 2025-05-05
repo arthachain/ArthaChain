@@ -62,4 +62,21 @@ mod serde_duration {
         let secs = i64::deserialize(deserializer)?;
         Ok(Duration::from_secs(secs as u64))
     }
+}
+
+// Implementing PartialEq for SerializableInstant
+impl PartialEq for SerializableInstant {
+    fn eq(&self, other: &Self) -> bool {
+        // Since Instant doesn't implement PartialEq, we can compare them 
+        // by calculating the duration since a fixed point
+        let base = Instant::now();
+        self.instant.duration_since(base).as_nanos() == other.instant.duration_since(base).as_nanos()
+    }
+}
+
+// Implementing PartialEq for SerializableDuration
+impl PartialEq for SerializableDuration {
+    fn eq(&self, other: &Self) -> bool {
+        self.duration == other.duration
+    }
 } 

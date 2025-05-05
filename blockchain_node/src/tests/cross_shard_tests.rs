@@ -218,4 +218,142 @@ async fn test_performance_metrics() -> Result<()> {
     assert!(config.target_tps > 0.0);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use tokio::runtime::Runtime;
+    use tokio::sync::{mpsc, RwLock};
+    use rand::{thread_rng, Rng, seq::SliceRandom};
+    
+    use crate::sharding::{ShardManager, ShardConfig, CrossShardMessageType};
+    
+    #[test]
+    fn test_cross_shard_performance() {
+        // This test will measure the performance of cross-shard transactions
+        // using various ratios of cross-shard vs. intra-shard transactions
+        
+        let rt = Runtime::new().unwrap();
+        
+        // Configure sharding
+        let num_shards = 32; // Test with 32 shards
+        let config = ShardConfig {
+            shard_count: num_shards,
+            this_shard_id: 0, // Start from shard 0
+            max_cross_shard_delay: Duration::from_millis(50),
+            retry_interval: Duration::from_millis(100),
+            batch_size: 100,
+            max_pending_refs: 10000,
+        };
+        
+        // Test parameters
+        let num_transactions = 10000;
+        let cross_shard_ratios = [0.0, 0.1, 0.2, 0.5]; // 0%, 10%, 20%, 50% cross-shard
+        
+        for &ratio in &cross_shard_ratios {
+            rt.block_on(async {
+                println!("\nTesting with cross-shard ratio: {:.1}%", ratio * 100.0);
+                
+                // Create shard managers for each shard
+                let mut shard_managers = Vec::with_capacity(num_shards as usize);
+                let mut message_receivers = Vec::with_capacity(num_shards as usize);
+                
+                for shard_id in 0..num_shards {
+                    let mut this_config = config.clone();
+                    this_config.this_shard_id = shard_id;
+                    
+                    let (tx, rx) = mpsc::channel(1000);
+                    message_receivers.push(rx);
+                    
+                    let manager = ShardManager::new(this_config, tx);
+                    shard_managers.push(Arc::new(manager));
+                }
+                
+                // Connect shard managers
+                for i in 0..num_shards as usize {
+                    for j in 0..num_shards as usize {
+                        if i != j {
+                            shard_managers[i].register_shard_connection(j as u16, shard_managers[j].clone()).await;
+                        }
+                    }
+                }
+                
+                // Generate transactions
+                let mut rng = thread_rng();
+                let mut transactions = Vec::with_capacity(num_transactions);
+                
+                for i in 0..num_transactions {
+                    let is_cross_shard = rng.gen::<f64>() < ratio;
+                    
+                    let source_shard = rng.gen_range(0..num_shards);
+                    let dest_shard = if is_cross_shard {
+                        let mut dest;
+                        loop {
+                            dest = rng.gen_range(0..num_shards);
+                            if dest != source_shard {
+                                break;
+                            }
+                        }
+                        dest
+                    } else {
+                        source_shard
+                    };
+                    
+                    transactions.push((source_shard, dest_shard, format!("tx-{}", i)));
+                }
+                
+                // Process transactions and measure throughput
+                let start = Instant::now();
+                
+                // Submit transactions to respective source shards
+                for (source_shard, dest_shard, tx_id) in transactions {
+                    if source_shard == dest_shard {
+                        // Intra-shard transaction - nothing special needed
+                        shard_managers[source_shard as usize].process_local_transaction(tx_id).await;
+                    } else {
+                        // Cross-shard transaction
+                        shard_managers[source_shard as usize]
+                            .send_cross_shard_message(
+                                dest_shard,
+                                CrossShardMessageType::Transaction,
+                                tx_id.into_bytes()
+                            )
+                            .await;
+                    }
+                }
+                
+                // Wait a bit for processing to complete
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                
+                let elapsed = start.elapsed();
+                let tps = num_transactions as f64 / elapsed.as_secs_f64();
+                
+                println!("Processed {} transactions in {:.2?}", num_transactions, elapsed);
+                println!("Throughput: {:.2} TPS", tps);
+                
+                // Assert minimum throughput
+                // Note: Expected throughput depends on cross-shard ratio
+                let min_tps = match ratio {
+                    0.0 => 50000.0, // 100% intra-shard: expect high throughput
+                    0.1 => 40000.0, // 10% cross-shard
+                    0.2 => 30000.0, // 20% cross-shard
+                    _ => 20000.0,   // Higher cross-shard ratios
+                };
+                
+                assert!(tps > min_tps, 
+                    "Throughput below minimum requirement for {:.0}% cross-shard ratio: {:.2} TPS (expected > {:.2})",
+                    ratio * 100.0, tps, min_tps);
+                
+                // Check that all cross-shard messages were delivered
+                for shard_id in 0..num_shards as usize {
+                    let manager = &shard_managers[shard_id];
+                    let pending = manager.get_pending_cross_shard_count().await;
+                    assert_eq!(pending, 0, 
+                      "Shard {} still has {} pending cross-shard references", shard_id, pending);
+                }
+            });
+        }
+    }
 } 

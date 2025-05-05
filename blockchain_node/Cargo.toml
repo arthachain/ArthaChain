@@ -109,6 +109,11 @@ reqwest = { version = "0.11.18", features = ["json"] }
 warp = "0.3.5"
 juniper = "0.15.11"  # GraphQL
 
+# Data structures
+dashmap = "5.5.3"
+bumpalo = "3.14.0"
+bitflags = "2.4.0"
+
 # REST API
 tower = { version = "0.4.13", features = ["util"] }
 tokio-tungstenite = "0.20.1"

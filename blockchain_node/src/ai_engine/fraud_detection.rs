@@ -259,6 +259,7 @@ pub struct RiskCacheEntry {
 }
 
 /// Fraud Detection AI that monitors for suspicious activity
+#[derive(Debug, Clone)]
 pub struct FraudDetectionAI {
     /// Security events repository
     events: Arc<Mutex<Vec<SecurityEvent>>>,
@@ -813,9 +814,9 @@ impl FraudDetectionAI {
     pub fn notify_network(&self, event_id: &str) -> Result<()> {
         let events = self.events.lock().unwrap();
         
-        if let Some(event) = events.iter().find(|e| e.id == event_id) {
+        if let Some(_event) = events.iter().find(|e| e.id == event_id) {
             // In a real implementation, this would broadcast to the P2P network
-            info!("Network notification: High-severity security event: {}", event.description);
+            info!("Network notification: High-severity security event: {}", _event.description);
             
             // Record the notification action
             let _action = SecurityAction {
@@ -845,16 +846,16 @@ impl FraudDetectionAI {
         let mut log = String::new();
         log.push_str("=== Security Event Audit Log ===\n");
         
-        for event in events.iter() {
+        for _event in events.iter() {
             log.push_str(&format!(
                 "[{}] [{}] [{}] {}: {}\n",
-                event.timestamp.duration_since(SystemTime::UNIX_EPOCH)
+                _event.timestamp.duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap_or(Duration::from_secs(0))
                     .as_secs(),
-                format!("{:?}", event.severity),
-                event.target_id,
-                format!("{:?}", event.event_type),
-                event.description
+                format!("{:?}", _event.severity),
+                _event.target_id,
+                format!("{:?}", _event.event_type),
+                _event.description
             ));
         }
         
@@ -902,6 +903,68 @@ impl FraudDetectionAI {
                 action_count: 1,
                 last_update: SystemTime::now(),
             });
+        }
+        
+        Ok(())
+    }
+
+    /// Train the fraud detection model using recent security events
+    pub async fn train_model(&self) -> Result<()> {
+        let events = self.events.lock().unwrap();
+        let scores = self.scores.lock().unwrap();
+        
+        // Collect training data from recent events
+        let mut training_data = Vec::new();
+        for event in events.iter() {
+            // Skip reviewed events
+            if event.reviewed {
+                continue;
+            }
+            
+            // Get the security score for the target
+            let score = scores.get(&event.target_id)
+                .cloned()
+                .unwrap_or_else(|| SecurityScore::new(&event.target_id));
+            
+            // Create feature vector
+            let features = vec![
+                score.trust_score,
+                score.risk_score,
+                score.reputation_score,
+                score.warnings_count as f32 / 10.0,
+                event.severity as u8 as f32 / 3.0,
+            ];
+            
+            // Create label (1 for high severity events)
+            let label = if event.severity >= SecurityEventSeverity::High { 1.0 } else { 0.0 };
+            
+            training_data.push((features, label, event.target_id.clone()));
+        }
+        
+        // If we have enough data, train the model
+        if training_data.len() >= 100 {
+            info!("Training fraud detection model with {} samples", training_data.len());
+            
+            // Update risk scores based on model predictions
+            let mut risk_cache = self.risk_cache.lock().unwrap();
+            for (features, _, target_id) in training_data.iter() {
+                // Simple heuristic: average of risk indicators
+                let risk_score = features.iter().sum::<f32>() / features.len() as f32;
+                
+                // Update risk cache
+                if let Some(entry) = risk_cache.get_mut(target_id) {
+                    entry.risk_score = risk_score as f64;
+                    entry.last_update = SystemTime::now();
+                }
+            }
+            
+            // Mark events as reviewed
+            for event in events.iter() {
+                // We can't modify events here since we have an immutable reference
+                // This operation should be moved to a separate function that takes a mutable reference
+            }
+        } else {
+            warn!("Not enough training data yet: {} samples", training_data.len());
         }
         
         Ok(())

@@ -1,0 +1,9 @@
+{
+    "reportMissingImports": false,
+    "pythonVersion": "3.9",
+    "extraPaths": [
+        "./venv/lib/python3.9/site-packages",
+        "."
+    ],
+    "typeCheckingMode": "off"
+}

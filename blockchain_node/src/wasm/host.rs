@@ -508,7 +508,7 @@ fn register_function(
 fn storage_read_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![Type::I32, Type::I32], vec![Type::I32]);
     Function::new(store, &signature, move |args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_STORAGE_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_STORAGE_READ)?;
         
         // Extract key pointer and length
         let key_ptr = args[0].unwrap_i32() as u32;
@@ -532,7 +532,7 @@ fn storage_read_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn storage_write_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![Type::I32, Type::I32, Type::I32, Type::I32], vec![]);
     Function::new(store, &signature, move |args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_STORAGE_WRITE)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_STORAGE_WRITE)?;
         
         // Extract key and value pointers and lengths
         let key_ptr = args[0].unwrap_i32() as u32;
@@ -555,7 +555,7 @@ fn storage_write_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn storage_delete_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![Type::I32, Type::I32], vec![]);
     Function::new(store, &signature, move |args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_STORAGE_DELETE)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_STORAGE_DELETE)?;
         
         // Extract key pointer and length
         let key_ptr = args[0].unwrap_i32() as u32;
@@ -575,7 +575,7 @@ fn storage_delete_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn storage_has_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![Type::I32, Type::I32], vec![Type::I32]);
     Function::new(store, &signature, move |args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_STORAGE_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_STORAGE_READ)?;
         
         // Extract key pointer and length
         let key_ptr = args[0].unwrap_i32() as u32;
@@ -595,7 +595,7 @@ fn storage_has_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn get_caller_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![], vec![Type::I32]);
     Function::new(store, &signature, move |_args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
         
         // Get caller address
         let caller = env.caller().to_string();
@@ -611,7 +611,7 @@ fn get_caller_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn get_block_height_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![], vec![Type::I64]);
     Function::new(store, &signature, move |_args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
         
         // Get block height
         let height = env.block_height();
@@ -624,7 +624,7 @@ fn get_block_height_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn get_block_timestamp_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![], vec![Type::I64]);
     Function::new(store, &signature, move |_args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
         
         // Get block timestamp
         let timestamp = env.block_timestamp();
@@ -637,7 +637,7 @@ fn get_block_timestamp_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn get_contract_address_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![], vec![Type::I32]);
     Function::new(store, &signature, move |_args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_CONTEXT_READ)?;
         
         // Get contract address
         let address = env.contract_address().to_string();
@@ -655,7 +655,7 @@ fn alloc_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     Function::new(store, &signature, move |args| {
         // Charge gas proportional to allocation size
         let size = args[0].unwrap_i32() as u32;
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_BASE + (size as u64) / 100)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_BASE + (size as u64) / 100)?;
         
         // Allocate memory
         let ptr = env.alloc(size)?;
@@ -668,7 +668,7 @@ fn alloc_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
 fn dealloc_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     let signature = FunctionType::new(vec![Type::I32, Type::I32], vec![]);
     Function::new(store, &signature, move |args| {
-        env.gas_meter().consume_gas(crate::wasm::GAS_COST_BASE)?;
+        env.gas_meter().use_gas(crate::wasm::GAS_COST_BASE)?;
         
         // Extract pointer and size
         let ptr = args[0].unwrap_i32() as u32;
@@ -679,4 +679,22 @@ fn dealloc_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
         
         Ok(vec![])
     })
+}
+
+impl WasmStorage for dyn Storage {
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, WasmError> {
+        self.get(key).map_err(|e| WasmError::StorageError(e.to_string()))
+    }
+
+    fn set(&self, key: &[u8], value: &[u8]) -> Result<(), WasmError> {
+        self.set(key, value).map_err(|e| WasmError::StorageError(e.to_string()))
+    }
+
+    fn delete(&self, key: &[u8]) -> Result<(), WasmError> {
+        self.delete(key).map_err(|e| WasmError::StorageError(e.to_string()))
+    }
+
+    fn has(&self, key: &[u8]) -> Result<bool, WasmError> {
+        self.has(key).map_err(|e| WasmError::StorageError(e.to_string()))
+    }
 } 

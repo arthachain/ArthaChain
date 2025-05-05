@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use log::{debug, info, warn};
 use rand::{thread_rng, Rng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{HashMap, BinaryHeap, VecDeque};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -50,7 +50,7 @@ impl Default for SVCPConfig {
             min_score_threshold: 0.6,
             max_proposer_candidates: 100,
             min_proposer_candidates: 10,
-            target_block_time: 15,
+            target_block_time: 5,
             difficulty_adjustment_window: 10,
             initial_pow_difficulty: 4,
             device_weight: 0.2,
@@ -58,7 +58,7 @@ impl Default for SVCPConfig {
             storage_weight: 0.1,
             engagement_weight: 0.2,
             ai_behavior_weight: 0.2,
-            base_batch_size: 10,
+            base_batch_size: 500,
         }
     }
 }
@@ -843,6 +843,299 @@ impl SVCPMiner {
         }
         
         Ok(())
+    }
+    
+    /// Ultra-lightweight consensus optimization for high TPS
+    pub async fn optimize_for_high_throughput(&mut self) -> Result<()> {
+        // Configure for maximum throughput
+        self.tps_multiplier = 50.0; // Massively increase TPS multiplier
+        self.tps_scaling_enabled = true;
+        
+        // Enable SIMD-accelerated hash verification
+        unsafe {
+            // Enable hardware acceleration if available
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if is_x86_feature_detected!("avx2") {
+                        self.enable_simd_verification = true;
+                    }
+                }
+                
+                #[cfg(target_arch = "aarch64")]
+                {
+                    if std::arch::is_aarch64_feature_detected!("neon") {
+                        self.enable_simd_verification = true;
+                    }
+                }
+            }
+        }
+        
+        // Pre-compute common verification patterns
+        self.precompute_verification_patterns().await?;
+        
+        // Initialize optimized parallel processor with larger worker pool
+        let processor_config = ParallelProcessorConfig {
+            worker_threads: num_cpus::get() * 4, // 4x logical cores
+            batch_size: 10000,
+            use_work_stealing: true,
+            prefetch_enabled: true,
+            pipeline_verification: true,
+        };
+        
+        self.parallel_processor = Some(ParallelProcessor::new_with_config(
+            self.state.clone(),
+            self.block_sender.clone(),
+            Some(self.tps_multiplier),
+            processor_config
+        ));
+        
+        // Start optimized processor
+        if let Some(processor) = &self.parallel_processor {
+            processor.start_optimized().await?;
+        }
+        
+        // Enable dynamic puzzle adjustment
+        self.enable_dynamic_puzzle_adjustment().await?;
+        
+        Ok(())
+    }
+    
+    /// Enable dynamic puzzle adjustment (mandatory optimization)
+    async fn enable_dynamic_puzzle_adjustment(&mut self) -> Result<()> {
+        // Create adaptive difficulty adjuster
+        let adaptive_adjuster = DynamicPuzzleAdjuster::new(
+            self.current_difficulty,
+            self.svcp_config.target_block_time,
+            AdaptiveConfig {
+                min_difficulty: 1,
+                max_difficulty: 16,
+                responsiveness: 0.8, // How quickly difficulty adapts (0-1)
+                smoothing_factor: 0.3, // Smooths out fluctuations
+                target_tps: 500_000.0, // Target 500k TPS
+            }
+        );
+        
+        // Store the adjuster
+        self.dynamic_adjuster = Some(adaptive_adjuster);
+        
+        // Enable real-time monitoring for block time
+        let monitor = BlockTimeMonitor::new(1000); // Keep history of 1000 blocks
+        self.block_time_monitor = Some(monitor);
+        
+        // Log that dynamic adjustment is enabled
+        log::info!("Dynamic puzzle adjustment enabled. Target TPS: 500,000");
+        
+        Ok(())
+    }
+    
+    /// SIMD-accelerated hash verification
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn verify_hash_simd(&self, hash: &[u8], target: &[u8]) -> bool {
+        use std::arch::x86_64::*;
+        
+        if is_x86_feature_detected!("avx2") {
+            let hash_chunks = hash.chunks_exact(32);
+            let target_chunks = target.chunks_exact(32);
+            
+            for (h, t) in hash_chunks.zip(target_chunks) {
+                let hash_vec = _mm256_loadu_si256(h.as_ptr() as *const __m256i);
+                let target_vec = _mm256_loadu_si256(t.as_ptr() as *const __m256i);
+                
+                // Compare hash with target (hash must be less than target)
+                let cmp = _mm256_cmpgt_epi8(target_vec, hash_vec);
+                let mask = _mm256_movemask_epi8(cmp);
+                
+                if mask != 0 {
+                    return false;
+                }
+            }
+            
+            true
+        } else {
+            // Fall back to standard comparison
+            self.verify_hash_standard(hash, target)
+        }
+    }
+    
+    /// Standard hash verification (fallback)
+    fn verify_hash_standard(&self, hash: &[u8], target: &[u8]) -> bool {
+        hash.iter().zip(target.iter()).all(|(h, t)| h <= t)
+    }
+    
+    /// Mine a block with optimized verification
+    async fn mine_block_optimized(
+        mut block: Block,
+        difficulty: u64,
+        running: Arc<Mutex<bool>>,
+        simd_enabled: bool,
+    ) -> MiningResult {
+        let target = calculate_target(difficulty);
+        let start = Instant::now();
+        let mut nonce: u64 = thread_rng().gen();
+        let batch_size = 10000; // Check many nonces before updating timestamp
+        
+        // Pre-allocate buffers
+        let mut hash_buffer = [0u8; 32];
+        
+        loop {
+            // Update timestamp periodically
+            if start.elapsed() > Duration::from_secs(1) {
+                block.header.timestamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+            }
+            
+            // Check if mining should continue
+            if let Ok(running_guard) = running.lock() {
+                if !*running_guard {
+                    return MiningResult::Interrupted;
+                }
+            }
+            
+            // Try a batch of nonces
+            for _ in 0..batch_size {
+                block.header.nonce = nonce;
+                nonce = nonce.wrapping_add(1);
+                
+                // Calculate hash
+                let hash = block.hash();
+                hash_buffer.copy_from_slice(hash.as_bytes());
+                
+                // Verify hash against target
+                let valid = if simd_enabled {
+                    unsafe { Self::verify_hash_simd(&hash_buffer, &target) }
+                } else {
+                    Self::verify_hash_standard(&hash_buffer, &target)
+                };
+                
+                if valid {
+                    return MiningResult::Success(block);
+                }
+            }
+        }
+    }
+}
+
+/// Dynamic puzzle adjuster for adaptive difficulty
+pub struct DynamicPuzzleAdjuster {
+    current_difficulty: u64,
+    target_block_time: u64,
+    adaptive_config: AdaptiveConfig,
+    last_adjustment: Instant,
+    moving_avg_block_time: f64,
+    current_tps_estimate: f64,
+}
+
+/// Configuration for adaptive difficulty
+pub struct AdaptiveConfig {
+    pub min_difficulty: u64,
+    pub max_difficulty: u64,
+    pub responsiveness: f64,
+    pub smoothing_factor: f64,
+    pub target_tps: f64,
+}
+
+impl DynamicPuzzleAdjuster {
+    /// Create a new dynamic puzzle adjuster
+    pub fn new(initial_difficulty: u64, target_block_time: u64, config: AdaptiveConfig) -> Self {
+        Self {
+            current_difficulty: initial_difficulty,
+            target_block_time,
+            adaptive_config: config,
+            last_adjustment: Instant::now(),
+            moving_avg_block_time: target_block_time as f64,
+            current_tps_estimate: 10000.0, // Initial estimate
+        }
+    }
+    
+    /// Update with a new block time observation
+    pub fn update(&mut self, block_time: Duration, transactions: usize) -> u64 {
+        // Update moving average
+        let block_time_secs = block_time.as_secs_f64();
+        self.moving_avg_block_time = self.moving_avg_block_time * (1.0 - self.adaptive_config.smoothing_factor) +
+            block_time_secs * self.adaptive_config.smoothing_factor;
+        
+        // Update TPS estimate
+        let tps = transactions as f64 / block_time_secs;
+        self.current_tps_estimate = self.current_tps_estimate * (1.0 - self.adaptive_config.smoothing_factor) +
+            tps * self.adaptive_config.smoothing_factor;
+        
+        // Calculate adjustment factor
+        let time_ratio = self.target_block_time as f64 / self.moving_avg_block_time;
+        let tps_ratio = self.current_tps_estimate / self.adaptive_config.target_tps;
+        
+        // Combined adjustment factor (time based and TPS based)
+        let adjustment_factor = time_ratio * 0.5 + tps_ratio * 0.5;
+        
+        // Apply responsiveness dampening
+        let dampened_adjustment = 1.0 + self.adaptive_config.responsiveness * (adjustment_factor - 1.0);
+        
+        // Update difficulty (higher factor = higher difficulty)
+        self.current_difficulty = ((self.current_difficulty as f64) * dampened_adjustment).round() as u64;
+        
+        // Clamp to limits
+        self.current_difficulty = self.current_difficulty.clamp(
+            self.adaptive_config.min_difficulty,
+            self.adaptive_config.max_difficulty
+        );
+        
+        self.last_adjustment = Instant::now();
+        self.current_difficulty
+    }
+}
+
+/// Monitor for tracking block times
+pub struct BlockTimeMonitor {
+    block_times: VecDeque<(Instant, usize)>, // (timestamp, tx_count)
+    capacity: usize,
+}
+
+impl BlockTimeMonitor {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            block_times: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+    
+    /// Add a new block time observation
+    pub fn add_observation(&mut self, timestamp: Instant, tx_count: usize) {
+        self.block_times.push_back((timestamp, tx_count));
+        
+        if self.block_times.len() > self.capacity {
+            self.block_times.pop_front();
+        }
+    }
+    
+    /// Calculate average TPS over the last N blocks
+    pub fn average_tps(&self, blocks: usize) -> f64 {
+        if self.block_times.len() < 2 || blocks < 1 {
+            return 0.0;
+        }
+        
+        let blocks_to_consider = std::cmp::min(blocks, self.block_times.len() - 1);
+        let newest_idx = self.block_times.len() - 1;
+        let oldest_idx = newest_idx - blocks_to_consider;
+        
+        let newest = &self.block_times[newest_idx];
+        let oldest = &self.block_times[oldest_idx];
+        
+        let time_diff = newest.0.duration_since(oldest.0.clone()).as_secs_f64();
+        if time_diff <= 0.0 {
+            return 0.0;
+        }
+        
+        // Sum transactions in the window
+        let tx_sum: usize = self.block_times
+            .iter()
+            .skip(oldest_idx + 1) // Skip oldest since we're measuring from it
+            .map(|(_, tx_count)| tx_count)
+            .sum();
+        
+        tx_sum as f64 / time_diff
     }
 }
 

@@ -95,6 +95,14 @@ pub struct EvmExecutionResult {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EvmAccount {
+    pub nonce: u64,
+    pub balance: U256,
+    pub code: Vec<u8>,
+    pub storage: HashMap<H256, H256>,
+}
+
 impl EvmConfig {
     /// Create a new EVM configuration with default settings
     pub fn new(chain_id: u64) -> Self {
