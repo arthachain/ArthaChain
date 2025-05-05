@@ -62,28 +62,36 @@ fn bench_reconstruction(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter_batched(
-                || DataChunkingAI::new(&config),
-                |ai| {
-                let iter_file_id = format!("{}_{}", file_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
-                
+                // Setup: Create a new DataChunkingAI for each iteration with a unique ID
+                || {
+                    let ai = DataChunkingAI::new(&config);
+                    // Generate a unique file_id for this iteration to avoid collisions
+                    let iter_file_id = format!("{}_{}", file_id, std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos());
+                    (ai, iter_file_id)
+                },
+                |(ai, iter_file_id)| {
                     // Initialize reconstruction state
-                ai.start_file_reconstruction(
-                    &iter_file_id,
-                    &file_name,
+                    ai.start_file_reconstruction(
+                        &iter_file_id,
+                        &file_name,
                         total_chunks,
-                    &original_hash
-                ).unwrap();
+                        &original_hash
+                    ).unwrap();
 
-                // Add chunks to reconstruction in order
-                for chunk in chunks.iter() {
-                    let mut chunk_clone = chunk.clone();
-                    chunk_clone.metadata.file_id = iter_file_id.clone();
-                    ai.add_chunk_to_reconstruction(chunk_clone).unwrap();
-                }
+                    // Add chunks to reconstruction in order
+                    for chunk in chunks.iter() {
+                        let mut chunk_clone = chunk.clone();
+                        // Update the file_id in each chunk to match our reconstruction ID
+                        chunk_clone.metadata.file_id = iter_file_id.clone();
+                        ai.add_chunk_to_reconstruction(chunk_clone).unwrap();
+                    }
 
-                // Reconstruct the file
-                let reconstructed = ai.reconstruct_file(&iter_file_id).unwrap();
-                assert_eq!(reconstructed.len(), data.len());
+                    // Reconstruct the file
+                    let reconstructed = ai.reconstruct_file(&iter_file_id).unwrap();
+                    assert_eq!(reconstructed.len(), data.len());
                 },
                 criterion::BatchSize::SmallInput
             );
