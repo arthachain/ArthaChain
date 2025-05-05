@@ -52,4 +52,9 @@ coverage/
 
 # System Files
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Large files exceeding GitHub's 100MB limit
+ipfs-desktop.dmg
+blockchain_node/src/ai_engine/models/venv/
+*.dylib 
