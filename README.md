@@ -1,5 +1,9 @@
 # Artha Chain: Hybrid Consensus Blockchain
 
+<p align="center">
+  <img src="docs/assets/img/logo.png" alt="ArthaChain Logo" width="200" />
+</p>
+
 Artha Chain is a next-generation blockchain platform that implements a hybrid consensus mechanism combining Social Verified Consensus Protocol (SVCP), Social Verified Byzantine Fault Tolerance (SVBFT), and Objective Sharding for scalability.
 
 ## Key Features
