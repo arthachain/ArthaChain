@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use crate::sharding::CrossShardReference;
-use crate::utils::crypto::Hash;
-use crate::sharding::CrossShardStatus;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ValidationBatch {
@@ -40,8 +38,9 @@ impl BatchProcessor {
         } else {
             0 // Default priority if no shards involved
         };
-        
-        self.pending_txs.entry(priority)
+
+        self.pending_txs
+            .entry(priority)
             .or_insert_with(Vec::new)
             .push(tx);
     }
@@ -50,14 +49,15 @@ impl BatchProcessor {
         let elapsed = SystemTime::now()
             .duration_since(self.last_batch_time)
             .unwrap_or(Duration::from_secs(0));
-        
+
         self.pending_txs.values().map(|v| v.len()).sum::<usize>() >= self.batch_size
             || elapsed >= self.batch_timeout
     }
 
     pub fn get_next_batch(&mut self) -> Vec<CrossShardReference> {
         let mut batch = Vec::new();
-        for txs in self.pending_txs.values_mut().rev() { // Reverse to process high priority first
+        for txs in self.pending_txs.values_mut().rev() {
+            // Reverse to process high priority first
             while batch.len() < self.batch_size && !txs.is_empty() {
                 batch.push(txs.remove(0));
             }
@@ -73,6 +73,8 @@ impl BatchProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::hash::Hash;
+    use crate::sharding::CrossShardStatus;
 
     fn create_test_transaction(priority: u8) -> CrossShardReference {
         // Create a test hash using a placeholder value
@@ -80,7 +82,7 @@ mod tests {
         let involved_shards = vec![priority as u32, 1, 2];
 
         CrossShardReference {
-            tx_hash,
+            tx_hash: tx_hash.to_string(),
             involved_shards,
             status: CrossShardStatus::Pending,
             created_at_height: 100,
@@ -108,17 +110,17 @@ mod tests {
     #[test]
     fn test_timeout_trigger() {
         let mut processor = BatchProcessor::new(100, Duration::from_millis(100));
-        
+
         // Add a single transaction
         processor.add_transaction(create_test_transaction(1));
-        
+
         // Should not process yet (not enough transactions)
         assert!(!processor.should_process());
-        
+
         // Wait for timeout
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Should process now due to timeout
         assert!(processor.should_process());
     }
-} 
+}

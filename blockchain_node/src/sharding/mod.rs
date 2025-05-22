@@ -1,12 +1,167 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
-
 use anyhow::{anyhow, Result};
-use tokio::sync::mpsc;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
-use crate::ledger::transaction::Transaction;
-use crate::ledger::transaction::TransactionType;
-use crate::utils::crypto::Hash;
+// Use a single import for Hash and ensure it's the right type
+// use crate::crypto::hash::Hash;
+use crate::storage::{Storage};
+use crate::types::Hash;
+
+/// Status of cross shard operations
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CrossShardStatus {
+    /// Transaction is pending
+    Pending,
+    /// Transaction is in progress
+    InProgress,
+    /// Transaction has been completed
+    Completed,
+    /// Transaction has failed
+    Failed(String),
+    /// Transaction has timed out
+    TimedOut,
+    /// Transaction has been confirmed
+    Confirmed,
+    /// Transaction has been rejected
+    Rejected,
+}
+
+/// Shard ID type
+pub type ShardId = u64;
+
+/// Shard information
+#[derive(Debug, Clone)]
+pub struct ShardInfo {
+    /// Shard ID
+    pub id: ShardId,
+    /// Validator nodes for this shard
+    pub validators: Vec<String>,
+    /// Total stake in this shard
+    pub total_stake: u64,
+    /// Shard size in bytes
+    pub size: u64,
+    /// Current state root
+    pub state_root: Hash,
+    /// Last updated timestamp
+    pub last_updated: Instant,
+}
+
+/// Shard manager for blockchain
+pub struct ShardManager {
+    /// Shard configuration
+    config: ShardingConfig, // Changed to ShardingConfig
+    /// Local shard ID
+    local_shard_id: ShardId,
+    /// All shards
+    shards: Arc<RwLock<HashMap<ShardId, ShardInfo>>>,
+    /// Storage
+    storage: Arc<dyn Storage>,
+    /// Cross-shard transactions pending
+    pending_cross_shard: Arc<RwLock<HashMap<String, CrossShardStatus>>>,
+}
+
+impl ShardManager {
+    /// Create a new shard manager
+    pub fn new(config: ShardingConfig, local_shard_id: ShardId, storage: Arc<dyn Storage>) -> Self {
+        Self {
+            config,
+            local_shard_id,
+            shards: Arc::new(RwLock::new(HashMap::new())),
+            storage,
+            pending_cross_shard: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Get the local shard ID
+    pub fn get_local_shard_id(&self) -> ShardId {
+        self.local_shard_id
+    }
+
+    /// Register a new shard
+    pub fn register_shard(&self, info: ShardInfo) -> Result<()> {
+        let mut shards = self.shards.write().unwrap();
+        shards.insert(info.id, info);
+        Ok(())
+    }
+
+    /// Get information about a shard
+    pub fn get_shard_info(&self, shard_id: ShardId) -> Option<ShardInfo> {
+        self.shards.read().unwrap().get(&shard_id).cloned()
+    }
+
+    /// Get all shard IDs
+    pub fn get_all_shard_ids(&self) -> Vec<ShardId> {
+        self.shards.read().unwrap().keys().cloned().collect()
+    }
+
+    /// Check if transaction belongs to this shard
+    pub fn is_transaction_for_this_shard(&self, tx_id: &str) -> bool {
+        // Simple hash-based sharding
+        let hash = tx_id
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_add(b as u64));
+        let shard_id = hash % self.config.shard_count as u64;
+        shard_id == self.local_shard_id
+    }
+
+    /// Add a pending cross-shard transaction
+    pub fn add_pending_cross_shard_tx(&self, tx_id: String) -> Result<()> {
+        let mut pending = self.pending_cross_shard.write().unwrap();
+        pending.insert(tx_id, CrossShardStatus::Pending);
+        Ok(())
+    }
+
+    /// Update the status of a cross-shard transaction
+    pub fn update_cross_shard_status(&self, tx_id: &str, status: CrossShardStatus) -> Result<()> {
+        let mut pending = self.pending_cross_shard.write().unwrap();
+        if let Some(tx_status) = pending.get_mut(tx_id) {
+            *tx_status = status;
+            Ok(())
+        } else {
+            Err(anyhow!("Transaction not found: {}", tx_id))
+        }
+    }
+
+    /// Get the status of a cross-shard transaction
+    pub fn get_cross_shard_status(&self, tx_id: &str) -> Option<CrossShardStatus> {
+        self.pending_cross_shard.read().unwrap().get(tx_id).cloned()
+    }
+
+    /// Determine which shard a transaction should be assigned to
+    pub fn assign_transaction_to_shard(&self, tx: &crate::ledger::transaction::Transaction) -> u32 {
+        // Simple hash-based assignment
+        let sender_bytes = tx.sender.as_bytes();
+        let hash_value = sender_bytes
+            .iter()
+            .fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
+        hash_value % (self.config.shard_count as u32)
+    }
+
+    /// Get all shards involved in a transaction
+    pub fn get_involved_shards(&self, tx: &crate::ledger::transaction::Transaction) -> Vec<u32> {
+        let shard = self.assign_transaction_to_shard(tx);
+        vec![shard]
+    }
+}
+
+/// Shard allocation strategy
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShardAllocationStrategy {
+    /// Round-robin allocation
+    RoundRobin,
+    /// Account-based allocation
+    AccountBased,
+    /// Transaction type based allocation
+    TransactionTypeBased,
+    /// Geographic allocation
+    Geographic,
+    /// Custom allocation
+    Custom(String),
+}
+
+mod shard;
 
 /// Defines the shard assignment strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +187,8 @@ pub struct ShardingConfig {
     pub enable_cross_shard: bool,
     /// Maximum number of pending cross-shard references
     pub max_pending_cross_shard_refs: usize,
+    /// Number of shards (for backward compatibility)
+    pub num_shards: u64,
 }
 
 impl Default for ShardingConfig {
@@ -41,48 +198,22 @@ impl Default for ShardingConfig {
             assignment_strategy: ShardAssignmentStrategy::AccountRange,
             enable_cross_shard: true,
             max_pending_cross_shard_refs: 1000,
+            num_shards: 128,
         }
     }
-}
-
-/// Status of a cross-shard transaction
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum CrossShardStatus {
-    /// Waiting for confirmation from other shards
-    Pending,
-    /// Confirmed by all involved shards
-    Confirmed,
-    /// Rejected by at least one shard
-    Rejected,
-    /// Timed out waiting for confirmation
-    TimedOut,
 }
 
 /// Represents a cross-shard transaction reference
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CrossShardReference {
     /// Hash of the transaction
-    pub tx_hash: Hash,
+    pub tx_hash: String,
     /// Shards involved in this transaction
     pub involved_shards: Vec<u32>,
     /// Current status of the transaction
     pub status: CrossShardStatus,
     /// Block height when this reference was created
     pub created_at_height: u64,
-}
-
-/// Main sharding manager that handles shard assignment and cross-shard coordination
-pub struct ShardManager {
-    /// Configuration for the sharding system
-    config: ShardingConfig,
-    /// The ID of the current shard
-    shard_id: u32,
-    /// Pending cross-shard references
-    pending_refs: Arc<RwLock<HashMap<Hash, CrossShardReference>>>,
-    /// Channel for receiving cross-shard messages
-    cross_shard_rx: mpsc::Receiver<CrossShardMessage>,
-    /// Channel for sending cross-shard messages
-    cross_shard_tx: mpsc::Sender<CrossShardMessage>,
 }
 
 /// Message for cross-shard communication
@@ -113,315 +244,24 @@ pub enum CrossShardMessageType {
     SyncRequest,
     /// Response to a sync request
     SyncResponse,
-}
-
-/// Optimized cross-shard transaction manager for ultra-high throughput
-pub struct OptimizedCrossShardManager {
-    config: ShardingConfig,
-    shard_id: u32,
-    // Lock-free concurrent map for better performance
-    pending_refs: dashmap::DashMap<Hash, CrossShardReference>,
-    // Optimized channels with larger buffer for higher throughput
-    cross_shard_rx: mpsc::Receiver<CrossShardMessage>,
-    cross_shard_tx: mpsc::Sender<CrossShardMessage>,
-    // Batch processing of cross-shard messages
-    batch_size: usize,
-    // Pre-allocated buffers for message serialization
-    message_buffers: Vec<Vec<u8>>,
-}
-
-impl ShardManager {
-    /// Create a new shard manager
-    pub fn new(config: ShardingConfig, shard_id: u32) -> Self {
-        let (cross_shard_tx, cross_shard_rx) = mpsc::channel(100);
-        
-        Self {
-            config,
-            shard_id,
-            pending_refs: Arc::new(RwLock::new(HashMap::new())),
-            cross_shard_rx,
-            cross_shard_tx,
-        }
-    }
-    
-    /// Get the sender for cross-shard messages
-    pub fn get_sender(&self) -> mpsc::Sender<CrossShardMessage> {
-        self.cross_shard_tx.clone()
-    }
-    
-    /// Assign a transaction to a shard based on the configured strategy
-    pub fn assign_transaction_to_shard(&self, tx: &Transaction) -> u32 {
-        match self.config.assignment_strategy {
-            ShardAssignmentStrategy::AccountRange => {
-                // Simple hash-based assignment
-                let sender_bytes = tx.sender.as_bytes();
-                let hash_value = sender_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-                hash_value % (self.config.shard_count as u32)
-            },
-            ShardAssignmentStrategy::TransactionType => {
-                // Assign based on transaction type
-                match tx.tx_type {
-                    TransactionType::Transfer => 0, // Standard transactions go to shard 0
-                    TransactionType::Deploy => 1, // Contract creation to shard 1
-                    TransactionType::Call => 2, // Contract call to shard 2
-                    _ => {
-                        // Create a hash from the transaction type string representation
-                        let type_str = format!("{:?}", tx.tx_type);
-                        let type_bytes = type_str.as_bytes();
-                        let hash_value = type_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-                        hash_value % (self.config.shard_count as u32)
-                    },
-                }
-            },
-            ShardAssignmentStrategy::Geographic => {
-                // This would require additional metadata in transactions
-                // For now, fall back to account range
-                let sender_bytes = tx.sender.as_bytes();
-                let hash_value = sender_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-                hash_value % (self.config.shard_count as u32)
-            },
-            ShardAssignmentStrategy::Random => {
-                // Simple hash-based pseudo-random assignment
-                let tx_hash = tx.hash();
-                let hash_bytes = tx_hash.as_bytes();
-                let hash_value = hash_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-                hash_value % (self.config.shard_count as u32)
-            },
-        }
-    }
-    
-    /// Determine if a transaction is cross-shard
-    pub fn is_cross_shard_transaction(&self, tx: &Transaction) -> bool {
-        if !self.config.enable_cross_shard {
-            return false;
-        }
-        
-        let sender_shard = self.assign_transaction_to_shard(tx);
-        
-        // Check if recipient is in a different shard
-        let recipient_bytes = tx.recipient.as_bytes();
-        let hash_value = recipient_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-        let recipient_shard = hash_value % (self.config.shard_count as u32);
-        
-        sender_shard != recipient_shard
-    }
-    
-    /// Get all shards involved in a transaction
-    pub fn get_involved_shards(&self, tx: &Transaction) -> Vec<u32> {
-        let mut shards = HashSet::new();
-        
-        // Add sender's shard
-        shards.insert(self.assign_transaction_to_shard(tx));
-        
-        // Add recipient's shard
-        let recipient_bytes = tx.recipient.as_bytes();
-        let hash_value = recipient_bytes.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
-        let recipient_shard = hash_value % (self.config.shard_count as u32);
-        shards.insert(recipient_shard);
-        
-        shards.into_iter().collect()
-    }
-    
-    /// Register a new cross-shard transaction
-    pub fn register_cross_shard_tx(&self, tx: &Transaction, block_height: u64) -> Result<()> {
-        if !self.config.enable_cross_shard {
-            return Err(anyhow!("Cross-shard transactions are disabled"));
-        }
-        
-        let involved_shards = self.get_involved_shards(tx);
-        if involved_shards.len() <= 1 {
-            return Err(anyhow!("Not a cross-shard transaction"));
-        }
-        
-        let tx_hash_str = tx.hash();
-        // Convert String hash to Hash type
-        let tx_hash = Hash::from_hex(&tx_hash_str).unwrap_or_default();
-        
-        // Create cross-shard reference
-        let cross_ref = CrossShardReference {
-            tx_hash: tx_hash.clone(),
-            involved_shards,
-            status: CrossShardStatus::Pending,
-            created_at_height: block_height,
-        };
-        
-        // Store in pending references
-        {
-            let mut pending_refs = self.pending_refs.write().map_err(|_| anyhow!("Lock poisoned"))?;
-            if pending_refs.len() >= self.config.max_pending_cross_shard_refs {
-                return Err(anyhow!("Too many pending cross-shard references"));
-            }
-            pending_refs.insert(tx_hash, cross_ref);
-        }
-        
-        Ok(())
-    }
-    
-    /// Process an incoming cross-shard message
-    pub async fn process_cross_shard_message(&mut self, message: CrossShardMessage) -> Result<()> {
-        // Only process messages intended for this shard
-        if message.to_shard != self.shard_id {
-            return Ok(());
-        }
-        
-        match message.message_type {
-            CrossShardMessageType::TransactionNotification => {
-                // Handle notification of a new cross-shard transaction
-                if let Some(tx_hash) = message.tx_hash {
-                    // Validate the transaction (would need more context)
-                    // For now, just send a confirmation back
-                    let confirmation = CrossShardMessage {
-                        from_shard: self.shard_id,
-                        to_shard: message.from_shard,
-                        message_type: CrossShardMessageType::TransactionConfirmation,
-                        tx_hash: Some(tx_hash),
-                        block_hash: None,
-                    };
-                    
-                    self.cross_shard_tx.send(confirmation).await
-                        .map_err(|_| anyhow!("Failed to send cross-shard confirmation"))?;
-                }
-            },
-            CrossShardMessageType::TransactionConfirmation => {
-                // Update the status of a cross-shard transaction
-                if let Some(tx_hash) = message.tx_hash {
-                    let mut pending_refs = self.pending_refs.write().map_err(|_| anyhow!("Lock poisoned"))?;
-                    if let Some(cross_ref) = pending_refs.get_mut(&tx_hash) {
-                        cross_ref.status = CrossShardStatus::Confirmed;
-                    }
-                }
-            },
-            CrossShardMessageType::TransactionRejection => {
-                // Mark the transaction as rejected
-                if let Some(tx_hash) = message.tx_hash {
-                    let mut pending_refs = self.pending_refs.write().map_err(|_| anyhow!("Lock poisoned"))?;
-                    if let Some(cross_ref) = pending_refs.get_mut(&tx_hash) {
-                        cross_ref.status = CrossShardStatus::Rejected;
-                    }
-                }
-            },
-            CrossShardMessageType::SyncRequest => {
-                // Handle request for sync (would need more context)
-                // For example, might need to send blocks or state
-            },
-            CrossShardMessageType::SyncResponse => {
-                // Process sync response (would need more context)
-                // For example, might need to update local state
-            },
-        }
-        
-        Ok(())
-    }
-    
-    /// Start processing cross-shard messages
-    pub async fn start_message_processing(&mut self) -> Result<()> {
-        while let Some(message) = self.cross_shard_rx.recv().await {
-            if let Err(e) = self.process_cross_shard_message(message).await {
-                eprintln!("Error processing cross-shard message: {}", e);
-            }
-        }
-        
-        Ok(())
-    }
-    
-    /// Clean up timed-out cross-shard references
-    pub fn cleanup_timed_out_refs(&self, current_height: u64, timeout_blocks: u64) -> Result<()> {
-        let mut pending_refs = self.pending_refs.write().map_err(|_| anyhow!("Lock poisoned"))?;
-        
-        let timed_out_keys: Vec<Hash> = pending_refs
-            .iter()
-            .filter(|(_, reference)| {
-                reference.status == CrossShardStatus::Pending &&
-                current_height >= reference.created_at_height + timeout_blocks
-            })
-            .map(|(key, _)| key.clone())
-            .collect();
-        
-        for key in timed_out_keys {
-            if let Some(reference) = pending_refs.get_mut(&key) {
-                reference.status = CrossShardStatus::TimedOut;
-            }
-        }
-        
-        Ok(())
-    }
-}
-
-impl OptimizedCrossShardManager {
-    pub fn new(config: ShardingConfig, shard_id: u32) -> Self {
-        // Large channel buffer for high throughput
-        let (cross_shard_tx, cross_shard_rx) = mpsc::channel(10000);
-        
-        Self {
-            config,
-            shard_id,
-            pending_refs: dashmap::DashMap::new(),
-            cross_shard_rx,
-            cross_shard_tx,
-            batch_size: 1000,
-            message_buffers: (0..64).map(|_| Vec::with_capacity(4096)).collect(),
-        }
-    }
-    
-    /// Process cross-shard messages in batches for higher throughput
-    pub async fn process_messages_batch(&mut self) -> Result<()> {
-        let mut batch = Vec::with_capacity(self.batch_size);
-        
-        // Collect messages into batch
-        for _ in 0..self.batch_size {
-            if let Ok(message) = self.cross_shard_rx.try_recv() {
-                batch.push(message);
-            } else {
-                break;
-            }
-        }
-        
-        // Process batch in parallel
-        let results = futures::future::join_all(
-            batch.into_iter().map(|message| self.process_single_message(message))
-        ).await;
-        
-        // Check results
-        for result in results {
-            if let Err(e) = result {
-                log::warn!("Error processing cross-shard message: {}", e);
-            }
-        }
-        
-        Ok(())
-    }
-    
-    async fn process_single_message(&self, message: CrossShardMessage) -> Result<()> {
-        // Only process messages intended for this shard
-        if message.to_shard != self.shard_id {
-            return Ok(());
-        }
-        
-        // Rest of message processing logic
-        match message.message_type {
-            CrossShardMessageType::TransactionNotification => {
-                // Process transaction notification
-                if let Some(tx_hash) = message.tx_hash {
-                    // Mark as seen from source shard
-                    if let Some(mut entry) = self.pending_refs.get_mut(&tx_hash) {
-                        // Update status atomically
-                        // No need for full lock acquisition
-                    }
-                }
-            }
-            // Other message types...
-            _ => {}
-        }
-        
-        Ok(())
-    }
+    /// Transaction between shards
+    Transaction {
+        /// Transaction ID
+        tx_id: String,
+        /// Source account
+        source: String,
+        /// Destination account
+        destination: String,
+        /// Amount
+        amount: u64,
+    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ledger::transaction::{Transaction, TransactionType};
-    
+
     // This is a placeholder for the Transaction struct if it doesn't exist yet
     #[cfg(test)]
     impl Transaction {
@@ -433,21 +273,21 @@ mod tests {
                 2 => TransactionType::Call,
                 _ => TransactionType::Transfer,
             };
-            
+
             Transaction::new(
                 transaction_type,
                 sender.to_string(),
                 recipient_str,
                 amount,
-                0, // nonce
-                10, // gas_price
-                1000, // gas_limit
+                0,      // nonce
+                10,     // gas_price
+                1000,   // gas_limit
                 vec![], // data
                 vec![], // signature
             )
         }
     }
-    
+
     #[test]
     fn test_shard_assignment() {
         let config = ShardingConfig {
@@ -455,45 +295,85 @@ mod tests {
             assignment_strategy: ShardAssignmentStrategy::AccountRange,
             enable_cross_shard: true,
             max_pending_cross_shard_refs: 100,
+            num_shards: 4,
         };
-        
-        let shard_manager = ShardManager::new(config, 0);
-        
+
+        let shard_manager = ShardManager::new(config, 0, Arc::new(MockStorage {}));
+
         let tx1 = Transaction::new_test("user1", Some("user2"), 100, 0);
         let tx2 = Transaction::new_test("user3", Some("user4"), 200, 1);
-        
+
         let shard1 = shard_manager.assign_transaction_to_shard(&tx1);
         let shard2 = shard_manager.assign_transaction_to_shard(&tx2);
-        
+
         assert!(shard1 < 4, "Shard ID should be less than shard count");
         assert!(shard2 < 4, "Shard ID should be less than shard count");
     }
-    
+
     #[test]
     fn test_cross_shard_detection() {
         // This is a simplified test that would need to be adjusted based on actual implementation
         // It assumes that certain addresses will hash to different shards
         let config = ShardingConfig::default();
-        let shard_manager = ShardManager::new(config, 0);
-        
+        let shard_manager = ShardManager::new(config, 0, Arc::new(MockStorage {}));
+
         // These addresses are chosen to likely hash to different shards
         let tx = Transaction::new_test(
-            "0x1111111111111111111111111111111111111111", 
-            Some("0x9999999999999999999999999999999999999999"), 
-            100, 
-            0
+            "0x1111111111111111111111111111111111111111",
+            Some("0x9999999999999999999999999999999999999999"),
+            100,
+            0,
         );
-        
+
         let involved_shards = shard_manager.get_involved_shards(&tx);
-        assert!(involved_shards.len() > 0, "Should determine involved shards");
+        assert!(
+            involved_shards.len() > 0,
+            "Should determine involved shards"
+        );
+    }
+
+    // Mock storage for tests
+    struct MockStorage {}
+
+    #[async_trait::async_trait]
+    impl Storage for MockStorage {
+        async fn store(&self, _data: &[u8]) -> std::result::Result<Hash, StorageError> {
+            Ok(Hash::new(vec![0; 32]))
+        }
+
+        async fn retrieve(
+            &self,
+            _hash: &Hash,
+        ) -> std::result::Result<Option<Vec<u8>>, StorageError> {
+            Ok(None)
+        }
+
+        async fn exists(&self, _hash: &Hash) -> std::result::Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn delete(&self, _hash: &Hash) -> std::result::Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn verify(
+            &self,
+            _hash: &Hash,
+            _data: &[u8],
+        ) -> std::result::Result<bool, StorageError> {
+            Ok(true)
+        }
+
+        async fn close(&self) -> std::result::Result<(), StorageError> {
+            Ok(())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
     }
 }
-
-// Comment out this implementation as it's already defined elsewhere
-// impl Hash {
-//     /// Create a Hash from a hexadecimal string
-//     pub fn from_hex(hex_string: &str) -> Result<Self> {
-//         let bytes = hex::decode(hex_string)?;
-//         Ok(Self(bytes))
-//     }
-// } 
