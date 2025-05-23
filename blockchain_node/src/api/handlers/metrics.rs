@@ -1,8 +1,5 @@
 use crate::api::metrics::MetricsService;
-use axum::{
-    extract::Extension,
-    response::Json,
-};
+use axum::{extract::Extension, response::Json};
 use serde::Serialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -32,7 +29,7 @@ pub async fn get_metrics(
         Err(e) => Json(json!({
             "status": "error",
             "message": e.to_string()
-        }))
+        })),
     }
 }
 
@@ -46,4 +43,4 @@ pub async fn get_tps(
             "tps": metrics.get_current_tps()
         }
     }))
-} 
+}

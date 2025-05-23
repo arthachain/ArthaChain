@@ -1,8 +1,8 @@
+use crate::ai_engine::data_chunking::ChunkingConfig;
+use crate::ledger::state::ShardConfig;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use anyhow::Result;
-use crate::ledger::state::ShardConfig;
-use crate::ai_engine::data_chunking::ChunkingConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -90,7 +90,7 @@ impl ShardConfig for Config {
     fn get_shard_id(&self) -> u64 {
         self.sharding.shard_id
     }
-    
+
     fn get_genesis_config(&self) -> Option<&Config> {
         if self.is_genesis {
             Some(self)
@@ -98,15 +98,15 @@ impl ShardConfig for Config {
             None
         }
     }
-    
+
     fn is_sharding_enabled(&self) -> bool {
         self.sharding.enabled
     }
-    
+
     fn get_shard_count(&self) -> u32 {
         self.sharding.shard_count
     }
-    
+
     fn get_primary_shard(&self) -> u32 {
         self.sharding.primary_shard
     }
@@ -185,7 +185,7 @@ impl Config {
         // Implementation omitted for brevity
         Ok(Self::new())
     }
-    
+
     /// Save configuration to a file
     pub fn save_to_file(&self, _path: &str) -> Result<()> {
         // Implementation omitted for brevity
@@ -222,4 +222,4 @@ impl Default for ApiConfig {
             enable_graphql: false,
         }
     }
-} 
+}

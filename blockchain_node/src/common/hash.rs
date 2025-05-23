@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
-use std::fmt;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use hex;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Hash type representing a 32-byte cryptographic hash
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -12,32 +12,38 @@ impl Hash {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
-    
+
     /// Get raw bytes of the hash
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
-    
+
     /// Create a Hash from a byte slice
     /// Returns error if slice length is not 32 bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(anyhow!("Invalid hash length. Expected 32 bytes, got {}", bytes.len()));
+            return Err(anyhow!(
+                "Invalid hash length. Expected 32 bytes, got {}",
+                bytes.len()
+            ));
         }
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(bytes);
         Ok(Self(hash_bytes))
     }
-    
+
     /// Create a Hash from a hex string
     pub fn from_hex(hex_str: &str) -> Result<Self> {
         if hex_str.len() != 64 {
-            return Err(anyhow!("Invalid hash hex length. Expected 64 chars, got {}", hex_str.len()));
+            return Err(anyhow!(
+                "Invalid hash hex length. Expected 64 chars, got {}",
+                hex_str.len()
+            ));
         }
         let bytes = hex::decode(hex_str)?;
         Self::from_bytes(&bytes)
     }
-    
+
     /// Convert to hexadecimal string
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
@@ -120,4 +126,4 @@ mod tests {
         let back_to_vec: Vec<u8> = hash.into();
         assert_eq!(bytes, back_to_vec);
     }
-} 
+}

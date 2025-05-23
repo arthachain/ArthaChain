@@ -979,18 +979,20 @@ impl SecurityAI {
         let state = self.state.clone();
         let node_scores = self.node_scores.clone();
         let transaction_scores = self.transaction_scores.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = time::interval(interval);
             loop {
                 interval.tick().await;
-                
-                if let Err(e) = update_security_scores(&state, &node_scores, &transaction_scores).await {
+
+                if let Err(e) =
+                    update_security_scores(&state, &node_scores, &transaction_scores).await
+                {
                     warn!("Failed to update security scores: {}", e);
                 }
             }
         });
-        
+
         Ok(())
     }
 }

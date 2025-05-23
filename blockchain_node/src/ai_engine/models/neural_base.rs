@@ -12,6 +12,7 @@ pub struct NeuralBase {
     /// Python model object
     model: Arc<RwLock<Py<PyAny>>>,
     /// Model configuration
+    #[allow(dead_code)]
     config: NeuralConfig,
     /// Learning state
     learning_state: LearningState,
@@ -291,6 +292,7 @@ impl NeuralBase {
     }
 
     /// Adapt model architecture based on performance
+    #[allow(unused)]
     fn adapt_architecture(&self, metrics: &HashMap<String, f32>) -> Result<()> {
         Python::with_gil(|py| {
             let model_guard = self.model.blocking_read();

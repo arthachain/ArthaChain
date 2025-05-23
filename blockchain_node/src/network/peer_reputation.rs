@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::RwLock;
 use anyhow::Result;
-use log::warn;
 use libp2p::PeerId;
-use serde::{Serialize, Deserialize};
+use log::warn;
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 // Custom timestamp type that can be serialized/deserialized
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -14,16 +14,18 @@ pub struct Timestamp(pub u64);
 
 impl Timestamp {
     pub fn now() -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
         Timestamp(now.as_secs())
     }
-    
+
     pub fn to_instant(&self) -> Instant {
         // This is a simplification as Instant doesn't have a direct conversion from timestamp
         // In a real implementation, you might track when the process started to create relative instants
         Instant::now()
     }
-    
+
     pub fn from_instant(_instant: Instant) -> Self {
         // Since Instant doesn't expose its internal time, we use current time
         // In a real implementation, you'd track relative time from process start
@@ -161,9 +163,9 @@ impl PeerReputationManager {
     async fn calculate_score(&self, peer_id: &PeerId) -> Result<ReputationScore> {
         let metrics = self.metrics.read().await;
         let peer_metrics = metrics.get(peer_id).cloned().unwrap_or_default();
-        
+
         let mut score = ReputationScore::default();
-        
+
         // Calculate uptime score
         score.uptime = if peer_metrics.total_errors > 0 {
             1.0 / (1.0 + peer_metrics.total_errors as f64)
@@ -187,14 +189,16 @@ impl PeerReputationManager {
 
         // Calculate transaction relay score
         score.transaction_relay = if peer_metrics.total_transactions_relayed > 0 {
-            1.0 - (peer_metrics.total_errors as f64 / peer_metrics.total_transactions_relayed as f64)
+            1.0 - (peer_metrics.total_errors as f64
+                / peer_metrics.total_transactions_relayed as f64)
         } else {
             0.0
         };
 
         // Calculate validation score
         score.validation = if peer_metrics.total_blocks_validated > 0 {
-            1.0 - (peer_metrics.total_blocks_invalid as f64 / peer_metrics.total_blocks_validated as f64)
+            1.0 - (peer_metrics.total_blocks_invalid as f64
+                / peer_metrics.total_blocks_validated as f64)
         } else {
             0.0
         };
@@ -207,14 +211,13 @@ impl PeerReputationManager {
         };
 
         // Calculate overall score
-        score.overall = (
-            score.uptime * 0.2 +
-            score.response_time * 0.2 +
-            score.block_propagation * 0.2 +
-            score.transaction_relay * 0.15 +
-            score.validation * 0.15 +
-            score.bandwidth * 0.1
-        ) * self.config.max_score;
+        score.overall = (score.uptime * 0.2
+            + score.response_time * 0.2
+            + score.block_propagation * 0.2
+            + score.transaction_relay * 0.15
+            + score.validation * 0.15
+            + score.bandwidth * 0.1)
+            * self.config.max_score;
 
         score.last_updated = Timestamp::now();
         Ok(score)
@@ -223,7 +226,7 @@ impl PeerReputationManager {
     /// Update peer reputation
     pub async fn update_reputation(&self, peer_id: &PeerId) -> Result<()> {
         let score = self.calculate_score(peer_id).await?;
-        
+
         // Update score
         let mut scores = self.scores.write().await;
         scores.insert(*peer_id, score.clone());
@@ -232,7 +235,7 @@ impl PeerReputationManager {
         let mut history = self.history.write().await;
         let peer_history = history.entry(*peer_id).or_insert_with(Vec::new);
         peer_history.push((Timestamp::now(), score.overall));
-        
+
         // Trim history if needed
         if peer_history.len() > self.config.history_size {
             peer_history.remove(0);
@@ -250,7 +253,10 @@ impl PeerReputationManager {
         if score.overall <= self.config.ban_threshold {
             let mut banned = self.banned_peers.write().await;
             banned.insert(*peer_id);
-            warn!("Peer {} banned due to low reputation score: {}", peer_id, score.overall);
+            warn!(
+                "Peer {} banned due to low reputation score: {}",
+                peer_id, score.overall
+            );
         }
 
         Ok(())
@@ -278,16 +284,21 @@ impl PeerReputationManager {
 
     /// Get peer reputation history
     pub async fn get_history(&self, peer_id: &PeerId) -> Vec<(Timestamp, f64)> {
-        self.history.read().await.get(peer_id).cloned().unwrap_or_default()
+        self.history
+            .read()
+            .await
+            .get(peer_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Decay reputation scores over time
     pub async fn decay_scores(&self) -> Result<()> {
         let mut scores = self.scores.write().await;
         for (_, score) in scores.iter_mut() {
-            let decay = self.config.score_decay_rate * 
-                (Timestamp::now().to_instant() - score.last_updated.to_instant()).as_secs_f64() / 
-                self.config.update_interval.as_secs_f64();
+            let decay = self.config.score_decay_rate
+                * (Timestamp::now().to_instant() - score.last_updated.to_instant()).as_secs_f64()
+                / self.config.update_interval.as_secs_f64();
             score.overall = (score.overall - decay).max(self.config.min_score);
         }
         Ok(())
@@ -318,32 +329,32 @@ impl PeerReputation {
             failed_requests: 0,
         }
     }
-    
+
     pub fn update_score(&mut self, delta: f64) {
         self.score += delta;
         self.last_updated = Timestamp::now();
     }
-    
+
     pub fn add_warning(&mut self) {
         self.score -= 0.5;
         self.last_updated = Timestamp::now();
     }
-    
+
     pub fn ban(&mut self, _duration: Duration) {
         self.score = 0.0;
         // Calculate ban expiration by adding duration to current time
         self.last_updated = Timestamp::now();
     }
-    
+
     pub fn is_banned(&self) -> bool {
         self.score <= 0.0
     }
-    
+
     pub fn record_connection(&mut self) {
         self.connection_count += 1;
         self.last_seen = Timestamp::now();
     }
-    
+
     pub fn clear_ban(&mut self) {
         self.score = 1.0;
         self.last_updated = Timestamp::now();
@@ -411,4 +422,4 @@ mod tests {
         // We just check that they're different
         assert_ne!(new_score.overall, score.overall);
     }
-} 
+}

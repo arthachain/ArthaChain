@@ -119,6 +119,7 @@ impl Ord for ProposerCandidate {
 }
 
 /// Calculate target based on difficulty
+#[allow(dead_code)]
 fn calculate_target(difficulty: u64) -> [u8; 32] {
     let mut target = [0xFF; 32]; // Start with the easiest target (all 1s)
 
@@ -1051,11 +1052,13 @@ impl SVCPMiner {
     }
 
     /// Standard hash verification (fallback)
+    #[allow(dead_code)]
     fn verify_hash_standard(&self, hash: &[u8], target: &[u8]) -> bool {
         hash.iter().zip(target.iter()).all(|(h, t)| h <= t)
     }
 
     /// Mine a block with optimized verification
+    #[allow(dead_code)]
     async fn mine_block_optimized(
         &self,
         mut block: Block,
@@ -1359,6 +1362,7 @@ impl SVCPConsensus {
 /// Cross-shard consensus interface to avoid being gated by feature flags
 pub struct CrossShardConsensus {
     /// Parent consensus instance
+    #[allow(dead_code)]
     consensus: Arc<SVCPConsensus>,
 }
 

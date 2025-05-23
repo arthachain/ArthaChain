@@ -1,6 +1,8 @@
-use crate::config::{Config, NetworkConfig, ConsensusConfig, StorageConfig, ApiConfig, ShardingConfig};
-use std::path::PathBuf;
 use crate::ai_engine::data_chunking::ChunkingConfig;
+use crate::config::{
+    ApiConfig, Config, ConsensusConfig, NetworkConfig, ShardingConfig, StorageConfig,
+};
+use std::path::PathBuf;
 
 pub fn mock_config() -> Config {
     Config {
@@ -67,4 +69,4 @@ pub fn mock_config() -> Config {
         },
         chunking_config: ChunkingConfig::default(),
     }
-} 
+}

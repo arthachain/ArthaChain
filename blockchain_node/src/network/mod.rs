@@ -16,7 +16,6 @@ use custom_udp::{
     Message, MessageType, NetworkConfig, NetworkStats as CustomNetworkStats, UdpNetwork,
 };
 use log::{info, warn};
-use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -71,6 +70,7 @@ struct Peer {
     // Peer implementation details
 }
 
+#[allow(dead_code)]
 struct LocalNetworkStats {
     active_connections: usize,
     bytes_sent: u64,

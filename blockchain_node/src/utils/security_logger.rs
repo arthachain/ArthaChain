@@ -1,12 +1,12 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use serde::{Serialize, Deserialize};
-use log::{error, warn, info, debug};
+use anyhow::{Context, Result};
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
-use std::path::Path;
 use std::io::Write;
-use anyhow::{Result, Context};
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 
 /// Security event severity levels
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,21 +80,21 @@ impl SecurityLogger {
         if let Some(parent) = Path::new(log_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         // Create or open the log file to ensure it's writable
         let _file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(log_path)
             .context("Failed to open security log file")?;
-        
+
         Ok(Self {
             log_path: log_path.to_string(),
             recent_events: Arc::new(Mutex::new(Vec::with_capacity(max_events))),
             max_events,
         })
     }
-    
+
     /// Log a security event
     pub async fn log_event(
         &self,
@@ -108,7 +108,7 @@ impl SecurityLogger {
             .duration_since(UNIX_EPOCH)
             .context("Time went backwards")?
             .as_secs();
-        
+
         let event = SecurityEvent {
             timestamp: now,
             level,
@@ -117,43 +117,43 @@ impl SecurityLogger {
             message: message.to_string(),
             data,
         };
-        
+
         // Log to standard logger based on severity
         match level {
             SecurityLevel::Critical | SecurityLevel::High => {
                 error!(
                     "[SECURITY][{:?}] {}: {}",
-                    category, 
-                    node_id.unwrap_or("-"), 
+                    category,
+                    node_id.unwrap_or("-"),
                     message
                 );
             }
             SecurityLevel::Medium => {
                 warn!(
                     "[SECURITY][{:?}] {}: {}",
-                    category, 
-                    node_id.unwrap_or("-"), 
+                    category,
+                    node_id.unwrap_or("-"),
                     message
                 );
             }
             SecurityLevel::Low => {
                 info!(
                     "[SECURITY][{:?}] {}: {}",
-                    category, 
-                    node_id.unwrap_or("-"), 
+                    category,
+                    node_id.unwrap_or("-"),
                     message
                 );
             }
             SecurityLevel::Info => {
                 debug!(
                     "[SECURITY][{:?}] {}: {}",
-                    category, 
-                    node_id.unwrap_or("-"), 
+                    category,
+                    node_id.unwrap_or("-"),
                     message
                 );
             }
         }
-        
+
         // Write to log file
         let event_json = serde_json::to_string(&event)?;
         let mut file = OpenOptions::new()
@@ -161,50 +161,52 @@ impl SecurityLogger {
             .append(true)
             .open(&self.log_path)
             .context("Failed to open security log file")?;
-        
-        writeln!(file, "{}", event_json)
-            .context("Failed to write to security log file")?;
-        
+
+        writeln!(file, "{}", event_json).context("Failed to write to security log file")?;
+
         // Update in-memory cache
         let mut events = self.recent_events.lock().await;
         events.push(event);
-        
+
         // Trim if exceeding max size
         if events.len() > self.max_events {
             events.remove(0);
         }
-        
+
         Ok(())
     }
-    
+
     /// Get recent security events
     pub async fn get_recent_events(&self) -> Vec<SecurityEvent> {
         let events = self.recent_events.lock().await;
         events.clone()
     }
-    
+
     /// Get recent events by security level
     pub async fn get_events_by_level(&self, level: SecurityLevel) -> Vec<SecurityEvent> {
         let events = self.recent_events.lock().await;
-        events.iter()
+        events
+            .iter()
             .filter(|e| e.level == level)
             .cloned()
             .collect()
     }
-    
+
     /// Get recent events by category
     pub async fn get_events_by_category(&self, category: SecurityCategory) -> Vec<SecurityEvent> {
         let events = self.recent_events.lock().await;
-        events.iter()
+        events
+            .iter()
             .filter(|e| e.category == category)
             .cloned()
             .collect()
     }
-    
+
     /// Get events for a specific node
     pub async fn get_events_by_node(&self, node_id: &str) -> Vec<SecurityEvent> {
         let events = self.recent_events.lock().await;
-        events.iter()
+        events
+            .iter()
             .filter(|e| e.node_id.as_deref() == Some(node_id))
             .cloned()
             .collect()
@@ -215,38 +217,38 @@ impl SecurityLogger {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    
+
     #[tokio::test]
     async fn test_security_logger() {
         let temp_dir = tempdir().unwrap();
         let log_path = temp_dir.path().join("security.log");
-        
-        let logger = SecurityLogger::new(
-            log_path.to_str().unwrap(),
-            100
-        ).unwrap();
-        
+
+        let logger = SecurityLogger::new(log_path.to_str().unwrap(), 100).unwrap();
+
         // Log a test event
-        logger.log_event(
-            SecurityLevel::Medium,
-            SecurityCategory::Consensus,
-            Some("test-node"),
-            "Suspicious block proposal",
-            serde_json::json!({
-                "block_height": 1000,
-                "hash": "0x1234567890abcdef"
-            })
-        ).await.unwrap();
-        
+        logger
+            .log_event(
+                SecurityLevel::Medium,
+                SecurityCategory::Consensus,
+                Some("test-node"),
+                "Suspicious block proposal",
+                serde_json::json!({
+                    "block_height": 1000,
+                    "hash": "0x1234567890abcdef"
+                }),
+            )
+            .await
+            .unwrap();
+
         // Verify event was recorded
         let events = logger.get_recent_events().await;
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].level, SecurityLevel::Medium);
         assert_eq!(events[0].category, SecurityCategory::Consensus);
         assert_eq!(events[0].node_id, Some("test-node".to_string()));
-        
+
         // Verify file was written
         let content = std::fs::read_to_string(log_path).unwrap();
         assert!(content.contains("Suspicious block proposal"));
     }
-} 
+}

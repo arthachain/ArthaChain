@@ -1,8 +1,8 @@
+use crate::config::Config;
 use crate::ledger::block::{Block, BlockExt};
+use crate::ledger::state::State;
 use crate::ledger::transaction::{Transaction, TransactionType};
 use crate::types::Hash;
-use crate::ledger::state::State;
-use crate::config::Config;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -22,9 +22,9 @@ mod tests {
             recipient.to_string(),
             amount,
             nonce,
-            10, // gas_price
-            1000, // gas_limit
-            vec![], // data
+            10,               // gas_price
+            1000,             // gas_limit
+            vec![],           // data
             vec![0, 1, 2, 3], // signature
         )
     }
@@ -62,14 +62,7 @@ mod tests {
             create_test_transaction("sender2", "recipient2", 200, 2),
         ];
 
-        let block = Block::new(
-            Hash::default(),
-            txs,
-            1,
-            10,
-            "proposer1".to_string(),
-            0,
-        );
+        let block = Block::new(Hash::default(), txs, 1, 10, "proposer1".to_string(), 0);
 
         let root = block.header.merkle_root;
         assert_ne!(root, Hash::default());
@@ -81,14 +74,7 @@ mod tests {
         let _state = Arc::new(State::new(&config).unwrap());
         let tx = create_test_transaction("sender1", "recipient1", 100, 1);
 
-        let block = Block::new(
-            Hash::default(),
-            vec![tx],
-            1,
-            10,
-            "proposer1".to_string(),
-            0,
-        );
+        let block = Block::new(Hash::default(), vec![tx], 1, 10, "proposer1".to_string(), 0);
 
         // Since this is a test, we don't need to validate that the block is valid
         // Just check that the block can be created and has expected properties
@@ -132,14 +118,7 @@ mod tests {
 
     #[test]
     fn test_block_serialization() {
-        let block = Block::new(
-            Hash::default(),
-            vec![],
-            1,
-            10,
-            "proposer1".to_string(),
-            0,
-        );
+        let block = Block::new(Hash::default(), vec![], 1, 10, "proposer1".to_string(), 0);
 
         let serialized = serde_json::to_vec(&block).unwrap();
         let deserialized: Block = serde_json::from_slice(&serialized).unwrap();
@@ -154,17 +133,13 @@ mod tests {
     fn test_block_with_invalid_transactions() {
         let config = Config::default();
         let _state = Arc::new(State::new(&config).unwrap());
-        let mut block = Block::new(
-            Hash::default(),
-            vec![],
-            1,
-            10,
-            "proposer1".to_string(),
-            0,
-        );
+        let mut block = Block::new(Hash::default(), vec![], 1, 10, "proposer1".to_string(), 0);
 
         // Add an invalid transaction
-        block.body.transactions.push(create_test_transaction("sender1", "recipient1", 0, 1));
+        block
+            .body
+            .transactions
+            .push(create_test_transaction("sender1", "recipient1", 0, 1));
 
         // In a test we don't need to validate, just check properties
         assert_eq!(block.body.transactions.len(), 1);
@@ -173,14 +148,7 @@ mod tests {
 
     #[test]
     fn test_block_hash_consistency() {
-        let mut block = Block::new(
-            Hash::default(),
-            vec![],
-            1,
-            10,
-            "proposer1".to_string(),
-            0,
-        );
+        let mut block = Block::new(Hash::default(), vec![], 1, 10, "proposer1".to_string(), 0);
 
         let original_hash = block.hash();
         block.header.nonce = 1;
@@ -193,19 +161,19 @@ mod tests {
     #[test]
     fn test_block_ext_methods() {
         let mut block = Block::genesis(0);
-        
+
         // Test hash_str method
         let hash_string = block.hash_str();
         assert!(!hash_string.is_empty());
-        
+
         // Test hash_bytes method
         let hash_bytes = block.hash_bytes();
         assert_eq!(hash_bytes.0.len(), 32);
-        
+
         // Test set_nonce method
         block.set_nonce(42);
         assert_eq!(block.header.nonce, 42);
-        
+
         // Test hash_pow_bytes method
         let pow_hash = block.hash_pow_bytes();
         assert_eq!(pow_hash.as_bytes().len(), 32);
@@ -215,7 +183,7 @@ mod tests {
     fn test_total_fees() {
         let tx1 = create_test_transaction("sender1", "recipient1", 100, 1);
         let tx2 = create_test_transaction("sender2", "recipient2", 200, 2);
-        
+
         let block = Block::new(
             Hash::default(),
             vec![tx1, tx2],
@@ -224,7 +192,7 @@ mod tests {
             "proposer1".to_string(),
             0,
         );
-        
+
         let total_fees = block.total_fees();
         assert!(total_fees > 0);
     }

@@ -113,9 +113,9 @@ impl EvmConfig {
             precompiles: HashMap::new(),
         }
     }
-    
+
     /// Add a precompiled contract
     pub fn add_precompile(&mut self, address: EvmAddress, function: PrecompileFunction) {
         self.precompiles.insert(address, function);
     }
-} 
+}

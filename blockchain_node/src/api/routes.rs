@@ -63,4 +63,4 @@
 //! - Supports the following events:
 //!   - `new_block`: Notifies when a new block is added to the chain
 //!   - `new_transaction`: Notifies when a new transaction is added to the mempool
-//!   - `consensus_update`: Notifies when the consensus state changes 
+//!   - `consensus_update`: Notifies when the consensus state changes

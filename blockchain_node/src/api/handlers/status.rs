@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use axum::{extract::Extension, Json};
-use tokio::sync::RwLock;
 use serde::Serialize;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::ledger::state::State;
 use crate::api::ApiError;
+use crate::ledger::state::State;
 
 /// Response for node status
 #[derive(Serialize)]
@@ -61,22 +61,22 @@ pub struct PeerListResponse {
 
 /// Get node status information
 pub async fn get_status(
-    Extension(state): Extension<Arc<RwLock<State>>>
+    Extension(state): Extension<Arc<RwLock<State>>>,
 ) -> Result<Json<StatusResponse>, ApiError> {
     let state = state.read().await;
-    
+
     let height = state.get_height().map_err(|e| ApiError {
         status: 500,
-        message: format!("Failed to get height: {}", e)
+        message: format!("Failed to get height: {}", e),
     })?;
 
     Ok(Json(StatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         network: "testnet".to_string(),
         height,
-        peers: 0, // TODO: Implement peer count
+        peers: 0,        // TODO: Implement peer count
         mempool_size: 0, // TODO: Implement mempool size
-        uptime: 0, // TODO: Implement uptime
+        uptime: 0,       // TODO: Implement uptime
         sync_status: 100.0,
         mining_enabled: false,
         node_address: "0.0.0.0:8545".to_string(),
@@ -90,9 +90,6 @@ pub async fn get_peers(
     // TODO: Get actual peers from the p2p network
     // This is a placeholder that would be populated with real peer info
     let peers = Vec::new();
-    
-    Ok(Json(PeerListResponse {
-        peers,
-        total: 0,
-    }))
-} 
+
+    Ok(Json(PeerListResponse { peers, total: 0 }))
+}

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
-use serde::{Serialize, Deserialize};
-use anyhow::Result;
 use crate::ai_engine::security::NodeScore;
 use crate::consensus::social_graph::SocialGraph;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio::sync::{Mutex, RwLock};
 
 /// Weight adjustment parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,10 +103,7 @@ struct NetworkHealth {
 
 impl DynamicWeightAdjuster {
     /// Create a new weight adjuster
-    pub fn new(
-        params: WeightAdjustmentParams,
-        social_analyzer: Arc<SocialGraph>,
-    ) -> Self {
+    pub fn new(params: WeightAdjustmentParams, social_analyzer: Arc<SocialGraph>) -> Self {
         Self {
             params: Arc::new(RwLock::new(params)),
             node_scores: Arc::new(Mutex::new(HashMap::new())),
@@ -131,22 +128,21 @@ impl DynamicWeightAdjuster {
         let network_health = self.network_health.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                params.read().await.time_params.update_interval
-            );
+            let mut interval =
+                tokio::time::interval(params.read().await.time_params.update_interval);
 
             loop {
                 interval.tick().await;
-                
+
                 // Update network health
                 if let Err(err) = Self::update_network_health(&network_health).await {
                     eprintln!("Error updating network health: {}", err);
                     continue;
                 }
-                
+
                 // Get current scores
                 let scores = node_scores.lock().await;
-                
+
                 // Process each node
                 for (node_id, score) in scores.iter() {
                     // Get social metrics
@@ -158,24 +154,30 @@ impl DynamicWeightAdjuster {
                                 social_score,
                                 &(*params.read().await),
                                 &(*network_health.read().await),
-                            ).await {
+                            )
+                            .await
+                            {
                                 Ok(new_weights) => {
                                     // Update history
                                     let mut history = weight_history.lock().await;
-                                    let node_history = history.entry(node_id.clone())
-                                        .or_insert_with(Vec::new);
-                                    
+                                    let node_history =
+                                        history.entry(node_id.clone()).or_insert_with(Vec::new);
+
                                     node_history.push((SystemTime::now(), new_weights));
-                                    
+
                                     // Trim old history
-                                    let cutoff = SystemTime::now() - params.read().await.time_params.history_window;
+                                    let cutoff = SystemTime::now()
+                                        - params.read().await.time_params.history_window;
                                     node_history.retain(|(time, _)| *time > cutoff);
-                                },
+                                }
                                 Err(err) => {
-                                    eprintln!("Error calculating weights for node {}: {}", node_id, err);
+                                    eprintln!(
+                                        "Error calculating weights for node {}: {}",
+                                        node_id, err
+                                    );
                                 }
                             }
-                        },
+                        }
                         Err(err) => {
                             eprintln!("Error getting social score for node {}: {}", node_id, err);
                         }
@@ -190,14 +192,14 @@ impl DynamicWeightAdjuster {
     /// Update network health metrics
     async fn update_network_health(health: &Arc<RwLock<NetworkHealth>>) -> Result<()> {
         let mut current = health.write().await;
-        
+
         // Update metrics (implement actual metric collection)
         current.node_count = 0; // TODO: Get actual count
         current.avg_throughput = 0.0; // TODO: Calculate
         current.avg_latency = Duration::from_secs(0); // TODO: Measure
         current.uptime = 0.0; // TODO: Calculate
         current.last_update = SystemTime::now();
-        
+
         Ok(())
     }
 
@@ -210,7 +212,7 @@ impl DynamicWeightAdjuster {
     ) -> Result<MetricWeights> {
         // Start with base weights
         let mut weights = params.base_weights.clone();
-        
+
         // Apply network health multiplier
         let health_factor = if health.node_count < params.health_thresholds.min_nodes
             || health.avg_throughput < params.health_thresholds.min_throughput
@@ -221,56 +223,61 @@ impl DynamicWeightAdjuster {
         } else {
             1.0
         };
-        
+
         // Apply performance boost for high-performing nodes
         let performance_boost = if node_score.overall_score > 0.8 {
             params.adjustment_factors.performance_boost
         } else {
             1.0
         };
-        
+
         // Apply security penalty for low security scores
         let security_penalty = if node_score.ai_behavior_score < 0.5 {
             params.adjustment_factors.security_penalty
         } else {
             1.0
         };
-        
+
         // Apply time-based decay
-        let time_factor = (-SystemTime::now().duration_since(node_score.last_updated)?
-            .as_secs_f64() / params.time_params.decay_half_life.as_secs_f64())
-            .exp();
-        
+        let time_factor = (-SystemTime::now()
+            .duration_since(node_score.last_updated)?
+            .as_secs_f64()
+            / params.time_params.decay_half_life.as_secs_f64())
+        .exp();
+
         // Adjust weights
         weights.device_health *= health_factor * performance_boost * time_factor as f32;
         weights.network_perf *= health_factor * performance_boost * time_factor as f32;
         weights.storage *= health_factor * time_factor as f32;
         weights.social *= social_score as f32 * time_factor as f32;
         weights.security *= security_penalty * time_factor as f32;
-        
+
         // Normalize weights
-        let sum = weights.device_health + weights.network_perf + weights.storage +
-            weights.social + weights.security;
-        
+        let sum = weights.device_health
+            + weights.network_perf
+            + weights.storage
+            + weights.social
+            + weights.security;
+
         weights.device_health /= sum;
         weights.network_perf /= sum;
         weights.storage /= sum;
         weights.social /= sum;
         weights.security /= sum;
-        
+
         Ok(weights)
     }
 
     /// Get current weights for a node
     pub async fn get_weights(&self, node_id: &str) -> Result<MetricWeights> {
         let history = self.weight_history.lock().await;
-        
+
         if let Some(node_history) = history.get(node_id) {
             if let Some((_, weights)) = node_history.last() {
                 return Ok(weights.clone());
             }
         }
-        
+
         // Return default weights if no history
         Ok(self.params.read().await.base_weights.clone())
     }
@@ -281,4 +288,4 @@ impl DynamicWeightAdjuster {
         *params = new_params;
         Ok(())
     }
-} 
+}

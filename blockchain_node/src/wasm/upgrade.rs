@@ -1,11 +1,11 @@
+use log::{debug, error, warn};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use log::{debug, warn, error};
 
-use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
-use crate::storage::Storage;
 use crate::crypto::hash::Hash;
+use crate::storage::Storage;
+use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
 
 /// Upgradeability patterns for smart contracts
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,11 +144,7 @@ impl UpgradeManager {
     }
 
     /// Migrate storage to new layout
-    fn migrate_storage(
-        &self,
-        new_layout: &[u8; 32],
-        upgrade_data: &[u8],
-    ) -> Result<(), WasmError> {
+    fn migrate_storage(&self, new_layout: &[u8; 32], upgrade_data: &[u8]) -> Result<(), WasmError> {
         // TODO: Implement storage migration
         // This should handle the actual migration of storage data
         // based on the upgrade data and new layout
@@ -230,30 +226,30 @@ impl StorageLayout {
     pub fn calculate_hash(&self) -> [u8; 32] {
         use sha3::{Digest, Keccak256};
         let mut hasher = Keccak256::new();
-        
+
         // Add slots to hash
         for slot in &self.slots {
             hasher.update(&slot.offset.to_be_bytes());
             hasher.update(&slot.type_index.to_be_bytes());
             hasher.update(&[slot.is_constant as u8]);
         }
-        
+
         // Add types to hash
         for ty in &self.types {
             hasher.update(ty.name.as_bytes());
             hasher.update(&ty.size.to_be_bytes());
             hasher.update(&ty.alignment.to_be_bytes());
-            
+
             for member in &ty.members {
                 hasher.update(member.name.as_bytes());
                 hasher.update(&member.type_index.to_be_bytes());
                 hasher.update(&member.offset.to_be_bytes());
             }
         }
-        
+
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
         hash.copy_from_slice(&result[..]);
         hash
     }
-} 
+}

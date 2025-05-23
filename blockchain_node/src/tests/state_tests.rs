@@ -1,5 +1,5 @@
-use crate::ledger::state::{State, ShardConfig};
 use crate::config::Config;
+use crate::ledger::state::{ShardConfig, State};
 
 #[cfg(test)]
 mod tests {
@@ -38,7 +38,7 @@ mod tests {
         let config = Config::new();
         let state = State::new(&config).expect("Failed to create state");
         assert_eq!(state.get_height().unwrap(), 0);
-        assert_eq!(state.get_shard_id(), 0);
+        assert_eq!(state.get_shard_id().unwrap(), 0);
         assert!(state.get_pending_transactions(10).is_empty());
     }
 
@@ -57,4 +57,4 @@ mod tests {
         state.set_nonce(addr, 1).unwrap();
         assert_eq!(state.get_next_nonce(addr).unwrap(), 2);
     }
-} 
+}

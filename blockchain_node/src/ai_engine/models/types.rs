@@ -81,4 +81,4 @@ pub struct ResourceUsage {
     pub memory_usage: u64,
     /// GPU memory usage in bytes (if available)
     pub gpu_memory: Option<u64>,
-} 
+}

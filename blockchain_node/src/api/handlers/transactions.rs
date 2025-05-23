@@ -1,15 +1,15 @@
-use std::sync::Arc;
 use axum::{
-    extract::{Path, Extension},
+    extract::{Extension, Path},
     Json,
 };
-use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::ledger::transaction::Transaction;
-use crate::ledger::state::State;
-use crate::ledger::transaction::TransactionType;
 use crate::api::ApiError;
+use crate::ledger::state::State;
+use crate::ledger::transaction::Transaction;
+use crate::ledger::transaction::TransactionType;
 use crate::utils::crypto::Hash;
 
 /// Response for a transaction
@@ -42,13 +42,18 @@ pub struct TransactionResponse {
 }
 
 impl TransactionResponse {
-    pub fn from_tx(tx: &Transaction, block_hash: Option<&Hash>, block_height: Option<u64>, confirmations: u64) -> Self {
+    pub fn from_tx(
+        tx: &Transaction,
+        block_hash: Option<&Hash>,
+        block_height: Option<u64>,
+        confirmations: u64,
+    ) -> Self {
         Self {
             hash: tx.hash(),
             sender: tx.sender.clone(),
             recipient: Some(tx.recipient.clone()),
             amount: tx.amount,
-            fee: tx.gas_price * tx.gas_limit,  // Use gas_price * gas_limit as fee
+            fee: tx.gas_price * tx.gas_limit, // Use gas_price * gas_limit as fee
             nonce: tx.nonce,
             timestamp: tx.timestamp,
             block_hash: block_hash.map(|h| hex::encode(h.as_bytes())),
@@ -66,7 +71,11 @@ impl TransactionResponse {
                 TransactionType::Batch => 8,
                 TransactionType::System => 9,
             },
-            data: if tx.data.is_empty() { None } else { Some(hex::encode(&tx.data)) },
+            data: if tx.data.is_empty() {
+                None
+            } else {
+                Some(hex::encode(&tx.data))
+            },
         }
     }
 }
@@ -118,15 +127,15 @@ pub async fn get_transaction(
             })
         }
     };
-    
+
     // Create a Hash object from bytes
     let hash = Hash::from_bytes(&hash_bytes).map_err(|_| ApiError {
         status: 400,
         message: "Invalid hash length".to_string(),
     })?;
-    
+
     let state = state.read().await;
-    
+
     if let Some((tx, block_hash, block_height)) = state.get_transaction_by_hash(&hash.to_string()) {
         // Convert types::Transaction to ledger::transaction::Transaction
         let ledger_tx: crate::ledger::transaction::Transaction = tx.clone().into();
@@ -172,13 +181,13 @@ pub async fn submit_transaction(
     } else {
         Vec::new()
     };
-    
+
     // Convert signature from hex
     let signature = hex::decode(&req.signature).map_err(|_| ApiError {
         status: 400,
         message: "Invalid signature format".to_string(),
     })?;
-    
+
     // Parse transaction type
     let tx_type = match req.tx_type {
         0 => TransactionType::Transfer,
@@ -191,12 +200,14 @@ pub async fn submit_transaction(
         7 => TransactionType::ClaimReward,
         8 => TransactionType::Batch,
         9 => TransactionType::System,
-        _ => return Err(ApiError {
-            status: 400,
-            message: "Invalid transaction type".to_string(),
-        }),
+        _ => {
+            return Err(ApiError {
+                status: 400,
+                message: "Invalid transaction type".to_string(),
+            })
+        }
     };
-    
+
     // Create the transaction
     let recipient = req.recipient.unwrap_or_default();
     let tx = Transaction::new(
@@ -205,12 +216,12 @@ pub async fn submit_transaction(
         recipient,
         req.amount,
         req.nonce,
-        1, // Default gas price
+        1,     // Default gas price
         21000, // Default gas limit
         data,
         signature,
     );
-    
+
     let state = state.write().await;
     let types_tx = crate::types::Transaction {
         from: crate::types::Address::from_string(&tx.sender).unwrap_or_default(),
@@ -223,15 +234,16 @@ pub async fn submit_transaction(
         signature: tx.signature.clone(),
         hash: crate::utils::crypto::Hash::default(), // You may want to compute the hash
     };
-    state.add_pending_transaction(types_tx.into())
+    state
+        .add_pending_transaction(types_tx.into())
         .map_err(|e| ApiError {
             status: 500,
             message: format!("Failed to add transaction: {e}"),
         })?;
-    
+
     Ok(Json(SubmitTransactionResponse {
         hash: tx.hash(),
         success: true,
         message: "Transaction submitted successfully".to_string(),
     }))
-} 
+}

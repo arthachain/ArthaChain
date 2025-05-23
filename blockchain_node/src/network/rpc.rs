@@ -1,10 +1,10 @@
 use crate::config::Config;
-use anyhow::Result;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::ledger::state::State;
+use anyhow::Result;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 /// RPCServer provides an RPC interface for the blockchain node
 pub struct RPCServer {
@@ -19,18 +19,18 @@ impl RPCServer {
         _shutdown_signal: mpsc::Sender<()>,
     ) -> Result<Self> {
         // This would initialize the RPC server
-        
+
         Ok(Self {})
     }
-    
+
     /// Start the RPC server
     pub async fn start(&mut self) -> Result<JoinHandle<()>> {
         // This would start the RPC server
-        
+
         let handle = tokio::spawn(async move {
             // Server processing would happen here
         });
-        
+
         Ok(handle)
     }
-} 
+}

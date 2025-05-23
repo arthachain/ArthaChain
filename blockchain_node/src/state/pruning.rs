@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use crate::ledger::state::{StateStorage, StateTree};
 use anyhow::Result;
-use crate::ledger::state::{StateTree, StateStorage};
+use std::sync::Arc;
 
 /// Pruning configuration
 #[derive(Debug, Clone)]

@@ -30,7 +30,7 @@ impl Default for ModelFailoverConfig {
             cpu_threshold: 0.8,                       // 80% CPU
             disk_threshold: 1024 * 1024 * 1024 * 50,  // 50GB
             auto_failover: true,
-            min_failover_interval: 300,               // 5 minutes
+            min_failover_interval: 300, // 5 minutes
             retry_attempts: 3,
             backoff_duration: Duration::from_secs(5),
             fallback_model: "fallback".to_string(),
@@ -56,4 +56,4 @@ mod serde_duration {
         let secs = u64::deserialize(deserializer)?;
         Ok(Duration::from_secs(secs))
     }
-} 
+}

@@ -269,7 +269,7 @@ mod tests {
 
         // Create a test message with simplified data
         let message = CrossShardMessage {
-            id: Uuid::new_v4().to_string(),
+            id: String::new(),
             sender_shard: 1,
             recipient_shard: 2,
             message_type: CrossShardMessageType::Transaction {

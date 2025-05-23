@@ -1,9 +1,9 @@
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{SystemTime, Duration};
-use serde::{Serialize, Deserialize};
-use anyhow::{Result, anyhow};
-use tokio::sync::RwLock;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::sync::RwLock;
 
 /// Represents a node's social connections and influence
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,13 +30,13 @@ impl SocialNode {
             metrics: HashMap::new(),
         }
     }
-    
+
     pub fn add_connection(&mut self, node_id: String) {
         if !self.connections.contains(&node_id) {
             self.connections.push(node_id);
         }
     }
-    
+
     pub fn update_metric(&mut self, key: &str, value: f64) {
         self.metrics.insert(key.to_string(), value);
     }
@@ -103,7 +103,7 @@ impl Default for TimeDecayParams {
         Self {
             half_life_secs: 86400 * 7, // One week
             min_value: 0.1,
-            max_age_secs: 86400 * 30,  // One month
+            max_age_secs: 86400 * 30, // One month
         }
     }
 }
@@ -170,37 +170,35 @@ impl SocialGraph {
     pub async fn add_or_update_node(&self, node: SocialNode) -> Result<()> {
         let mut nodes = self.nodes.write().await;
         nodes.insert(node.id.clone(), node);
-        
+
         // Invalidate cache when graph changes
         let mut cache = self.cache.write().await;
         cache.last_update = None;
-        
+
         Ok(())
     }
-    
+
     /// Calculate node influence using PageRank
     pub async fn calculate_influence(&self) -> Result<HashMap<String, f64>> {
         let mut cache = self.cache.write().await;
-        
+
         // Check if cache is valid
         let should_recalculate = match cache.last_update {
             None => true,
-            Some(last_update) => {
-                match SystemTime::now().duration_since(last_update) {
-                    Ok(elapsed) => elapsed > cache.validity_duration,
-                    Err(_) => true,
-                }
-            }
+            Some(last_update) => match SystemTime::now().duration_since(last_update) {
+                Ok(elapsed) => elapsed > cache.validity_duration,
+                Err(_) => true,
+            },
         };
-        
+
         if !should_recalculate {
             return Ok(cache.influence_scores.clone());
         }
-        
+
         // Simple influence calculation (can be improved later)
         let nodes = self.nodes.read().await;
         let mut scores = HashMap::new();
-        
+
         for (id, node) in nodes.iter() {
             // Basic score based on connections and reputation
             let connection_score = node.connections.len() as f64 * 0.1;
@@ -210,25 +208,26 @@ impl SocialGraph {
             } else {
                 0.5
             };
-            
+
             let influence = (connection_score * 0.4 + reputation_factor * 0.4 + metric_avg * 0.2)
-                .min(1.0).max(0.0);
-                
+                .min(1.0)
+                .max(0.0);
+
             scores.insert(id.clone(), influence);
         }
-        
+
         // Update cache
         cache.influence_scores = scores.clone();
         cache.last_update = Some(SystemTime::now());
         cache.validity_duration = Duration::from_secs(300); // 5 minutes
-        
+
         Ok(scores)
     }
 
     /// Get node's social score
     pub async fn get_social_score(&self, node_id: &str) -> Result<f64> {
         let influence_scores = self.calculate_influence().await?;
-        
+
         if let Some(node) = self.get_node(node_id).await {
             // Combine different factors
             let influence = influence_scores.get(node_id).unwrap_or(&0.0);
@@ -237,13 +236,16 @@ impl SocialGraph {
             } else {
                 0.5
             };
-            
+
             let community_score = calculate_community_score(&node.metrics);
-            
-            return Ok((*influence * 0.4 + metric_avg * 0.3 + community_score * 0.3)
-                .min(1.0).max(0.0));
+
+            return Ok(
+                (*influence * 0.4 + metric_avg * 0.3 + community_score * 0.3)
+                    .min(1.0)
+                    .max(0.0),
+            );
         }
-        
+
         Err(anyhow!("Node not found"))
     }
 
@@ -252,7 +254,7 @@ impl SocialGraph {
         let params = self.weight_params.read().await;
         let mut nodes = self.nodes.write().await;
         let now = SystemTime::now();
-        
+
         for node in nodes.values_mut() {
             // Apply time decay to reputation
             if let Ok(elapsed) = now.duration_since(node.last_active) {
@@ -262,12 +264,12 @@ impl SocialGraph {
                     params.time_decay.min_value,
                     params.time_decay.max_age_secs,
                 );
-                
+
                 node.reputation *= decay_factor;
                 node.reputation = node.reputation.max(params.min_weight);
             }
         }
-        
+
         Ok(())
     }
 
@@ -281,7 +283,7 @@ fn calculate_time_decay(elapsed_secs: u64, half_life: u64, min_value: f64, max_a
     if elapsed_secs >= max_age {
         return min_value;
     }
-    
+
     let decay = (0.5f64).powf(elapsed_secs as f64 / half_life as f64);
     (decay * (1.0 - min_value) + min_value).max(min_value)
 }
@@ -294,15 +296,35 @@ fn calculate_community_score(metrics: &HashMap<String, f64>) -> f64 {
     let innovation_weight = 0.2;
     let engagement_weight = 0.1;
 
-    let governance = metrics.get("governance_participation").unwrap_or(&0.5).min(1.0).max(0.0);
-    let resource = metrics.get("resource_contribution").unwrap_or(&0.5).min(1.0).max(0.0);
-    let support = metrics.get("community_support").unwrap_or(&0.5).min(1.0).max(0.0);
-    let innovation = metrics.get("innovation_score").unwrap_or(&0.5).min(1.0).max(0.0);
-    let engagement = metrics.get("engagement_duration").unwrap_or(&0.5).min(1.0).max(0.0);
+    let governance = metrics
+        .get("governance_participation")
+        .unwrap_or(&0.5)
+        .min(1.0)
+        .max(0.0);
+    let resource = metrics
+        .get("resource_contribution")
+        .unwrap_or(&0.5)
+        .min(1.0)
+        .max(0.0);
+    let support = metrics
+        .get("community_support")
+        .unwrap_or(&0.5)
+        .min(1.0)
+        .max(0.0);
+    let innovation = metrics
+        .get("innovation_score")
+        .unwrap_or(&0.5)
+        .min(1.0)
+        .max(0.0);
+    let engagement = metrics
+        .get("engagement_duration")
+        .unwrap_or(&0.5)
+        .min(1.0)
+        .max(0.0);
 
-    governance * governance_weight +
-    resource * resource_weight +
-    support * support_weight +
-    innovation * innovation_weight +
-    engagement * engagement_weight
-} 
+    governance * governance_weight
+        + resource * resource_weight
+        + support * support_weight
+        + innovation * innovation_weight
+        + engagement * engagement_weight
+}

@@ -1,9 +1,13 @@
 // Re-exports for API models
+pub use crate::api::handlers::accounts::{
+    AccountResponse, TransactionListParams, TransactionListResponse,
+};
 pub use crate::api::handlers::blocks::BlockResponse;
-pub use crate::api::handlers::transactions::{TransactionResponse, SubmitTransactionRequest, SubmitTransactionResponse};
-pub use crate::api::handlers::accounts::{AccountResponse, TransactionListParams, TransactionListResponse};
-pub use crate::api::handlers::status::{StatusResponse, PeerInfo, PeerListResponse};
 pub use crate::api::handlers::consensus::ConsensusStatusResponse;
+pub use crate::api::handlers::status::{PeerInfo, PeerListResponse, StatusResponse};
+pub use crate::api::handlers::transactions::{
+    SubmitTransactionRequest, SubmitTransactionResponse, TransactionResponse,
+};
 
 /// Response type for a successful API operation with no data
 #[derive(serde::Serialize)]
@@ -49,4 +53,4 @@ pub struct PaginationParams {
 
 fn default_page_size() -> usize {
     20
-} 
+}

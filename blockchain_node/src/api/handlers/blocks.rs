@@ -1,15 +1,15 @@
-use std::sync::Arc;
 use axum::{
-    extract::{Path, Extension, Query},
+    extract::{Extension, Path, Query},
     Json,
 };
-use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::ledger::block::Block;
-use crate::types::Hash;
-use crate::ledger::state::State;
 use crate::api::ApiError;
+use crate::ledger::block::Block;
+use crate::ledger::state::State;
+use crate::types::Hash;
 
 /// Response for a block
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -74,8 +74,9 @@ pub async fn get_latest_block(
     Extension(state): Extension<Arc<RwLock<State>>>,
 ) -> Result<Json<BlockResponse>, ApiError> {
     let state = state.read().await;
-    
-    state.latest_block()
+
+    state
+        .latest_block()
         .map(|block| Json(BlockResponse::from(block)))
         .ok_or_else(|| ApiError {
             status: 404,
@@ -93,10 +94,11 @@ pub async fn get_block_by_hash(
         status: 400,
         message: "Invalid block hash format".to_string(),
     })?;
-    
+
     let state = state.read().await;
-    
-    state.get_block_by_hash(&hash)
+
+    state
+        .get_block_by_hash(&hash)
         .map(|block| Json(BlockResponse::from(block)))
         .ok_or_else(|| ApiError {
             status: 404,
@@ -110,8 +112,9 @@ pub async fn get_block_by_height(
     Extension(state): Extension<Arc<RwLock<State>>>,
 ) -> Result<Json<BlockResponse>, ApiError> {
     let state = state.read().await;
-    
-    state.get_block_by_height(height)
+
+    state
+        .get_block_by_height(height)
         .map(|block| Json(BlockResponse::from(block)))
         .ok_or_else(|| ApiError {
             status: 404,
@@ -125,8 +128,9 @@ pub async fn get_blocks(
     Query(params): Query<BlockQueryParams>,
 ) -> Result<Json<Vec<BlockResponse>>, ApiError> {
     let state = state.read().await;
-    
-    state.get_blocks(params.start, params.limit)
+
+    state
+        .get_blocks(params.start, params.limit)
         .map_err(|e| ApiError {
             status: 500,
             message: format!("Failed to get blocks: {}", e),
@@ -135,4 +139,4 @@ pub async fn get_blocks(
             let responses: Vec<BlockResponse> = blocks.iter().map(BlockResponse::from).collect();
             Json(responses)
         })
-} 
+}

@@ -1,30 +1,30 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::sync::Mutex;
+use crate::node::Node;
 use anyhow::Result;
 use axum::{
-    routing::{get, post},
-    Router,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
+    routing::{get, post},
+    Json, Router,
 };
+use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
-use crate::node::Node;
 
-use crate::ledger::state::State;
-use crate::config::Config;
-use crate::consensus::svbft::SVBFTConsensus;
 use crate::api::metrics::MetricsService;
+use crate::config::Config;
+#[cfg(not(skip_problematic_modules))]
+use crate::consensus::svbft::SVBFTConsensus;
+use crate::ledger::state::State;
 use serde::Serialize;
 
-pub mod websocket;
-pub mod metrics;
-pub mod routes;
-pub mod models;
-pub mod handlers;
 pub mod faucet;
+pub mod handlers;
+pub mod metrics;
+pub mod models;
+pub mod routes;
+pub mod websocket;
 
 /// Error response for the API
 #[derive(Debug, Serialize)]
@@ -67,6 +67,7 @@ pub struct ApiServer {
     #[allow(dead_code)]
     shutdown_signal: Arc<Mutex<mpsc::Receiver<()>>>,
     /// Active consensus engine reference (if available)
+    #[cfg(not(skip_problematic_modules))]
     _consensus: Option<Arc<SVBFTConsensus>>,
     /// Metrics service
     _metrics: Option<Arc<MetricsService>>,
@@ -90,7 +91,7 @@ impl ApiServer {
         port: String,
     ) -> Result<Self> {
         let metrics = Some(Arc::new(MetricsService::new()));
-        
+
         // Create base router without node extension to avoid thread safety issues
         let router = Router::new()
             .route("/health", get(health_check))
@@ -115,6 +116,7 @@ impl ApiServer {
             _config: config,
             _state: state,
             shutdown_signal: Arc::new(Mutex::new(mpsc::channel(1).1)),
+            #[cfg(not(skip_problematic_modules))]
             _consensus: None,
             _metrics: metrics,
             _node: node,
@@ -123,16 +125,15 @@ impl ApiServer {
             port,
         })
     }
-    
+
     /// Start the API server and listen for incoming requests
     pub async fn start(&self) -> Result<()> {
         let addr = format!("{}:{}", self.host, self.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         println!("Server listening on {}", addr);
-        
-        axum::serve(listener, self.router.clone())
-            .await?;
-            
+
+        axum::serve(listener, self.router.clone()).await?;
+
         Ok(())
     }
 }
@@ -152,9 +153,11 @@ mod tests {
             state,
             node,
             "127.0.0.1".to_string(),
-            "8080".to_string()
-        ).await.unwrap();
-        
+            "8080".to_string(),
+        )
+        .await
+        .unwrap();
+
         // Verify the server was created successfully
         assert!(true, "Server was created successfully");
     }
@@ -222,4 +225,4 @@ async fn commit() -> &'static str {
 
 async fn revert() -> &'static str {
     "Revert endpoint"
-} 
+}

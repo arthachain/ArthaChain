@@ -1,15 +1,15 @@
-use std::sync::Arc;
 use axum::{
-    extract::{Path, Extension, Query},
+    extract::{Extension, Path, Query},
     Json,
 };
-use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::ledger::state::State;
+use crate::api::{handlers::transactions::TransactionResponse, ApiError};
 #[cfg(feature = "evm")]
 use crate::evm::backend::EvmBackend;
-use crate::api::{ApiError, handlers::transactions::TransactionResponse};
+use crate::ledger::state::State;
 
 /// Response for an account
 #[derive(Serialize)]
@@ -62,12 +62,11 @@ pub async fn get_account(
         #[cfg(feature = "evm")]
         {
             // Handle EVM account
-            let address = H160::from_str(&address[2..])
-                .map_err(|_| ApiError::INVALID_ADDRESS)?;
-            
+            let address = H160::from_str(&address[2..]).map_err(|_| ApiError::INVALID_ADDRESS)?;
+
             let state = state.read().await;
             let backend = EvmBackend::new(&state);
-            
+
             let basic = backend.basic(address);
             let code = backend.code(address);
             let code_hex = if !code.is_empty() {
@@ -75,7 +74,7 @@ pub async fn get_account(
             } else {
                 None
             };
-            
+
             // Count storage entries
             let mut storage_count = 0;
             for key in backend.storage_keys(address) {
@@ -100,7 +99,8 @@ pub async fn get_account(
     } else {
         // Handle native account
         let state = state.read().await;
-        let account = state.get_account(&address)
+        let account = state
+            .get_account(&address)
             .ok_or_else(ApiError::account_not_found)?;
 
         Ok(Json(AccountResponse {
@@ -119,17 +119,18 @@ pub async fn get_account_transactions(
     Extension(state): Extension<Arc<RwLock<State>>>,
 ) -> Result<Json<TransactionListResponse>, ApiError> {
     let state = state.read().await;
-    
+
     // Get transactions for this account
     let transactions = state.get_account_transactions(&address);
-    
+
     // Apply pagination
     let total = transactions.len();
     let start = params.page * params.page_size;
     let end = (start + params.page_size).min(total);
-    
+
     let transactions = if start < total {
-        transactions[start..end].iter()
+        transactions[start..end]
+            .iter()
             .map(|tx| {
                 // Convert types::Transaction to ledger::transaction::Transaction
                 let ledger_tx: crate::ledger::transaction::Transaction = tx.clone().into();
@@ -140,11 +141,11 @@ pub async fn get_account_transactions(
     } else {
         Vec::new()
     };
-    
+
     Ok(Json(TransactionListResponse {
         transactions,
         total,
         page: params.page,
         page_size: params.page_size,
     }))
-} 
+}

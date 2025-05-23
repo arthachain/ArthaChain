@@ -369,7 +369,7 @@ impl SelfLearningSystem {
         std::fs::write(path, serialized)?;
 
         // Save each model
-        for (name, model_path) in &state.model_paths {
+        for (name, _model_path) in &state.model_paths {
             if let Some(model) = self.models.get(name) {
                 let model = model.blocking_read();
                 let full_path = format!("{}/model_{}.pt", path, name);

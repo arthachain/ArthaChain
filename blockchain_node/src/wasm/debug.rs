@@ -1,15 +1,17 @@
-use std::sync::Arc;
-use serde::{Serialize, Deserialize};
-use thiserror::Error;
-use log::{debug, warn, error};
-use wasmer::{Instance, Module, Store, Value, Function, FunctionType, Type, Memory, MemoryType, Imports};
-use wasmer::AsStoreRef;
+use log::{debug, error, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use thiserror::Error;
+use wasmer::AsStoreRef;
+use wasmer::{
+    Function, FunctionType, Imports, Instance, Memory, MemoryType, Module, Store, Type, Value,
+};
 
-use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
-use crate::storage::Storage;
 use crate::crypto::hash::Hash;
+use crate::storage::Storage;
+use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
 
 /// Debug error
 #[derive(Debug, Error)]
@@ -128,15 +130,20 @@ impl DebugSession {
 
     /// Add breakpoint
     pub fn add_breakpoint(&mut self, breakpoint: Breakpoint) -> Result<(), DebugError> {
-        let function_breakpoints = self.breakpoints
+        let function_breakpoints = self
+            .breakpoints
             .entry(breakpoint.function.clone())
             .or_insert_with(Vec::new);
 
         // Check if breakpoint already exists
-        if function_breakpoints.iter().any(|bp| bp.offset == breakpoint.offset) {
-            return Err(DebugError::InvalidBreakpoint(
-                format!("Breakpoint already exists at offset {}", breakpoint.offset)
-            ));
+        if function_breakpoints
+            .iter()
+            .any(|bp| bp.offset == breakpoint.offset)
+        {
+            return Err(DebugError::InvalidBreakpoint(format!(
+                "Breakpoint already exists at offset {}",
+                breakpoint.offset
+            )));
         }
 
         function_breakpoints.push(breakpoint);
@@ -145,7 +152,9 @@ impl DebugSession {
 
     /// Remove breakpoint
     pub fn remove_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self.breakpoints.get_mut(function)
+        let function_breakpoints = self
+            .breakpoints
+            .get_mut(function)
             .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
 
         function_breakpoints.retain(|bp| bp.offset != offset);
@@ -154,7 +163,9 @@ impl DebugSession {
 
     /// Enable breakpoint
     pub fn enable_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self.breakpoints.get_mut(function)
+        let function_breakpoints = self
+            .breakpoints
+            .get_mut(function)
             .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
 
         for bp in function_breakpoints {
@@ -164,14 +175,17 @@ impl DebugSession {
             }
         }
 
-        Err(DebugError::BreakpointNotFound(
-            format!("Breakpoint not found at offset {}", offset)
-        ))
+        Err(DebugError::BreakpointNotFound(format!(
+            "Breakpoint not found at offset {}",
+            offset
+        )))
     }
 
     /// Disable breakpoint
     pub fn disable_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self.breakpoints.get_mut(function)
+        let function_breakpoints = self
+            .breakpoints
+            .get_mut(function)
             .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
 
         for bp in function_breakpoints {
@@ -181,9 +195,10 @@ impl DebugSession {
             }
         }
 
-        Err(DebugError::BreakpointNotFound(
-            format!("Breakpoint not found at offset {}", offset)
-        ))
+        Err(DebugError::BreakpointNotFound(format!(
+            "Breakpoint not found at offset {}",
+            offset
+        )))
     }
 
     /// Get breakpoints
@@ -224,7 +239,9 @@ impl DebugSession {
     /// Step execution
     pub fn step(&mut self) -> Result<(), DebugError> {
         if !self.step_mode {
-            return Err(DebugError::DebugSessionError("Step mode not enabled".to_string()));
+            return Err(DebugError::DebugSessionError(
+                "Step mode not enabled".to_string(),
+            ));
         }
 
         // TODO: Implement step execution
@@ -236,7 +253,9 @@ impl DebugSession {
     /// Continue execution
     pub fn continue_execution(&mut self) -> Result<(), DebugError> {
         if !self.debug_mode {
-            return Err(DebugError::DebugSessionError("Debug mode not enabled".to_string()));
+            return Err(DebugError::DebugSessionError(
+                "Debug mode not enabled".to_string(),
+            ));
         }
 
         // TODO: Implement continue execution
@@ -264,7 +283,10 @@ impl DebugSession {
     }
 
     /// Get local variables
-    pub fn get_local_variables(&self, frame_index: usize) -> Result<HashMap<String, Value>, DebugError> {
+    pub fn get_local_variables(
+        &self,
+        frame_index: usize,
+    ) -> Result<HashMap<String, Value>, DebugError> {
         if let Some(stack_trace) = &self.stack_trace {
             if let Some(frame) = stack_trace.frames.get(frame_index) {
                 return Ok(frame.locals.clone());
@@ -291,7 +313,9 @@ impl DebugSession {
             return Ok(stack_trace.memory_state.clone());
         }
 
-        Err(DebugError::StackTraceError("Stack trace not available".to_string()))
+        Err(DebugError::StackTraceError(
+            "Stack trace not available".to_string(),
+        ))
     }
 
     /// Get current instruction
@@ -328,9 +352,10 @@ impl DebugManager {
         instance: Instance,
     ) -> Result<(), DebugError> {
         if self.sessions.contains_key(&contract_address) {
-            return Err(DebugError::DebugSessionError(
-                format!("Debug session already exists for contract {}", contract_address)
-            ));
+            return Err(DebugError::DebugSessionError(format!(
+                "Debug session already exists for contract {}",
+                contract_address
+            )));
         }
 
         let session = DebugSession::new(contract_address.clone(), store, module, instance);
@@ -345,16 +370,23 @@ impl DebugManager {
     }
 
     /// Get debug session mutably
-    pub fn get_session_mut(&mut self, contract_address: &WasmContractAddress) -> Option<&mut DebugSession> {
+    pub fn get_session_mut(
+        &mut self,
+        contract_address: &WasmContractAddress,
+    ) -> Option<&mut DebugSession> {
         self.sessions.get_mut(contract_address)
     }
 
     /// Remove debug session
-    pub fn remove_session(&mut self, contract_address: &WasmContractAddress) -> Result<(), DebugError> {
+    pub fn remove_session(
+        &mut self,
+        contract_address: &WasmContractAddress,
+    ) -> Result<(), DebugError> {
         if !self.sessions.contains_key(contract_address) {
-            return Err(DebugError::DebugSessionError(
-                format!("Debug session not found for contract {}", contract_address)
-            ));
+            return Err(DebugError::DebugSessionError(format!(
+                "Debug session not found for contract {}",
+                contract_address
+            )));
         }
 
         self.sessions.remove(contract_address);
@@ -365,4 +397,4 @@ impl DebugManager {
     pub fn get_sessions(&self) -> &HashMap<WasmContractAddress, DebugSession> {
         &self.sessions
     }
-} 
+}

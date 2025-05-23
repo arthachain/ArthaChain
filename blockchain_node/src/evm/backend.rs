@@ -1,12 +1,12 @@
-use crate::storage::{Storage, StorageError};
 use crate::evm::types::{EvmAddress, EvmError};
+use crate::storage::{Storage, StorageError};
 use crate::types::Hash;
 use ethereum_types::{H160, H256, U256};
-use primitive_types::Bytes;
-use std::sync::Arc;
 use log::{debug, error};
-use serde::{Serialize, Deserialize};
+use primitive_types::Bytes;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Adapter between SputnikVM and our storage system
 pub struct EvmBackend {
@@ -47,7 +47,7 @@ impl EvmBackend {
             code_cache: std::collections::HashMap::new(),
         }
     }
-    
+
     /// Get account data from storage
     pub fn get_account(&self, address: &EvmAddress) -> Result<EvmAccount, EvmError> {
         // Check cache first
@@ -61,8 +61,9 @@ impl EvmBackend {
 
         match self.storage.retrieve_sync(&hash)? {
             Some(data) => {
-                let account: EvmAccount = bincode::deserialize(&data)
-                    .map_err(|e| EvmError::StorageError(format!("Failed to deserialize account: {}", e)))?;
+                let account: EvmAccount = bincode::deserialize(&data).map_err(|e| {
+                    EvmError::StorageError(format!("Failed to deserialize account: {}", e))
+                })?;
                 Ok(account)
             }
             None => Ok(EvmAccount {
@@ -72,21 +73,25 @@ impl EvmBackend {
                 storage: HashMap::new(),
                 storage_root: H256::zero(),
                 code_hash: H256::zero(),
-            })
+            }),
         }
     }
-    
+
     /// Update account data in storage
-    pub fn update_account(&mut self, address: EvmAddress, account: EvmAccount) -> Result<(), EvmError> {
+    pub fn update_account(
+        &mut self,
+        address: EvmAddress,
+        account: EvmAccount,
+    ) -> Result<(), EvmError> {
         let key = format!("evm:account:{}", hex::encode(address.as_bytes()));
         let data = bincode::serialize(&account)
             .map_err(|e| EvmError::StorageError(format!("Failed to serialize account: {}", e)))?;
-        
+
         let hash = self.storage.store_sync(&data)?;
         self.account_cache.insert(address, account);
         Ok(())
     }
-    
+
     /// Get storage value
     pub fn get_storage(&self, address: &EvmAddress, key: H256) -> Result<H256, EvmError> {
         // Check cache first
@@ -94,7 +99,11 @@ impl EvmBackend {
             return Ok(value);
         }
 
-        let storage_key = format!("evm:storage:{}:{}", hex::encode(address.as_bytes()), hex::encode(key.as_bytes()));
+        let storage_key = format!(
+            "evm:storage:{}:{}",
+            hex::encode(address.as_bytes()),
+            hex::encode(key.as_bytes())
+        );
         let hash = Hash::from_slice(storage_key.as_bytes());
 
         match self.storage.retrieve_sync(&hash)? {
@@ -103,18 +112,27 @@ impl EvmBackend {
                 value.as_bytes_mut().copy_from_slice(&data);
                 Ok(value)
             }
-            None => Ok(H256::zero())
+            None => Ok(H256::zero()),
         }
     }
-    
+
     /// Set storage value
-    pub fn set_storage(&mut self, address: &EvmAddress, key: H256, value: H256) -> Result<(), EvmError> {
-        let storage_key = format!("evm:storage:{}:{}", hex::encode(address.as_bytes()), hex::encode(key.as_bytes()));
+    pub fn set_storage(
+        &mut self,
+        address: &EvmAddress,
+        key: H256,
+        value: H256,
+    ) -> Result<(), EvmError> {
+        let storage_key = format!(
+            "evm:storage:{}:{}",
+            hex::encode(address.as_bytes()),
+            hex::encode(key.as_bytes())
+        );
         let hash = self.storage.store_sync(value.as_bytes())?;
         self.storage_cache.insert((*address, key), value);
         Ok(())
     }
-    
+
     /// Get contract code
     pub fn get_code(&self, address: &EvmAddress) -> Result<Vec<u8>, EvmError> {
         // Check cache first
@@ -127,10 +145,10 @@ impl EvmBackend {
 
         match self.storage.retrieve_sync(&hash)? {
             Some(code) => Ok(code),
-            None => Ok(Vec::new())
+            None => Ok(Vec::new()),
         }
     }
-    
+
     /// Set contract code
     pub fn set_code(&mut self, address: &EvmAddress, code: &[u8]) -> Result<(), EvmError> {
         let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
@@ -138,17 +156,17 @@ impl EvmBackend {
         self.code_cache.insert(*address, code.to_vec().into());
         Ok(())
     }
-    
+
     /// Commit changes to storage
     pub async fn commit(&mut self) -> Result<(), EvmError> {
         debug!("Committing EVM state changes");
         Ok(())
     }
-    
+
     /// Clear caches
     pub fn clear_caches(&mut self) {
         self.account_cache.clear();
         self.storage_cache.clear();
         self.code_cache.clear();
     }
-} 
+}

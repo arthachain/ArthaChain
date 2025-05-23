@@ -1,12 +1,12 @@
+use log::{debug, error, warn};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use log::{debug, warn, error};
-use z3::{Context, Config, Solver, Ast, Sort, FuncDecl, Model};
+use z3::{Ast, Config, Context, FuncDecl, Model, Solver, Sort};
 
-use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
-use crate::storage::Storage;
 use crate::crypto::hash::Hash;
+use crate::storage::Storage;
+use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
 
 /// Formal verification error
 #[derive(Debug, Error)]
@@ -117,7 +117,7 @@ impl ContractVerifier {
         let config = Config::new();
         let context = Context::new(&config);
         let solver = Solver::new(&context);
-        
+
         Self {
             context,
             solver,
@@ -144,19 +144,19 @@ impl ContractVerifier {
     ) -> Result<VerificationResult, VerificationError> {
         // Parse bytecode into Z3 terms
         let terms = self.parse_bytecode(bytecode)?;
-        
+
         // Verify safety properties
         let safety_results = self.verify_safety_properties(&terms)?;
-        
+
         // Verify liveness properties
         let liveness_results = self.verify_liveness_properties(&terms)?;
-        
+
         // Perform model checking
         let model_checking_results = self.perform_model_checking(&terms)?;
-        
+
         // Perform theorem proving
         let theorem_proving_results = self.perform_theorem_proving(&terms)?;
-        
+
         Ok(VerificationResult {
             safety_results,
             liveness_results,
@@ -170,7 +170,7 @@ impl ContractVerifier {
         // TODO: Implement bytecode parsing
         // This should convert WASM bytecode into Z3 terms
         // for formal verification
-        
+
         Ok(Vec::new())
     }
 
@@ -180,26 +180,25 @@ impl ContractVerifier {
         terms: &[Ast],
     ) -> Result<Vec<PropertyResult>, VerificationError> {
         let mut results = Vec::new();
-        
+
         for property in &self.safety_properties {
             // Parse LTL formula
             let formula = self.parse_ltl_formula(&property.formula)?;
-            
+
             // Add formula to solver
             self.solver.push();
             self.solver.assert(&formula);
-            
+
             // Check satisfiability
             match self.solver.check() {
                 z3::SatResult::Sat => {
                     // Get counterexample
-                    let model = self.solver.get_model()
-                        .ok_or_else(|| VerificationError::VerificationFailed(
-                            "Failed to get model".to_string()
-                        ))?;
-                    
+                    let model = self.solver.get_model().ok_or_else(|| {
+                        VerificationError::VerificationFailed("Failed to get model".to_string())
+                    })?;
+
                     let counterexample = self.get_counterexample(&model);
-                    
+
                     results.push(PropertyResult {
                         name: property.name.clone(),
                         verified: false,
@@ -224,10 +223,10 @@ impl ContractVerifier {
                     });
                 }
             }
-            
+
             self.solver.pop(1);
         }
-        
+
         Ok(results)
     }
 
@@ -237,26 +236,25 @@ impl ContractVerifier {
         terms: &[Ast],
     ) -> Result<Vec<PropertyResult>, VerificationError> {
         let mut results = Vec::new();
-        
+
         for property in &self.liveness_properties {
             // Parse LTL formula
             let formula = self.parse_ltl_formula(&property.formula)?;
-            
+
             // Add formula to solver
             self.solver.push();
             self.solver.assert(&formula);
-            
+
             // Check satisfiability
             match self.solver.check() {
                 z3::SatResult::Sat => {
                     // Get counterexample
-                    let model = self.solver.get_model()
-                        .ok_or_else(|| VerificationError::VerificationFailed(
-                            "Failed to get model".to_string()
-                        ))?;
-                    
+                    let model = self.solver.get_model().ok_or_else(|| {
+                        VerificationError::VerificationFailed("Failed to get model".to_string())
+                    })?;
+
                     let counterexample = self.get_counterexample(&model);
-                    
+
                     results.push(PropertyResult {
                         name: property.name.clone(),
                         verified: false,
@@ -281,10 +279,10 @@ impl ContractVerifier {
                     });
                 }
             }
-            
+
             self.solver.pop(1);
         }
-        
+
         Ok(results)
     }
 
@@ -296,7 +294,7 @@ impl ContractVerifier {
         // TODO: Implement model checking
         // This should perform model checking on the contract
         // using various model checking algorithms
-        
+
         Ok(Vec::new())
     }
 
@@ -308,7 +306,7 @@ impl ContractVerifier {
         // TODO: Implement theorem proving
         // This should perform theorem proving on the contract
         // using various theorem proving techniques
-        
+
         Ok(Vec::new())
     }
 
@@ -316,7 +314,7 @@ impl ContractVerifier {
     fn parse_ltl_formula(&self, formula: &str) -> Result<Ast, VerificationError> {
         // TODO: Implement LTL formula parsing
         // This should parse LTL formulas into Z3 terms
-        
+
         Ok(Ast::new(&self.context))
     }
 
@@ -325,7 +323,7 @@ impl ContractVerifier {
         // TODO: Implement counterexample extraction
         // This should extract a human-readable counterexample
         // from the Z3 model
-        
+
         String::new()
     }
 }
@@ -341,7 +339,7 @@ impl LTLParser {
     pub fn new() -> Self {
         let config = Config::new();
         let context = Context::new(&config);
-        
+
         Self { context }
     }
 
@@ -349,7 +347,7 @@ impl LTLParser {
     pub fn parse(&self, formula: &str) -> Result<Ast, VerificationError> {
         // TODO: Implement LTL formula parsing
         // This should parse LTL formulas into Z3 terms
-        
+
         Ok(Ast::new(&self.context))
     }
 }
@@ -368,7 +366,7 @@ impl ModelChecker {
         let config = Config::new();
         let context = Context::new(&config);
         let solver = Solver::new(&context);
-        
+
         Self { context, solver }
     }
 
@@ -376,7 +374,7 @@ impl ModelChecker {
     pub fn check_model(&mut self, model: &[Ast]) -> Result<ModelCheckingResult, VerificationError> {
         // TODO: Implement model checking
         // This should perform model checking on the given model
-        
+
         Ok(ModelCheckingResult {
             name: String::new(),
             verified: false,
@@ -400,15 +398,18 @@ impl TheoremProver {
         let config = Config::new();
         let context = Context::new(&config);
         let solver = Solver::new(&context);
-        
+
         Self { context, solver }
     }
 
     /// Prove a theorem
-    pub fn prove_theorem(&mut self, theorem: &[Ast]) -> Result<TheoremProvingResult, VerificationError> {
+    pub fn prove_theorem(
+        &mut self,
+        theorem: &[Ast],
+    ) -> Result<TheoremProvingResult, VerificationError> {
         // TODO: Implement theorem proving
         // This should perform theorem proving on the given theorem
-        
+
         Ok(TheoremProvingResult {
             name: String::new(),
             proved: false,
@@ -416,4 +417,4 @@ impl TheoremProver {
             proof: None,
         })
     }
-} 
+}

@@ -1,8 +1,10 @@
-use crate::storage::{Storage, StorageInit, StorageError, StorageBackend, RocksDbStorage, SvdbStorage};
+use crate::storage::{
+    RocksDbStorage, Storage, StorageBackend, StorageError, StorageInit, SvdbStorage,
+};
 use crate::types::Hash;
 use async_trait::async_trait;
-use std::path::Path;
 use std::any::Any;
+use std::path::Path;
 
 type Result<T> = std::result::Result<T, StorageError>;
 
@@ -10,10 +12,10 @@ type Result<T> = std::result::Result<T, StorageError>;
 pub struct HybridStorage {
     /// RocksDB storage for on-chain data
     rocksdb: Box<dyn Storage>,
-    
+
     /// SVDB storage for off-chain data
     svdb: Box<dyn Storage>,
-    
+
     /// Size threshold (in bytes) for deciding between RocksDB and SVDB
     size_threshold: usize,
 }
@@ -23,7 +25,7 @@ impl HybridStorage {
     pub fn new(svdb_url: String, size_threshold: usize) -> Result<Self> {
         let rocksdb = Box::new(RocksDbStorage::new());
         let svdb = Box::new(SvdbStorage::new(svdb_url)?);
-        
+
         Ok(Self {
             rocksdb,
             svdb,
@@ -67,7 +69,8 @@ impl Storage for HybridStorage {
         match (rocksdb_result, svdb_result) {
             (Ok(_), _) | (_, Ok(_)) => Ok(()),
             (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to delete from both storages - RocksDB: {}, SVDB: {}", e1, e2
+                "Failed to delete from both storages - RocksDB: {}, SVDB: {}",
+                e1, e2
             ))),
         }
     }
@@ -89,7 +92,8 @@ impl Storage for HybridStorage {
         match (rocksdb_result, svdb_result) {
             (Ok(_), _) | (_, Ok(_)) => Ok(()),
             (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to close both storages - RocksDB: {}, SVDB: {}", e1, e2
+                "Failed to close both storages - RocksDB: {}, SVDB: {}",
+                e1, e2
             ))),
         }
     }
@@ -109,23 +113,35 @@ impl StorageInit for HybridStorage {
         // Extract the path and convert to PathBuf
         let path_ref = path.as_ref();
         let path_buf = path_ref.as_ref().to_path_buf();
-        
+
         // Initialize RocksDB storage
         let rocksdb_path = path_buf.join("rocksdb");
         let box_path = Box::new(rocksdb_path) as Box<dyn AsRef<Path> + Send + Sync>;
-        self.rocksdb.as_any_mut().downcast_mut::<RocksDbStorage>()
-            .ok_or_else(|| StorageError::Other("Failed to get mutable reference to RocksDB storage".to_string()))?
-            .init(box_path).await?;
-        
+        self.rocksdb
+            .as_any_mut()
+            .downcast_mut::<RocksDbStorage>()
+            .ok_or_else(|| {
+                StorageError::Other(
+                    "Failed to get mutable reference to RocksDB storage".to_string(),
+                )
+            })?
+            .init(box_path)
+            .await?;
+
         // Initialize SVDB storage
         let svdb_path = path_buf.join("svdb");
         let box_path = Box::new(svdb_path) as Box<dyn AsRef<Path> + Send + Sync>;
-        self.svdb.as_any_mut().downcast_mut::<SvdbStorage>()
-            .ok_or_else(|| StorageError::Other("Failed to get mutable reference to SVDB storage".to_string()))?
-            .init(box_path).await?;
-        
+        self.svdb
+            .as_any_mut()
+            .downcast_mut::<SvdbStorage>()
+            .ok_or_else(|| {
+                StorageError::Other("Failed to get mutable reference to SVDB storage".to_string())
+            })?
+            .init(box_path)
+            .await?;
+
         Ok(())
     }
 }
 
-impl StorageBackend for HybridStorage {} 
+impl StorageBackend for HybridStorage {}

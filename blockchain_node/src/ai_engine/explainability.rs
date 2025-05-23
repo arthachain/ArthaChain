@@ -1,11 +1,11 @@
 use crate::ai_engine::security::NodeScore;
-use crate::utils::security_logger::{SecurityLogger, SecurityLevel, SecurityCategory};
+use crate::utils::security_logger::{SecurityCategory, SecurityLevel, SecurityLogger};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use serde::{Serialize, Deserialize};
-use anyhow::Result;
 use std::time::SystemTime;
+use tokio::sync::Mutex;
 
 /// Score change event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +103,7 @@ impl AIExplainer {
     /// Create a new AI explainer
     pub fn new(security_logger: Arc<SecurityLogger>) -> Self {
         let mut feature_importance = HashMap::new();
-        
+
         // Initialize feature importance for device health metrics
         feature_importance.insert(
             "device_health".to_string(),
@@ -132,10 +132,10 @@ impl AIExplainer {
                     feature: "avg_response_time".to_string(),
                     importance: 0.2,
                     description: "Response time affects transaction processing".to_string(),
-                }
-            ]
+                },
+            ],
         );
-        
+
         // Network metrics importance
         feature_importance.insert(
             "network".to_string(),
@@ -164,10 +164,10 @@ impl AIExplainer {
                     feature: "sync_status".to_string(),
                     importance: 0.1,
                     description: "Sync status affects block propagation".to_string(),
-                }
-            ]
+                },
+            ],
         );
-        
+
         // AI behavior metrics importance
         feature_importance.insert(
             "ai_behavior".to_string(),
@@ -180,7 +180,8 @@ impl AIExplainer {
                 FeatureImportance {
                     feature: "fraud_probability".to_string(),
                     importance: 0.2,
-                    description: "Fraud probability measures likelihood of malicious behavior".to_string(),
+                    description: "Fraud probability measures likelihood of malicious behavior"
+                        .to_string(),
                 },
                 FeatureImportance {
                     feature: "threat_level".to_string(),
@@ -195,14 +196,15 @@ impl AIExplainer {
                 FeatureImportance {
                     feature: "sybil_probability".to_string(),
                     importance: 0.2,
-                    description: "Sybil probability measures identity manipulation risk".to_string(),
-                }
-            ]
+                    description: "Sybil probability measures identity manipulation risk"
+                        .to_string(),
+                },
+            ],
         );
-        
+
         // Create component explanation templates
         let mut component_explanations = HashMap::new();
-        
+
         // Device health explanations
         let mut device_explanations = HashMap::new();
         device_explanations.insert(
@@ -218,7 +220,7 @@ impl AIExplainer {
             "The node has poor hardware performance with concerning resource utilization. CPU or memory usage frequently exceeds optimal ranges, and the node has experienced significant downtime or dropped connections.".to_string()
         );
         component_explanations.insert("device_health".to_string(), device_explanations);
-        
+
         // Network explanations
         let mut network_explanations = HashMap::new();
         network_explanations.insert(
@@ -234,7 +236,7 @@ impl AIExplainer {
             "The node has poor network connectivity with high latency and packet loss. It struggles to maintain peer connections and shows significant network instability.".to_string()
         );
         component_explanations.insert("network".to_string(), network_explanations);
-        
+
         // AI behavior explanations
         let mut ai_explanations = HashMap::new();
         ai_explanations.insert(
@@ -250,7 +252,7 @@ impl AIExplainer {
             "The node exhibits concerning behavior patterns consistent with potential malicious activity. High anomaly scores have been detected, along with suspicious transaction patterns or network behavior.".to_string()
         );
         component_explanations.insert("ai_behavior".to_string(), ai_explanations);
-        
+
         Self {
             security_logger,
             recent_changes: Arc::new(Mutex::new(HashMap::new())),
@@ -258,105 +260,107 @@ impl AIExplainer {
             component_explanations,
         }
     }
-    
+
     /// Explain a node score
-    pub async fn explain_score(&self, node_id: &str, score: &NodeScore) -> Result<ScoreExplanation> {
+    pub async fn explain_score(
+        &self,
+        node_id: &str,
+        score: &NodeScore,
+    ) -> Result<ScoreExplanation> {
         // Get recent changes for this node
         let recent_changes = {
             let changes_map = self.recent_changes.lock().await;
-            changes_map.get(node_id)
-                .cloned()
-                .unwrap_or_default()
+            changes_map.get(node_id).cloned().unwrap_or_default()
         };
-        
+
         // Determine score level for each component
         let device_level = Self::get_score_level(score.device_health_score);
         let network_level = Self::get_score_level(score.network_score);
         let storage_level = Self::get_score_level(score.storage_score);
         let engagement_level = Self::get_score_level(score.engagement_score);
         let ai_behavior_level = Self::get_score_level(score.ai_behavior_score);
-        
+
         // Get explanations for each component
         let mut component_explanations = HashMap::new();
-        
+
         if let Some(explanations) = self.component_explanations.get("device_health") {
             if let Some(explanation) = explanations.get(&device_level) {
                 component_explanations.insert("device_health".to_string(), explanation.clone());
             }
         }
-        
+
         if let Some(explanations) = self.component_explanations.get("network") {
             if let Some(explanation) = explanations.get(&network_level) {
                 component_explanations.insert("network".to_string(), explanation.clone());
             }
         }
-        
+
         if let Some(explanations) = self.component_explanations.get("ai_behavior") {
             if let Some(explanation) = explanations.get(&ai_behavior_level) {
                 component_explanations.insert("ai_behavior".to_string(), explanation.clone());
             }
         }
-        
+
         // Calculate factors with highest impact
         let mut all_factors = Vec::new();
-        
+
         // Add device health factors
         if let Some(importance_list) = self.feature_importance.get("device_health") {
             for factor in importance_list {
                 all_factors.push((
                     format!("device_health.{}", factor.feature),
-                    factor.importance * score.device_health_score * 0.2 // 20% weight in overall score
+                    factor.importance * score.device_health_score * 0.2, // 20% weight in overall score
                 ));
             }
         }
-        
+
         // Add network factors
         if let Some(importance_list) = self.feature_importance.get("network") {
             for factor in importance_list {
                 all_factors.push((
                     format!("network.{}", factor.feature),
-                    factor.importance * score.network_score * 0.3 // 30% weight in overall score
+                    factor.importance * score.network_score * 0.3, // 30% weight in overall score
                 ));
             }
         }
-        
+
         // Add AI behavior factors
         if let Some(importance_list) = self.feature_importance.get("ai_behavior") {
             for factor in importance_list {
                 all_factors.push((
                     format!("ai_behavior.{}", factor.feature),
-                    factor.importance * score.ai_behavior_score * 0.2 // 20% weight in overall score
+                    factor.importance * score.ai_behavior_score * 0.2, // 20% weight in overall score
                 ));
             }
         }
-        
+
         // Sort by impact (absolute value)
         all_factors.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
-        
+
         // Get top positive and negative factors
         let mut positive_factors = Vec::new();
         let mut negative_factors = Vec::new();
-        
+
         for (factor, impact) in &all_factors {
             if *impact > 0.0 {
                 positive_factors.push((factor.clone(), *impact));
             } else {
                 negative_factors.push((factor.clone(), *impact));
             }
-            
+
             if positive_factors.len() >= 5 && negative_factors.len() >= 5 {
                 break;
             }
         }
-        
+
         // Sort by magnitude
         positive_factors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         negative_factors.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        
+
         // Limit to top 5
         let positive_factors = positive_factors.into_iter().take(5).collect();
         let negative_factors = negative_factors.into_iter().take(5).collect();
-        
+
         // Generate summary
         let summary = Self::generate_summary(
             score,
@@ -364,9 +368,9 @@ impl AIExplainer {
             &network_level,
             &storage_level,
             &engagement_level,
-            &ai_behavior_level
+            &ai_behavior_level,
         );
-        
+
         Ok(ScoreExplanation {
             node_id: node_id.to_string(),
             overall_score: score.overall_score,
@@ -383,7 +387,7 @@ impl AIExplainer {
             summary,
         })
     }
-    
+
     /// Record a score change event
     pub async fn record_score_change(
         &self,
@@ -406,23 +410,23 @@ impl AIExplainer {
             evidence: evidence.map(String::from),
             factors,
         };
-        
+
         // Add to recent changes
         {
             let mut changes_map = self.recent_changes.lock().await;
             let node_changes = changes_map
                 .entry(node_id.to_string())
                 .or_insert_with(Vec::new);
-            
+
             node_changes.push(event.clone());
-            
+
             // Keep only the last 100 changes
             if node_changes.len() > 100 {
                 let excess = node_changes.len() - 100;
                 node_changes.drain(0..excess);
             }
         }
-        
+
         // Log significant changes
         let security_level = if (new_score - previous_score).abs() > 0.1 {
             if new_score < previous_score {
@@ -433,30 +437,33 @@ impl AIExplainer {
         } else {
             SecurityLevel::Info
         };
-        
+
         let category = match metric_type {
             "device_health" => SecurityCategory::NodeBehavior,
             "network" => SecurityCategory::Network,
             "ai_behavior" => SecurityCategory::NodeBehavior,
             _ => SecurityCategory::NodeBehavior,
         };
-        
+
         // Log to security logger
-        self.security_logger.log_event(
-            security_level,
-            category,
-            Some(node_id),
-            &format!("{} score changed by {:.4}: {}", 
-                metric_type, 
-                new_score - previous_score,
-                reason
-            ),
-            serde_json::to_value(&event)?,
-        ).await?;
-        
+        self.security_logger
+            .log_event(
+                security_level,
+                category,
+                Some(node_id),
+                &format!(
+                    "{} score changed by {:.4}: {}",
+                    metric_type,
+                    new_score - previous_score,
+                    reason
+                ),
+                serde_json::to_value(&event)?,
+            )
+            .await?;
+
         Ok(())
     }
-    
+
     /// Get confidence level for a score
     pub fn get_confidence_level(score: f32, evidence_count: usize) -> ConfidenceLevel {
         // Higher confidence with more evidence
@@ -469,7 +476,7 @@ impl AIExplainer {
         } else {
             0.6
         };
-        
+
         // Adjust based on score extremes
         let score_confidence = if score < 0.2 || score > 0.8 {
             // More confident about very high or very low scores
@@ -478,9 +485,9 @@ impl AIExplainer {
             // Less confident about middle scores
             0.7
         };
-        
+
         let combined_confidence = (base_confidence + score_confidence) / 2.0;
-        
+
         match combined_confidence {
             c if c >= 0.9 => ConfidenceLevel::VeryHigh,
             c if c >= 0.7 => ConfidenceLevel::High,
@@ -489,37 +496,35 @@ impl AIExplainer {
             _ => ConfidenceLevel::VeryLow,
         }
     }
-    
+
     /// Get factors most affecting a metric score
     pub fn explain_metric_score(
-        &self, 
-        metric_type: &str, 
-        _metric_score: f32, 
-        metrics: &serde_json::Value
+        &self,
+        metric_type: &str,
+        _metric_score: f32,
+        metrics: &serde_json::Value,
     ) -> Result<HashMap<String, f32>> {
         let mut factors = HashMap::new();
-        
+
         // Get feature importance for this metric
         if let Some(importance_list) = self.feature_importance.get(metric_type) {
             for feature in importance_list {
                 // Try to get the feature value from metrics
                 if let Ok(feature_value) = Self::extract_feature_value(metrics, &feature.feature) {
                     // Normalize feature value to 0-1 scale
-                    let normalized_value = Self::normalize_feature_value(
-                        &feature.feature, 
-                        feature_value
-                    )?;
-                    
+                    let normalized_value =
+                        Self::normalize_feature_value(&feature.feature, feature_value)?;
+
                     // Calculate contribution
                     let contribution = normalized_value * feature.importance;
                     factors.insert(feature.feature.clone(), contribution);
                 }
             }
         }
-        
+
         Ok(factors)
     }
-    
+
     /// Helper to extract feature value from JSON metrics
     fn extract_feature_value(metrics: &serde_json::Value, feature: &str) -> Result<f64> {
         if let Some(value) = metrics.get(feature) {
@@ -531,12 +536,18 @@ impl AIExplainer {
                 return Ok(if boolean { 1.0 } else { 0.0 });
             }
         }
-        
-        Err(anyhow::anyhow!("Feature not found or not numeric: {}", feature))
+
+        Err(anyhow::anyhow!(
+            "Feature not found or not numeric: {}",
+            feature
+        ))
     }
-    
+
     /// Normalize a feature value to 0-1 scale
-    fn normalize_feature_value(feature_name: &str, feature_value: f64) -> Result<f32, anyhow::Error> {
+    fn normalize_feature_value(
+        feature_name: &str,
+        feature_value: f64,
+    ) -> Result<f32, anyhow::Error> {
         // Handle specific feature normalizations based on name
         let normalized = match feature_name {
             "cpu_usage" => {
@@ -548,7 +559,7 @@ impl AIExplainer {
                 } else {
                     0.7 - (feature_value - 60.0) / 40.0 * 0.7
                 }
-            },
+            }
             "memory_usage" => {
                 // Lower is better, optimal is 30-70%
                 if feature_value <= 30.0 {
@@ -558,7 +569,7 @@ impl AIExplainer {
                 } else {
                     0.7 - (feature_value - 70.0) / 30.0 * 0.7
                 }
-            },
+            }
             "disk_available" => {
                 // Higher is better, GB scale
                 let gb_value = feature_value / 1_000_000_000.0;
@@ -571,7 +582,7 @@ impl AIExplainer {
                 } else {
                     gb_value * 0.3
                 }
-            },
+            }
             "gb_model_size" => {
                 // Normalize model size: models over 3GB get a 1.0 score
                 if feature_value >= 3.0 {
@@ -580,7 +591,7 @@ impl AIExplainer {
                     // Scale proportionally for smaller models
                     feature_value / 3.0
                 }
-            },
+            }
             "inference_time_ms" => {
                 // Normalize inference time: lower is better
                 // Values under 100ms get high scores, over 1000ms get low scores
@@ -592,7 +603,7 @@ impl AIExplainer {
                     // Linear scaling between 100ms and 1000ms
                     1.0 - (feature_value - 100.0) / 900.0
                 }
-            },
+            }
             "latency" => {
                 // Lower is better (ms)
                 if feature_value <= 50.0 {
@@ -604,27 +615,27 @@ impl AIExplainer {
                 } else {
                     0.0
                 }
-            },
+            }
             "packet_loss" => {
                 // Lower is better (percentage)
                 1.0 - feature_value
-            },
+            }
             "connection_stability" => {
                 // Higher is better (already 0-1)
                 feature_value
-            },
+            }
             "accuracy_score" | "f1_score" | "precision" | "recall" => {
                 // These metrics are already in 0-1 range
                 feature_value
-            },
+            }
             "anomaly_score" | "fraud_probability" | "threat_level" | "sybil_probability" => {
                 // Lower is better (already 0-1)
                 1.0 - feature_value
-            },
+            }
             "pattern_consistency" => {
                 // Higher is better (already 0-1)
                 feature_value
-            },
+            }
             // Default normalization for unknown features
             _ => {
                 if feature_value >= 0.0 && feature_value <= 1.0 {
@@ -639,10 +650,10 @@ impl AIExplainer {
                 }
             }
         };
-        
+
         Ok(normalized as f32)
     }
-    
+
     /// Get score level (low/medium/high) as a string
     fn get_score_level(score: f32) -> String {
         if score >= 0.8 {
@@ -653,7 +664,7 @@ impl AIExplainer {
             "low".to_string()
         }
     }
-    
+
     /// Generate a summary based on component scores
     fn generate_summary(
         score: &NodeScore,
@@ -672,36 +683,40 @@ impl AIExplainer {
         } else {
             "Restricted"
         };
-        
-        let mut summary = format!("Node has an overall trust score of {:.2} ({}). ", 
-            score.overall_score, trust_tier);
-            
+
+        let mut summary = format!(
+            "Node has an overall trust score of {:.2} ({}). ",
+            score.overall_score, trust_tier
+        );
+
         // Check for critical issues
         let mut critical_issues = Vec::new();
-        
+
         if score.ai_behavior_score < 0.5 {
             critical_issues.push("suspicious behavior patterns");
         }
-        
+
         if score.device_health_score < 0.5 {
             critical_issues.push("unreliable device health");
         }
-        
+
         if score.network_score < 0.5 {
             critical_issues.push("poor network connectivity");
         }
-        
+
         if !critical_issues.is_empty() {
-            summary.push_str(&format!("Critical issues detected: {}. ", 
-                critical_issues.join(", ")));
+            summary.push_str(&format!(
+                "Critical issues detected: {}. ",
+                critical_issues.join(", ")
+            ));
         }
-        
+
         // Add component details
         summary.push_str(&format!("Device health is {} ({:.2}), network performance is {} ({:.2}), and AI behavior trustworthiness is {} ({:.2}). ",
             device_level, score.device_health_score,
             network_level, score.network_score,
             ai_behavior_level, score.ai_behavior_score));
-            
+
         // Add qualification for consensus
         if score.overall_score >= 0.6 {
             summary.push_str("Node qualifies for consensus participation.");
@@ -709,27 +724,28 @@ impl AIExplainer {
             summary.push_str(&format!("Node does not qualify for consensus participation. Minimum required score: 0.60, current: {:.2}",
                 score.overall_score));
         }
-        
+
         summary
     }
-    
+
     /// Get recent score changes for a node
     pub async fn get_recent_changes(&self, node_id: &str) -> Vec<ScoreChangeEvent> {
         let changes_map = self.recent_changes.lock().await;
-        changes_map.get(node_id)
-            .cloned()
-            .unwrap_or_default()
+        changes_map.get(node_id).cloned().unwrap_or_default()
     }
-    
+
     /// Export all explanations to JSON
-    pub async fn export_explanations(&self, node_scores: &HashMap<String, NodeScore>) -> Result<String> {
+    pub async fn export_explanations(
+        &self,
+        node_scores: &HashMap<String, NodeScore>,
+    ) -> Result<String> {
         let mut explanations = Vec::new();
-        
+
         for (node_id, score) in node_scores {
             let explanation = self.explain_score(node_id, score).await?;
             explanations.push(explanation);
         }
-        
+
         let json = serde_json::to_string_pretty(&explanations)?;
         Ok(json)
     }
@@ -742,46 +758,59 @@ pub async fn generate_explainability_report(
     score: &NodeScore,
 ) -> Result<String> {
     let explanation = explainer.explain_score(node_id, score).await?;
-    
+
     let mut report = String::new();
     report.push_str(&format!("# AI Score Explanation for Node: {}\n\n", node_id));
-    report.push_str(&format!("**Generated:** {}\n\n", 
-        chrono::DateTime::<chrono::Local>::from(explanation.timestamp)
-            .format("%Y-%m-%d %H:%M:%S")));
-    
+    report.push_str(&format!(
+        "**Generated:** {}\n\n",
+        chrono::DateTime::<chrono::Local>::from(explanation.timestamp).format("%Y-%m-%d %H:%M:%S")
+    ));
+
     report.push_str("## Summary\n\n");
     report.push_str(&explanation.summary);
     report.push_str("\n\n");
-    
+
     report.push_str("## Score Components\n\n");
     report.push_str("| Component | Score | Level |\n");
     report.push_str("|-----------|-------|-------|\n");
-    report.push_str(&format!("| Overall | {:.2} | {} |\n", 
-        explanation.overall_score, 
-        AIExplainer::get_score_level(explanation.overall_score)));
-    report.push_str(&format!("| Device Health | {:.2} | {} |\n", 
-        explanation.device_health_score, 
-        AIExplainer::get_score_level(explanation.device_health_score)));
-    report.push_str(&format!("| Network | {:.2} | {} |\n", 
-        explanation.network_score, 
-        AIExplainer::get_score_level(explanation.network_score)));
-    report.push_str(&format!("| Storage | {:.2} | {} |\n", 
-        explanation.storage_score, 
-        AIExplainer::get_score_level(explanation.storage_score)));
-    report.push_str(&format!("| Engagement | {:.2} | {} |\n", 
-        explanation.engagement_score, 
-        AIExplainer::get_score_level(explanation.engagement_score)));
-    report.push_str(&format!("| AI Behavior | {:.2} | {} |\n", 
-        explanation.ai_behavior_score, 
-        AIExplainer::get_score_level(explanation.ai_behavior_score)));
+    report.push_str(&format!(
+        "| Overall | {:.2} | {} |\n",
+        explanation.overall_score,
+        AIExplainer::get_score_level(explanation.overall_score)
+    ));
+    report.push_str(&format!(
+        "| Device Health | {:.2} | {} |\n",
+        explanation.device_health_score,
+        AIExplainer::get_score_level(explanation.device_health_score)
+    ));
+    report.push_str(&format!(
+        "| Network | {:.2} | {} |\n",
+        explanation.network_score,
+        AIExplainer::get_score_level(explanation.network_score)
+    ));
+    report.push_str(&format!(
+        "| Storage | {:.2} | {} |\n",
+        explanation.storage_score,
+        AIExplainer::get_score_level(explanation.storage_score)
+    ));
+    report.push_str(&format!(
+        "| Engagement | {:.2} | {} |\n",
+        explanation.engagement_score,
+        AIExplainer::get_score_level(explanation.engagement_score)
+    ));
+    report.push_str(&format!(
+        "| AI Behavior | {:.2} | {} |\n",
+        explanation.ai_behavior_score,
+        AIExplainer::get_score_level(explanation.ai_behavior_score)
+    ));
     report.push_str("\n");
-    
+
     report.push_str("## Component Explanations\n\n");
     for (component, explanation_text) in &explanation.component_explanations {
         report.push_str(&format!("### {}\n\n", component));
         report.push_str(&format!("{}\n\n", explanation_text));
     }
-    
+
     report.push_str("## Top Positive Factors\n\n");
     if explanation.positive_factors.is_empty() {
         report.push_str("No significant positive factors.\n\n");
@@ -793,7 +822,7 @@ pub async fn generate_explainability_report(
         }
         report.push_str("\n");
     }
-    
+
     report.push_str("## Top Negative Factors\n\n");
     if explanation.negative_factors.is_empty() {
         report.push_str("No significant negative factors.\n\n");
@@ -805,19 +834,20 @@ pub async fn generate_explainability_report(
         }
         report.push_str("\n");
     }
-    
+
     report.push_str("## Recent Score Changes\n\n");
     if explanation.recent_changes.is_empty() {
         report.push_str("No recent score changes recorded.\n\n");
     } else {
         report.push_str("| Timestamp | Metric | Previous | New | Change | Reason |\n");
         report.push_str("|-----------|--------|----------|-----|--------|--------|\n");
-        
+
         for change in &explanation.recent_changes {
-            let timestamp = chrono::DateTime::<chrono::Local>::from(change.timestamp)
-                .format("%Y-%m-%d %H:%M");
-                
-            report.push_str(&format!("| {} | {} | {:.2} | {:.2} | {:.2} | {} |\n",
+            let timestamp =
+                chrono::DateTime::<chrono::Local>::from(change.timestamp).format("%Y-%m-%d %H:%M");
+
+            report.push_str(&format!(
+                "| {} | {} | {:.2} | {:.2} | {:.2} | {} |\n",
                 timestamp,
                 change.metric_type,
                 change.previous_score,
@@ -828,29 +858,27 @@ pub async fn generate_explainability_report(
         }
         report.push_str("\n");
     }
-    
+
     Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_ai_explainer() {
         // Setup a temporary path for logs
         let temp_dir = tempfile::tempdir().unwrap();
         let log_path = temp_dir.path().join("security.log");
-        
+
         // Create security logger
-        let security_logger = Arc::new(SecurityLogger::new(
-            log_path.to_str().unwrap(),
-            100
-        ).unwrap());
-        
+        let security_logger =
+            Arc::new(SecurityLogger::new(log_path.to_str().unwrap(), 100).unwrap());
+
         // Create explainer
         let explainer = AIExplainer::new(security_logger);
-        
+
         // Create test score
         let score = NodeScore {
             overall_score: 0.75,
@@ -862,39 +890,48 @@ mod tests {
             last_updated: SystemTime::now(),
             history: vec![(SystemTime::now(), 0.75)],
         };
-        
+
         // Record a score change
         let mut factors = HashMap::new();
         factors.insert("cpu_usage".to_string(), 0.2);
         factors.insert("memory_usage".to_string(), -0.1);
-        
-        explainer.record_score_change(
-            "test-node",
-            0.7,
-            0.75,
-            "device_health",
-            "Improved CPU performance",
-            Some("CPU usage decreased from 85% to 45%"),
-            factors,
-        ).await.unwrap();
-        
+
+        explainer
+            .record_score_change(
+                "test-node",
+                0.7,
+                0.75,
+                "device_health",
+                "Improved CPU performance",
+                Some("CPU usage decreased from 85% to 45%"),
+                factors,
+            )
+            .await
+            .unwrap();
+
         // Get explanation
         let explanation = explainer.explain_score("test-node", &score).await.unwrap();
-        
+
         // Verify explanation
         assert_eq!(explanation.node_id, "test-node");
         assert_eq!(explanation.overall_score, 0.75);
         assert_eq!(explanation.device_health_score, 0.8);
         assert!(!explanation.recent_changes.is_empty());
         assert!(!explanation.summary.is_empty());
-        
+
         // Verify explanations for components
-        assert!(explanation.component_explanations.contains_key("device_health"));
+        assert!(explanation
+            .component_explanations
+            .contains_key("device_health"));
         assert!(explanation.component_explanations.contains_key("network"));
-        assert!(explanation.component_explanations.contains_key("ai_behavior"));
-        
+        assert!(explanation
+            .component_explanations
+            .contains_key("ai_behavior"));
+
         // Generate report
-        let report = generate_explainability_report(&explainer, "test-node", &score).await.unwrap();
+        let report = generate_explainability_report(&explainer, "test-node", &score)
+            .await
+            .unwrap();
         assert!(report.contains("AI Score Explanation for Node: test-node"));
     }
-} 
+}

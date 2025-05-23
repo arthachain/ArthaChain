@@ -1,227 +1,360 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use std::collections::{HashMap, VecDeque};
-use serde::{Serialize, Deserialize};
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use log::info;
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
-/// Reputation score with historical data
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReputationScore {
-    /// Current score
-    pub score: f64,
-    /// Historical performance records
-    pub history: VecDeque<PerformanceRecord>,
-    /// Total stake
-    pub stake: u64,
-    /// Last update timestamp
-    pub last_update: DateTime<Utc>,
-    /// Slashing status
-    pub slashing_status: SlashingStatus,
+use crate::sharding::ShardId;
+
+/// Reputation score (0.0 to 1.0)
+pub type ReputationScore = f64;
+
+/// Default minimum reputation threshold
+pub const DEFAULT_MIN_REPUTATION: ReputationScore = 0.3;
+
+/// Reputation update reason
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ReputationUpdateReason {
+    /// Good behavior (successful contribution)
+    SuccessfulContribution,
+    /// Bad behavior (failed validation)
+    FailedValidation,
+    /// Malicious behavior (invalid block)
+    MaliciousBlock,
+    /// Invalid transaction
+    InvalidTransaction,
+    /// Timeout (slow response)
+    Timeout,
+    /// Peer disconnected
+    Disconnected,
+    /// Peer reconnected
+    Reconnected,
+    /// Cross-shard validation success
+    CrossShardValidationSuccess,
+    /// Cross-shard validation failure
+    CrossShardValidationFailure,
+    /// Custom reason
+    Custom(String),
 }
 
-/// Performance record for a validator
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceRecord {
-    /// Timestamp of the record
-    pub timestamp: DateTime<Utc>,
-    /// Performance score (-1.0 to 1.0)
-    pub score: f64,
-    /// Type of performance event
-    pub event_type: PerformanceEvent,
+/// Reputation update
+#[derive(Debug, Clone)]
+pub struct ReputationUpdate {
+    /// Peer ID
+    pub peer_id: String,
+    /// Shard ID
+    pub shard_id: ShardId,
+    /// Score delta
+    pub score_delta: f64,
+    /// Update reason
+    pub reason: ReputationUpdateReason,
+    /// Timestamp
+    pub timestamp: Instant,
 }
 
-/// Type of performance event
+/// Reputation manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PerformanceEvent {
-    /// Block proposal
-    BlockProposal,
-    /// Block validation
-    BlockValidation,
-    /// Cross-shard consensus
-    CrossShardConsensus,
-    /// Slashing event
-    Slashing,
+pub struct ReputationConfig {
+    /// Minimum reputation score to participate
+    pub min_reputation: ReputationScore,
+    /// Initial reputation score for new peers
+    pub initial_reputation: ReputationScore,
+    /// Maximum reputation score adjustment
+    pub max_adjustment: ReputationScore,
+    /// Decay factor for reputation
+    pub decay_factor: f64,
+    /// Decay interval
+    pub decay_interval_secs: u64,
 }
 
-/// Slashing status for a validator
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SlashingStatus {
-    /// No slashing
-    None,
-    /// Temporarily slashed
-    Temporary {
-        /// Slash amount
-        amount: u64,
-        /// End timestamp
-        end_time: DateTime<Utc>,
-    },
-    /// Permanently slashed
-    Permanent {
-        /// Slash amount
-        amount: u64,
-    },
+impl Default for ReputationConfig {
+    fn default() -> Self {
+        Self {
+            min_reputation: DEFAULT_MIN_REPUTATION,
+            initial_reputation: 0.5,
+            max_adjustment: 0.1,
+            decay_factor: 0.99,
+            decay_interval_secs: 3600, // 1 hour
+        }
+    }
 }
 
-/// Reputation manager for tracking node performance
+/// Reputation entry for a peer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReputationEntry {
+    /// Peer ID
+    pub peer_id: String,
+    /// Shard ID
+    pub shard_id: ShardId,
+    /// Reputation score
+    pub score: ReputationScore,
+    /// Last update timestamp as duration since UNIX_EPOCH
+    pub last_update: u64,
+    /// History of updates
+    pub updates: Vec<(u64, ReputationUpdateReason, f64)>,
+}
+
+/// Reputation manager
 pub struct ReputationManager {
-    scores: Arc<RwLock<HashMap<u64, ReputationScore>>>,
-    _max_score: f64,
-    history_size: usize,
-    slashing_threshold: f64,
-    min_stake: u64,
+    /// Reputation scores by peer ID and shard ID
+    scores: Arc<RwLock<HashMap<String, HashMap<ShardId, ReputationEntry>>>>,
+    /// Configuration
+    config: ReputationConfig,
+    /// Last decay time
+    last_decay: Arc<RwLock<Instant>>,
+    /// Pending updates
+    pending_updates: Arc<RwLock<Vec<ReputationUpdate>>>,
+    /// Running
+    running: Arc<RwLock<bool>>,
 }
 
 impl ReputationManager {
     /// Create a new reputation manager
-    pub fn new(max_score: f64, history_size: usize, slashing_threshold: f64, min_stake: u64) -> Self {
+    pub fn new(config: ReputationConfig) -> Self {
         Self {
             scores: Arc::new(RwLock::new(HashMap::new())),
-            _max_score: max_score,
-            history_size,
-            slashing_threshold,
-            min_stake,
+            config,
+            last_decay: Arc::new(RwLock::new(Instant::now())),
+            pending_updates: Arc::new(RwLock::new(Vec::new())),
+            running: Arc::new(RwLock::new(false)),
         }
     }
 
-    /// Increase reputation for a shard
-    pub async fn increase_reputation(&self, shard_id: u64, event_type: PerformanceEvent) -> Result<()> {
-        let mut scores = self.scores.write().await;
-        let score = scores.entry(shard_id).or_insert(ReputationScore {
-            score: 0.0,
-            history: VecDeque::with_capacity(self.history_size),
-            stake: 0,
-            last_update: Utc::now(),
-            slashing_status: SlashingStatus::None,
-        });
+    /// Start the reputation manager
+    pub async fn start(&self) -> Result<()> {
+        let mut running = self.running.write().await;
+        *running = true;
 
-        // Add performance record
-        score.history.push_back(PerformanceRecord {
-            timestamp: Utc::now(),
-            score: 0.1,
-            event_type: event_type.clone(),
-        });
-
-        // Trim history if needed
-        if score.history.len() > self.history_size {
-            score.history.pop_front();
-        }
-
-        // Update score with weighted average
-        score.score = self.calculate_weighted_score(&score.history);
-        score.last_update = Utc::now();
+        // Start background tasks for processing updates and decay
 
         Ok(())
     }
 
-    /// Decrease reputation for a shard
-    pub async fn decrease_reputation(&self, shard_id: u64, event_type: PerformanceEvent) -> Result<()> {
-        let mut scores = self.scores.write().await;
-        let score = scores.entry(shard_id).or_insert(ReputationScore {
-            score: 0.0,
-            history: VecDeque::with_capacity(self.history_size),
-            stake: 0,
-            last_update: Utc::now(),
-            slashing_status: SlashingStatus::None,
-        });
-
-        // Add performance record
-        score.history.push_back(PerformanceRecord {
-            timestamp: Utc::now(),
-            score: -0.1,
-            event_type: event_type.clone(),
-        });
-
-        // Trim history if needed
-        if score.history.len() > self.history_size {
-            score.history.pop_front();
-        }
-
-        // Update score with weighted average
-        score.score = self.calculate_weighted_score(&score.history);
-        score.last_update = Utc::now();
-
-        // Check for slashing conditions
-        if score.score < -self.slashing_threshold {
-            self.apply_slashing(shard_id, score).await?;
-        }
+    /// Stop the reputation manager
+    pub async fn stop(&self) -> Result<()> {
+        let mut running = self.running.write().await;
+        *running = false;
 
         Ok(())
     }
 
-    /// Calculate weighted score from history
-    fn calculate_weighted_score(&self, history: &VecDeque<PerformanceRecord>) -> f64 {
-        if history.is_empty() {
-            return 0.0;
-        }
-
-        let mut total_weight = 0.0;
-        let mut weighted_sum = 0.0;
-
-        for (i, record) in history.iter().enumerate() {
-            let weight = 1.0 / (i + 1) as f64; // More recent records have higher weight
-            total_weight += weight;
-            weighted_sum += record.score * weight;
-        }
-
-        weighted_sum / total_weight
-    }
-
-    /// Apply slashing conditions
-    async fn apply_slashing(&self, _shard_id: u64, score: &mut ReputationScore) -> Result<()> {
-        match score.slashing_status {
-            SlashingStatus::None => {
-                // First offense: temporary slashing
-                let slash_amount = (score.stake as f64 * 0.1) as u64; // 10% of stake
-                score.slashing_status = SlashingStatus::Temporary {
-                    amount: slash_amount,
-                    end_time: Utc::now() + chrono::Duration::hours(24),
-                };
-                score.stake -= slash_amount;
-            }
-            SlashingStatus::Temporary { .. } => {
-                // Second offense: permanent slashing
-                let slash_amount = (score.stake as f64 * 0.5) as u64; // 50% of stake
-                score.slashing_status = SlashingStatus::Permanent {
-                    amount: slash_amount,
-                };
-                score.stake -= slash_amount;
-            }
-            SlashingStatus::Permanent { .. } => {
-                // Already permanently slashed
-            }
-        }
-        Ok(())
-    }
-
-    /// Get the current reputation score for a shard
-    pub async fn get_reputation(&self, shard_id: u64) -> f64 {
+    /// Get the reputation score for a peer in a specific shard
+    pub async fn get_score(&self, peer_id: &str, shard_id: ShardId) -> ReputationScore {
         let scores = self.scores.read().await;
-        scores.get(&shard_id).map(|s| s.score).unwrap_or(0.0)
-    }
 
-    /// Get the current stake for a shard
-    pub async fn get_stake(&self, shard_id: u64) -> u64 {
-        let scores = self.scores.read().await;
-        scores.get(&shard_id).map(|s| s.stake).unwrap_or(0)
-    }
-
-    /// Update stake for a shard
-    pub async fn update_stake(&self, shard_id: u64, new_stake: u64) -> Result<()> {
-        let mut scores = self.scores.write().await;
-        if let Some(score) = scores.get_mut(&shard_id) {
-            score.stake = new_stake;
+        match scores.get(peer_id) {
+            Some(shard_scores) => match shard_scores.get(&shard_id) {
+                Some(entry) => entry.score,
+                None => self.config.initial_reputation,
+            },
+            None => self.config.initial_reputation,
         }
+    }
+
+    /// Check if a peer has sufficient reputation to participate
+    pub async fn is_allowed(&self, peer_id: &str, shard_id: ShardId) -> bool {
+        let score = self.get_score(peer_id, shard_id).await;
+        score >= self.config.min_reputation
+    }
+
+    /// Update the reputation score for a peer
+    pub async fn update_score(
+        &self,
+        peer_id: &str,
+        shard_id: ShardId,
+        reason: ReputationUpdateReason,
+        score_delta: f64,
+    ) -> Result<()> {
+        // Add to pending updates
+        {
+            let mut pending = self.pending_updates.write().await;
+            pending.push(ReputationUpdate {
+                peer_id: peer_id.to_string(),
+                shard_id,
+                score_delta,
+                reason: reason.clone(),
+                timestamp: Instant::now(),
+            });
+        }
+
+        // Process the update immediately for now
+        self.apply_update(peer_id, shard_id, reason, score_delta)
+            .await
+    }
+
+    /// Apply a reputation update
+    async fn apply_update(
+        &self,
+        peer_id: &str,
+        shard_id: ShardId,
+        reason: ReputationUpdateReason,
+        score_delta: f64,
+    ) -> Result<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut scores = self.scores.write().await;
+
+        // Get or create the shard map for this peer
+        let shard_scores = scores
+            .entry(peer_id.to_string())
+            .or_insert_with(HashMap::new);
+
+        // Get or create the reputation entry for this shard
+        let entry = shard_scores
+            .entry(shard_id)
+            .or_insert_with(|| ReputationEntry {
+                peer_id: peer_id.to_string(),
+                shard_id,
+                score: self.config.initial_reputation,
+                last_update: now,
+                updates: Vec::new(),
+            });
+
+        // Apply bounded score delta
+        let bounded_delta = score_delta
+            .max(-self.config.max_adjustment)
+            .min(self.config.max_adjustment);
+
+        entry.score = (entry.score + bounded_delta).max(0.0).min(1.0);
+        entry.last_update = now;
+
+        // Add to history, keeping last 10 updates
+        entry.updates.push((now, reason, bounded_delta));
+        if entry.updates.len() > 10 {
+            entry.updates.remove(0);
+        }
+
         Ok(())
     }
 
-    /// Check if a shard is eligible for validation
-    pub async fn is_eligible(&self, _shard_id: u64) -> bool {
-        let scores = self.scores.read().await;
-        if let Some(score) = scores.get(&_shard_id) {
-            score.score >= 0.0 && score.stake >= self.min_stake
-        } else {
-            false
+    /// Process pending updates
+    pub async fn process_pending_updates(&self) -> Result<()> {
+        let mut pending = self.pending_updates.write().await;
+
+        let updates_to_process = std::mem::take(&mut *pending);
+
+        for update in updates_to_process {
+            self.apply_update(
+                &update.peer_id,
+                update.shard_id,
+                update.reason,
+                update.score_delta,
+            )
+            .await?;
         }
+
+        Ok(())
     }
-} 
+
+    /// Apply decay to all reputation scores
+    pub async fn apply_decay(&self) -> Result<()> {
+        let mut last_decay = self.last_decay.write().await;
+        let now = Instant::now();
+
+        // Check if it's time to decay
+        if now.duration_since(*last_decay).as_secs() < self.config.decay_interval_secs {
+            return Ok(());
+        }
+
+        // Update last decay time
+        *last_decay = now;
+
+        // Apply decay to all scores
+        let mut scores = self.scores.write().await;
+        let mut total_decayed = 0;
+
+        for peer_scores in scores.values_mut() {
+            for entry in peer_scores.values_mut() {
+                entry.score = entry.score * self.config.decay_factor;
+                total_decayed += 1;
+            }
+        }
+
+        info!("Applied reputation decay to {} peers", total_decayed);
+
+        Ok(())
+    }
+
+    /// Get peers with scores above the threshold
+    pub async fn get_trusted_peers(&self, shard_id: ShardId) -> Vec<String> {
+        let scores = self.scores.read().await;
+        let mut trusted_peers = Vec::new();
+
+        for (peer_id, peer_scores) in scores.iter() {
+            if let Some(entry) = peer_scores.get(&shard_id) {
+                if entry.score >= self.config.min_reputation {
+                    trusted_peers.push(peer_id.clone());
+                }
+            }
+        }
+
+        trusted_peers
+    }
+
+    /// Get a random trusted peer
+    pub async fn get_random_trusted_peer(&self, shard_id: ShardId) -> Option<String> {
+        let trusted_peers = self.get_trusted_peers(shard_id).await;
+
+        if trusted_peers.is_empty() {
+            return None;
+        }
+
+        let index = thread_rng().gen_range(0..trusted_peers.len());
+        Some(trusted_peers[index].clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_reputation_manager() {
+        let config = ReputationConfig::default();
+        let manager = ReputationManager::new(config.clone());
+
+        // Test initial score
+        let peer_id = "peer1";
+        let shard_id = 0;
+
+        let score = manager.get_score(peer_id, shard_id).await;
+        assert_eq!(score, config.initial_reputation);
+
+        // Test updating score
+        manager
+            .update_score(
+                peer_id,
+                shard_id,
+                ReputationUpdateReason::SuccessfulContribution,
+                0.1,
+            )
+            .await
+            .unwrap();
+
+        let score = manager.get_score(peer_id, shard_id).await;
+        assert!(score > config.initial_reputation);
+
+        // Reset the score to initial
+        let peer_id = "peer2";
+
+        // Test negative update
+        manager
+            .update_score(
+                peer_id,
+                shard_id,
+                ReputationUpdateReason::FailedValidation,
+                -0.2,
+            )
+            .await
+            .unwrap();
+
+        let score = manager.get_score(peer_id, shard_id).await;
+        assert!(score < config.initial_reputation);
+    }
+}

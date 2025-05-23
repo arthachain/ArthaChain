@@ -1,6 +1,6 @@
 // Ledger modules will be implemented here
-pub mod state;
 pub mod block;
+pub mod state;
 pub mod transaction;
 
 // Create an alias for State as BlockchainState to maintain compatibility
@@ -9,11 +9,11 @@ pub use state::State as BlockchainState;
 // Export BlockExt trait for use by consensus modules
 pub use block::BlockExt;
 
-use thiserror::Error;
-use crate::storage::Storage;
 use crate::config::Config;
 use crate::ledger::state::State;
+use crate::storage::Storage;
 use std::sync::Arc;
+use thiserror::Error;
 
 /// Transaction processing error
 #[derive(Debug, thiserror::Error, Clone)]
@@ -65,37 +65,37 @@ pub enum TransactionError {
 pub enum ConsensusError {
     #[error("Invalid validator signature")]
     InvalidSignature,
-    
+
     #[error("Insufficient signatures")]
     InsufficientSignatures,
-    
+
     #[error("Invalid block hash")]
     InvalidBlockHash,
-    
+
     #[error("Block already finalized")]
     AlreadyFinalized,
-    
+
     #[error("Invalid consensus state transition")]
     InvalidStateTransition,
-    
+
     #[error("Missing validators")]
     MissingValidators,
-    
+
     #[error("Block finality error")]
     FinalityError,
-    
+
     #[error("Signature combination failed")]
     SignatureCombinationFailed,
-    
+
     #[error("Consensus operation failed: {0}")]
     OperationFailed(String),
-    
+
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     #[error("{0}")]
     Other(String),
-    
+
     #[error("Anyhow error: {0}")]
     Anyhow(String),
 }
@@ -105,19 +105,19 @@ pub enum ConsensusError {
 pub enum BlockValidationError {
     #[error("Invalid previous hash")]
     InvalidPreviousHash,
-    
+
     #[error("Invalid timestamp")]
     InvalidTimestamp,
-    
+
     #[error("Invalid merkle root")]
     InvalidMerkleRoot,
-    
+
     #[error("Invalid transactions: {0}")]
     InvalidTransactions(TransactionError),
-    
+
     #[error("Invalid cross-shard reference")]
     InvalidCrossShardRef,
-    
+
     #[error("Other error: {0}")]
     Other(String),
 }
@@ -142,17 +142,17 @@ impl Ledger {
             storage,
         }
     }
-    
+
     /// Get the current blockchain state
     pub fn state(&self) -> &State {
         &self.state
     }
-    
+
     /// Get the storage instance
     pub fn storage(&self) -> &Arc<dyn Storage> {
         &self.storage
     }
-    
+
     /// Get the configuration
     pub fn config(&self) -> &Arc<Config> {
         &self.config
@@ -164,4 +164,4 @@ impl From<anyhow::Error> for TransactionError {
     fn from(err: anyhow::Error) -> Self {
         TransactionError::FromAnyhow(err.to_string())
     }
-} 
+}

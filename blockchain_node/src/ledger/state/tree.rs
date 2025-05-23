@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use anyhow::Result;
 
 /// State Tree for managing blockchain state
 #[derive(Debug)]
@@ -42,4 +42,4 @@ impl StateTree {
         let state = self.state.read().unwrap();
         Ok(state.contains_key(key))
     }
-} 
+}

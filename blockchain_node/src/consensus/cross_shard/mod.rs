@@ -135,9 +135,11 @@ pub struct CrossShardManager {
     transaction_status: Arc<RwLock<HashMap<String, TransactionStatus>>>,
 
     // Validator signatures for cross-shard transactions
+    #[allow(dead_code)]
     validators: Arc<RwLock<HashMap<String, HashSet<String>>>>,
 
     // Network service for communication
+    #[allow(dead_code)]
     network: Arc<dyn std::any::Any + Send + Sync>,
 
     // Should the manager be running
@@ -601,6 +603,7 @@ impl CrossShardManager {
     }
 
     /// Handle state sync from another shard
+    #[allow(dead_code)]
     async fn handle_state_sync(&self, _state_root: Vec<u8>, shard_id: u64) -> anyhow::Result<()> {
         debug!("Received state sync request from shard {}", shard_id);
         // We would process state sync data here in a real implementation

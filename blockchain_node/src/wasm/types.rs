@@ -2,13 +2,13 @@
 //!
 //! Defines common types and structures used in the WASM runtime environment
 
-use serde::{Serialize, Deserialize};
-use std::fmt;
-use std::collections::HashSet;
 use crate::crypto::hash::{Hash, Hasher};
 use crate::types::Address;
-use thiserror::Error;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::fmt;
 use std::sync::Arc;
+use thiserror::Error;
 
 /// WASM Contract Address - Identifies a smart contract on the blockchain
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -20,26 +20,26 @@ impl WasmContractAddress {
         let mut hasher = Hasher::new();
         hasher.update(deployer.as_bytes());
         hasher.update(&nonce.to_be_bytes());
-        
+
         // Take the first 20 bytes of the hash as an address (like Ethereum)
         let hash = hasher.finalize();
         let address_bytes = &hash.as_bytes()[0..20];
-        
+
         // Prefix with "wasm:" to distinguish from other address types
         let address = format!("wasm:{}", hex::encode(address_bytes));
         WasmContractAddress(address)
     }
-    
+
     /// Create a WASM contract address from a string
     pub fn from_string(s: &str) -> Self {
         WasmContractAddress(s.to_string())
     }
-    
+
     /// Get the address as bytes
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
-    
+
     /// Get the address as a string
     pub fn as_str(&self) -> &str {
         &self.0
@@ -152,67 +152,67 @@ pub enum WasmError {
     /// Validation errors for WASM bytecode
     #[error("Invalid WASM bytecode: {0}")]
     InvalidBytecode(String),
-    
+
     /// Instantiation errors
     #[error("Failed to instantiate WASM module: {0}")]
     InstantiationError(String),
-    
+
     /// Execution errors
     #[error("Execution error: {0}")]
     ExecutionError(String),
-    
+
     /// Gas limit exceeded
     #[error("Gas limit exceeded")]
     GasLimitExceeded,
-    
+
     /// Storage errors
     #[error("Storage error: {0}")]
     StorageError(String),
-    
+
     /// Memory access errors
     #[error("Memory access error")]
     MemoryAccessError,
-    
+
     /// Function not found
     #[error("Function not found: {0}")]
     FunctionNotFound(String),
-    
+
     /// Invalid argument
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
-    
+
     /// Allocation failed
     #[error("Allocation failed")]
     AllocationFailed,
-    
+
     /// No context available
     #[error("No context available")]
     NoContextAvailable,
-    
+
     /// Invalid UTF-8 string
     #[error("Invalid UTF-8 string")]
     InvalidUtf8String,
-    
+
     /// Contract already exists
     #[error("Contract already exists at this address")]
     ContractAlreadyExists,
-    
+
     /// Contract not found
     #[error("Contract not found at this address")]
     ContractNotFound,
-    
+
     /// Validation error
     #[error("Validation error: {0}")]
     ValidationError(String),
-    
+
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     /// Bytecode too large
     #[error("Bytecode too large")]
     BytecodeTooLarge,
-    
+
     /// Memory error
     #[error("Memory error: {0}")]
     MemoryError(String),
@@ -251,19 +251,19 @@ pub type WasmResult<T> = Result<T, WasmError>;
 pub struct CallContext {
     /// Address of the contract being called
     pub contract_address: Address,
-    
+
     /// Address of the caller (account or another contract)
     pub caller: Address,
-    
+
     /// Value attached to the call (in native tokens)
     pub value: u64,
-    
+
     /// Current block height
     pub block_height: u64,
-    
+
     /// Current block timestamp (in seconds since epoch)
     pub block_timestamp: u64,
-    
+
     /// Gas limit for the execution
     pub gas_limit: u64,
 }
@@ -273,16 +273,16 @@ pub struct CallContext {
 pub struct ContractDeployment {
     /// Contract address (derived from deployer and nonce)
     pub address: Address,
-    
+
     /// Contract bytecode (validated WASM module)
     pub code: Vec<u8>,
-    
+
     /// Initial arguments for contract constructor
     pub init_args: Vec<u8>,
-    
+
     /// Deployer account address
     pub deployer: Address,
-    
+
     /// Gas limit for deployment
     pub gas_limit: u64,
 }
@@ -292,13 +292,13 @@ pub struct ContractDeployment {
 pub struct ContractExecution {
     /// Contract address to execute
     pub address: Address,
-    
+
     /// Function name to call
     pub function: String,
-    
+
     /// Arguments to pass to the function
     pub args: Vec<u8>,
-    
+
     /// Call context
     pub context: CallContext,
 }
@@ -316,10 +316,10 @@ pub struct ExecutionResult {
 pub struct ContractLog {
     /// Contract address that emitted the log
     pub contract_address: WasmContractAddress,
-    
+
     /// Topic (indexed field) for the log
     pub topics: Vec<Vec<u8>>,
-    
+
     /// Data payload
     pub data: Vec<u8>,
 }
@@ -329,22 +329,22 @@ pub struct ContractLog {
 pub struct ContractMetadata {
     /// Contract name
     pub name: String,
-    
+
     /// Contract version
     pub version: String,
-    
+
     /// Contract author
     pub author: String,
-    
+
     /// Contract description
     pub description: String,
-    
+
     /// Deployment timestamp
     pub deployed_at: u64,
-    
+
     /// Deployer address
     pub deployer: Address,
-    
+
     /// ABI definition (JSON encoded interface description)
     pub abi: String,
 }
@@ -354,40 +354,40 @@ pub struct ContractMetadata {
 pub struct WasmTransaction {
     /// Transaction sender address
     pub from: Address,
-    
+
     /// Contract address for calls (None for deployment)
     pub to: Option<WasmContractAddress>,
-    
+
     /// Value to send with transaction
     pub value: Option<u64>,
-    
+
     /// Gas limit
     pub gas_limit: u64,
-    
+
     /// Gas price
     pub gas_price: u64,
-    
+
     /// Gas used
     pub gas_used: u64,
-    
+
     /// Nonce
     pub nonce: u64,
-    
+
     /// Contract bytecode for deployment
     pub data: Option<Vec<u8>>,
-    
+
     /// Constructor arguments for deployment
     pub constructor_args: Option<Vec<u8>>,
-    
+
     /// Function name to call
     pub function: Option<String>,
-    
+
     /// Function arguments
     pub function_args: Option<Vec<u8>>,
-    
+
     /// Transaction signature
     pub signature: Option<Vec<u8>>,
-    
+
     /// Transaction hash
     pub hash: Option<[u8; 32]>,
 }
@@ -416,7 +416,7 @@ impl WasmTransaction {
             hash: None,
         }
     }
-    
+
     /// Create a new contract call transaction
     pub fn new_call(
         from: Address,
@@ -442,30 +442,30 @@ impl WasmTransaction {
             hash: None,
         }
     }
-    
+
     /// Get the sender address
     pub fn get_sender(&self) -> Address {
         self.from.clone()
     }
-    
+
     /// Sign the transaction
     pub fn sign(&mut self, private_key: &[u8]) -> Result<(), WasmError> {
         // Create transaction hash
         let hash = self.calculate_hash();
         self.hash = Some(hash);
-        
+
         // In a real implementation, we would sign the hash with the private key
         // For now, we just create a dummy signature
         self.signature = Some(vec![0; 64]);
-        
+
         Ok(())
     }
-    
+
     /// Calculate transaction hash
     fn calculate_hash(&self) -> [u8; 32] {
         use sha3::{Digest, Keccak256};
         let mut hasher = Keccak256::new();
-        
+
         // Add transaction fields to hash
         hasher.update(self.from.as_bytes());
         if let Some(to) = &self.to {
@@ -477,23 +477,23 @@ impl WasmTransaction {
         hasher.update(&self.gas_limit.to_be_bytes());
         hasher.update(&self.gas_price.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
-        
+
         if let Some(data) = &self.data {
             hasher.update(data);
         }
-        
+
         if let Some(args) = &self.constructor_args {
             hasher.update(args);
         }
-        
+
         if let Some(function) = &self.function {
             hasher.update(function.as_bytes());
         }
-        
+
         if let Some(args) = &self.function_args {
             hasher.update(args);
         }
-        
+
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
         hash.copy_from_slice(&result[..]);
@@ -501,24 +501,24 @@ impl WasmTransaction {
     }
 }
 
-/// Result of WASM execution 
+/// Result of WASM execution
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WasmExecutionResult {
     /// Success flag
     pub succeeded: bool,
-    
+
     /// Error message if failed
     pub error: Option<String>,
-    
+
     /// Gas used during execution
     pub gas_used: u64,
-    
+
     /// Return data if any
     pub data: Option<Vec<u8>>,
-    
+
     /// Logs generated during execution
     pub logs: Vec<WasmLog>,
-    
+
     /// Contract address (for deployment)
     pub contract_address: Option<WasmContractAddress>,
 }
@@ -535,7 +535,7 @@ impl WasmExecutionResult {
             contract_address: None,
         }
     }
-    
+
     /// Create a failed execution result
     pub fn failure(error: String, gas_used: u64, logs: Vec<WasmLog>) -> Self {
         Self {
@@ -547,7 +547,7 @@ impl WasmExecutionResult {
             contract_address: None,
         }
     }
-    
+
     /// Create a successful deployment result
     pub fn deployment_success(
         contract_address: WasmContractAddress,
@@ -563,13 +563,9 @@ impl WasmExecutionResult {
             contract_address: Some(contract_address),
         }
     }
-    
+
     /// Create a successful call result
-    pub fn call_success(
-        data: Option<Vec<u8>>,
-        gas_used: u64,
-        logs: Vec<WasmLog>,
-    ) -> Self {
+    pub fn call_success(data: Option<Vec<u8>>, gas_used: u64, logs: Vec<WasmLog>) -> Self {
         Self {
             succeeded: true,
             error: None,
@@ -579,13 +575,9 @@ impl WasmExecutionResult {
             contract_address: None,
         }
     }
-    
+
     /// Create a failed call result
-    pub fn call_failure(
-        error: String,
-        gas_used: u64,
-        logs: Vec<WasmLog>,
-    ) -> Self {
+    pub fn call_failure(error: String, gas_used: u64, logs: Vec<WasmLog>) -> Self {
         Self {
             succeeded: false,
             error: Some(error),
@@ -602,10 +594,10 @@ impl WasmExecutionResult {
 pub struct WasmLog {
     /// Contract address
     pub address: WasmContractAddress,
-    
+
     /// Log topics (indexed fields)
     pub topics: Vec<Vec<u8>>,
-    
+
     /// Log data
     pub data: Vec<u8>,
 }
@@ -615,10 +607,10 @@ pub struct WasmLog {
 pub struct CallInfo {
     /// The function name to call
     pub function_name: String,
-    
+
     /// The arguments to pass to the function (in serialized form)
     pub arguments: Vec<u8>,
-    
+
     /// Gas limit for this call
     pub gas_limit: u64,
 }
@@ -628,13 +620,13 @@ pub struct CallInfo {
 pub struct ContractContext {
     /// The address of the contract being executed
     pub contract_address: String,
-    
+
     /// The address of the caller
     pub caller: String,
-    
+
     /// The current block height
     pub block_height: u64,
-    
+
     /// The current block timestamp
     pub timestamp: u64,
 }
@@ -643,10 +635,10 @@ pub struct ContractContext {
 pub trait WasmStorage: Send + Sync {
     /// Read a value from storage
     fn read(&self, key: &[u8]) -> WasmResult<Option<Vec<u8>>>;
-    
+
     /// Write a value to storage
     fn write(&mut self, key: &[u8], value: &[u8]) -> WasmResult<()>;
-    
+
     /// Delete a key from storage
     fn delete(&mut self, key: &[u8]) -> WasmResult<()>;
 }
@@ -656,10 +648,10 @@ pub trait WasmStorage: Send + Sync {
 pub struct ExecutionResult {
     /// The return value from the contract execution (if any)
     pub result: Option<Vec<u8>>,
-    
+
     /// Gas used during execution
     pub gas_used: u64,
-    
+
     /// Logs generated during execution
     pub logs: Vec<String>,
 }
@@ -669,13 +661,13 @@ pub struct ExecutionResult {
 pub struct Contract {
     /// The WASM bytecode
     pub bytecode: Vec<u8>,
-    
+
     /// The contract creator
     pub creator: String,
-    
+
     /// When the contract was created (block height)
     pub created_at: u64,
-    
+
     /// Contract hash (used for identity)
     pub hash: String,
 }
@@ -685,28 +677,28 @@ pub struct Contract {
 pub struct WasmGasConfig {
     /// Gas per instruction
     pub gas_per_instruction: u64,
-    
+
     /// Maximum memory pages allowed (64KB per page)
     pub max_memory_pages: u32,
-    
+
     /// Maximum execution steps
     pub max_execution_steps: u64,
-    
+
     /// Gas cost for storage read
     pub storage_read_cost: u64,
-    
+
     /// Gas cost for storage write
     pub storage_write_cost: u64,
-    
+
     /// Gas cost for storage delete
     pub storage_delete_cost: u64,
-    
+
     /// Base gas cost for contract calls
     pub call_base_cost: u64,
-    
+
     /// Gas cost for contract creation
     pub create_contract_cost: u64,
-    
+
     /// Gas limit
     pub gas_limit: u64,
-} 
+}

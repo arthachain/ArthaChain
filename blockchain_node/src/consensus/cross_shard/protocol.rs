@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Protocol version for cross-shard communication
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -49,14 +49,12 @@ pub enum ProtocolMessage {
         status: CrossShardStatus,
     },
     /// Commit a transaction
-    CommitTx {
-        tx_hash: Vec<u8>,
-        proof: Vec<u8>,
-    },
+    CommitTx { tx_hash: Vec<u8>, proof: Vec<u8> },
 }
 
 /// Protocol handler for cross-shard communication
 pub struct ProtocolHandler {
+    #[allow(dead_code)]
     version: u32,
 }
 
@@ -71,18 +69,27 @@ impl ProtocolHandler {
     /// Handle an incoming protocol message
     pub async fn handle_message(&self, message: ProtocolMessage) -> Result<()> {
         match message {
-            ProtocolMessage::InitiateTx { tx_type: _, nonce: _ } => {
+            ProtocolMessage::InitiateTx {
+                tx_type: _,
+                nonce: _,
+            } => {
                 // Handle transaction initiation
                 Ok(())
-            },
-            ProtocolMessage::AckTx { tx_hash: _, status: _ } => {
+            }
+            ProtocolMessage::AckTx {
+                tx_hash: _,
+                status: _,
+            } => {
                 // Handle transaction acknowledgment
                 Ok(())
-            },
-            ProtocolMessage::CommitTx { tx_hash: _, proof: _ } => {
+            }
+            ProtocolMessage::CommitTx {
+                tx_hash: _,
+                proof: _,
+            } => {
                 // Handle transaction commitment
                 Ok(())
-            },
+            }
         }
     }
-} 
+}

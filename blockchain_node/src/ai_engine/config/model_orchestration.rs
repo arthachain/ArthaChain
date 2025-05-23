@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,10 +68,10 @@ impl Default for ModelFailoverSettings {
     fn default() -> Self {
         Self {
             enable_fallback: true,
-            memory_threshold: 80.0, // 80%
-            cpu_threshold: 80.0,    // 80%
-            disk_threshold: 80.0,   // 80%
+            memory_threshold: 80.0,   // 80%
+            cpu_threshold: 80.0,      // 80%
+            disk_threshold: 80.0,     // 80%
             max_inference_time: 1000, // 1 second
         }
     }
-} 
+}

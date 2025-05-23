@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
-use blockchain_node::ai_engine::data_chunking::{DataChunkingAI, CompressionType};
+use blockchain_node::ai_engine::data_chunking::{CompressionType, DataChunkingAI};
 use blockchain_node::config::Config;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::sync::Arc;
 
 fn generate_sample_file(size_mb: usize) -> Vec<u8> {
@@ -26,7 +26,7 @@ fn bench_chunking(c: &mut Criterion) {
                     &format!("bench_file_{}", size),
                     &format!("bench_file_{}.dat", size),
                     &data,
-                    "application/octet-stream"
+                    "application/octet-stream",
                 );
             });
         });
@@ -49,12 +49,9 @@ fn bench_reconstruction(c: &mut Criterion) {
         let ai = Arc::new(DataChunkingAI::new(&config));
         let file_id = format!("bench_reconstruction_{}", size);
         let file_name = format!("bench_reconstruction_{}.dat", size);
-        let chunks = ai.split_file(
-            &file_id,
-            &file_name,
-            &data,
-            "application/octet-stream"
-        ).unwrap();
+        let chunks = ai
+            .split_file(&file_id, &file_name, &data, "application/octet-stream")
+            .unwrap();
 
         let original_hash = chunks[0].metadata.original_file_hash.clone();
         let total_chunks = chunks.len();
@@ -66,10 +63,14 @@ fn bench_reconstruction(c: &mut Criterion) {
                 || {
                     let ai = DataChunkingAI::new(&config);
                     // Generate a unique file_id for this iteration to avoid collisions
-                    let iter_file_id = format!("{}_{}", file_id, std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos());
+                    let iter_file_id = format!(
+                        "{}_{}",
+                        file_id,
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_nanos()
+                    );
                     (ai, iter_file_id)
                 },
                 |(ai, iter_file_id)| {
@@ -78,8 +79,9 @@ fn bench_reconstruction(c: &mut Criterion) {
                         &iter_file_id,
                         &file_name,
                         total_chunks,
-                        &original_hash
-                    ).unwrap();
+                        &original_hash,
+                    )
+                    .unwrap();
 
                     // Add chunks to reconstruction in order
                     for chunk in chunks.iter() {
@@ -93,7 +95,7 @@ fn bench_reconstruction(c: &mut Criterion) {
                     let reconstructed = ai.reconstruct_file(&iter_file_id).unwrap();
                     assert_eq!(reconstructed.len(), data.len());
                 },
-                criterion::BatchSize::SmallInput
+                criterion::BatchSize::SmallInput,
             );
         });
     }
@@ -101,4 +103,4 @@ fn bench_reconstruction(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_chunking, bench_reconstruction);
-criterion_main!(benches); 
+criterion_main!(benches);

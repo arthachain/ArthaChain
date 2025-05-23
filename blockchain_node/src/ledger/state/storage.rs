@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use anyhow::Result;
 
 /// State Storage for persisting blockchain state
 #[derive(Debug)]
@@ -42,4 +42,4 @@ impl StateStorage {
         let storage = self.storage.read().unwrap();
         Ok(storage.contains_key(key))
     }
-} 
+}

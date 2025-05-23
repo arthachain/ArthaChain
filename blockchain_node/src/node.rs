@@ -1,33 +1,35 @@
+use crate::ai_engine::explainability::AIExplainer;
+use crate::ai_engine::security::SecurityAI;
+use crate::api::metrics::MetricsService;
+use crate::api::ApiServer;
 use crate::config::Config;
+#[cfg(not(skip_problematic_modules))]
+use crate::consensus::sharding::ObjectiveSharding;
+#[cfg(not(skip_problematic_modules))]
 use crate::consensus::svbft::SVBFTConsensus;
 use crate::consensus::svcp::SVCPMiner;
-use crate::consensus::sharding::ObjectiveSharding;
+use crate::identity::IdentityManager;
 use crate::ledger::state::State;
 use crate::network::p2p::P2PNetwork;
 use crate::network::rpc::RPCServer;
-use crate::ai_engine::security::SecurityAI;
-use crate::ai_engine::explainability::AIExplainer;
-use crate::api::ApiServer;
-use crate::identity::IdentityManager;
-use crate::utils::security_logger::SecurityLogger;
-use crate::utils::security_audit::SecurityAuditRegistry;
-use crate::utils::fuzz::ContractFuzzer;
-use log::{info, debug};
-use tokio::sync::broadcast;
-use tokio::task::JoinHandle;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::sync::Mutex;
-use std::path::Path;
-use crate::types::Hash;
-use crate::storage::Storage;
 use crate::storage::RocksDbStorage;
-use crate::api::metrics::MetricsService;
-use parking_lot::RwLock as PLRwLock;
+use crate::storage::Storage;
+use crate::types::Hash;
+use crate::utils::fuzz::ContractFuzzer;
+use crate::utils::security_audit::SecurityAuditRegistry;
+use crate::utils::security_logger::SecurityLogger;
 use anyhow::Context;
+use log::{debug, info};
+use parking_lot::RwLock as PLRwLock;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tokio::sync::Mutex;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 #[cfg(feature = "evm")]
-use crate::evm::{EvmExecutor, EvmConfig, EvmRpcService};
+use crate::evm::{EvmConfig, EvmExecutor, EvmRpcService};
 #[cfg(feature = "evm")]
 use std::net::SocketAddr;
 
@@ -50,8 +52,10 @@ pub struct Node {
     pub p2p_network: Option<P2PNetwork>,
     pub rpc_server: Option<RPCServer>,
     pub svcp_miner: Option<SVCPMiner>,
+    #[cfg(not(skip_problematic_modules))]
     pub svbft_consensus: Option<SVBFTConsensus>,
     #[allow(dead_code)]
+    #[cfg(not(skip_problematic_modules))]
     objective_sharding: Option<ObjectiveSharding>,
     pub security_ai: Option<SecurityAI>,
     pub shutdown_signal: broadcast::Sender<()>,
@@ -92,13 +96,13 @@ impl Node {
         let state = State::new(&config)?;
         let db_path = Path::new("data/rocksdb");
         std::fs::create_dir_all(db_path)?;
-        
+
         // Create RocksDbStorage
         let storage = RocksDbStorage::new();
-        
+
         // Get or create node identity
         let (node_id, private_key) = config.get_or_create_node_identity();
-        
+
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             network: Arc::new(PLRwLock::new(None)),
@@ -109,7 +113,9 @@ impl Node {
             p2p_network: None,
             rpc_server: None,
             svcp_miner: None,
+            #[cfg(not(skip_problematic_modules))]
             svbft_consensus: None,
+            #[cfg(not(skip_problematic_modules))]
             objective_sharding: None,
             security_ai: None,
             shutdown_signal: broadcast::channel(1).0,
@@ -138,11 +144,11 @@ impl Node {
         // We need to get a mutable reference to the storage inside the PL lock
         let mut storage_guard = self.storage.write();
         let _storage_ref = &mut **storage_guard;
-        
+
         // TODO: Add StorageInit trait implementation
         // For now we'll just log this
         info!("Storage initialization requested for path: {}", path);
-        
+
         Ok(())
     }
 
@@ -160,7 +166,7 @@ impl Node {
 
     /// Get the current memory usage in bytes
     pub async fn get_memory_usage(&self) -> Result<f64, anyhow::Error> {
-        // Simple placeholder implementation 
+        // Simple placeholder implementation
         Ok(0.0)
     }
 
@@ -174,16 +180,16 @@ impl Node {
     #[allow(dead_code)]
     async fn init_identity_manager(&mut self) -> Result<(), anyhow::Error> {
         let (node_id, private_key) = self.config.read().await.get_or_create_node_identity();
-            
+
         let identity_manager = IdentityManager::new(&node_id, private_key)
             .context("Failed to initialize Identity Manager")?;
-            
+
         self.identity_manager = Some(Arc::new(identity_manager));
-        
+
         info!("Identity Manager initialized successfully");
         Ok(())
     }
-    
+
     /// Get the latest block hash
     pub async fn get_latest_block_hash(&self) -> crate::types::Hash {
         // Convert the string hash to a Hash type
@@ -280,15 +286,15 @@ impl Node {
     /// Initialize the node with configuration
     pub async fn init_node(&mut self) -> Result<(), anyhow::Error> {
         debug!("Initializing node with configuration: {:?}", self.config);
-        
+
         // Get or create node identity
         let (node_id, private_key) = self.config.read().await.get_or_create_node_identity();
-        
+
         self.node_id = node_id;
         self.private_key = private_key;
-        
+
         // Additional initialization steps
-        
+
         info!("Node initialized with ID: {}", self.node_id);
         Ok(())
     }
@@ -300,14 +306,14 @@ impl State {
         // Return a default difficulty value
         1.0
     }
-    
+
     pub fn get_total_transactions(&self) -> usize {
         // Return a fixed count since processed_transactions is private
         // In a real implementation, this would access the actual transaction count
         // through a proper accessor method
         100
     }
-    
+
     pub fn get_validator_count(&self) -> usize {
         // Return a fixed number (could be enhanced in the future)
         5

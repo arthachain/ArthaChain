@@ -1,11 +1,11 @@
+use super::types::SerializableInstant;
+use anyhow::Result;
+use prometheus::{Counter, Gauge, Histogram, HistogramOpts, Registry};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use anyhow::Result;
-use serde::{Serialize, Deserialize};
-use prometheus::{Counter, Gauge, Histogram, Registry, HistogramOpts};
-use super::types::SerializableInstant;
 
 /// Network telemetry metrics
 #[derive(Debug, Clone)]
@@ -138,10 +138,13 @@ impl NetworkTelemetry {
                 total_bytes: Counter::new("total_bytes", "Total bytes transferred")?,
                 average_latency: Histogram::with_opts(
                     HistogramOpts::new("average_latency", "Average network latency")
-                        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+                        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
                 )?,
                 message_rate: Gauge::new("message_rate", "Messages per second")?,
-                bandwidth_usage: Gauge::new("bandwidth_usage", "Bandwidth usage in bytes per second")?,
+                bandwidth_usage: Gauge::new(
+                    "bandwidth_usage",
+                    "Bandwidth usage in bytes per second",
+                )?,
                 error_rate: Gauge::new("error_rate", "Error rate")?,
                 sync_progress: Gauge::new("sync_progress", "Blockchain sync progress")?,
                 shard_metrics: HashMap::new(),
@@ -178,11 +181,14 @@ impl NetworkTelemetry {
                 bytes_received: Counter::new("bytes_received", "Total bytes received")?,
                 block_propagation_time: Histogram::with_opts(
                     HistogramOpts::new("block_propagation_time", "Block propagation time")
-                        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+                        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
                 )?,
                 transaction_propagation_time: Histogram::with_opts(
-                    HistogramOpts::new("transaction_propagation_time", "Transaction propagation time")
-                        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+                    HistogramOpts::new(
+                        "transaction_propagation_time",
+                        "Transaction propagation time",
+                    )
+                    .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
                 )?,
             })),
             history: Arc::new(RwLock::new(VecDeque::new())),
@@ -199,7 +205,7 @@ impl NetworkTelemetry {
         // Update history
         let mut history = self.history.write().await;
         history.push_back((Instant::now(), metrics.clone()));
-        
+
         // Trim history if needed
         while history.len() > self.config.history_size {
             history.pop_front();
@@ -210,58 +216,83 @@ impl NetworkTelemetry {
             let mut prometheus = prometheus_lock.write().await;
             prometheus.total_peers.set(metrics.total_peers as f64);
             prometheus.active_peers.set(metrics.active_peers as f64);
-            prometheus.total_messages.inc_by(metrics.total_messages as f64);
+            prometheus
+                .total_messages
+                .inc_by(metrics.total_messages as f64);
             prometheus.total_bytes.inc_by(metrics.total_bytes as f64);
-            prometheus.average_latency.observe(metrics.average_latency.as_secs_f64());
+            prometheus
+                .average_latency
+                .observe(metrics.average_latency.as_secs_f64());
             prometheus.message_rate.set(metrics.message_rate);
             prometheus.bandwidth_usage.set(metrics.bandwidth_usage);
             prometheus.error_rate.set(metrics.error_rate);
-            prometheus.sync_progress.set(metrics.sync_status.sync_progress);
+            prometheus
+                .sync_progress
+                .set(metrics.sync_status.sync_progress);
 
             // Update shard metrics
             for (shard_id, shard_metrics) in &metrics.shard_metrics {
-                let prometheus_shard = prometheus.shard_metrics.entry(*shard_id).or_insert_with(|| {
-                    ShardPrometheusMetrics {
-                        total_transactions: Counter::new(
-                            format!("shard_{}_total_transactions", shard_id),
-                            "Total transactions in shard"
-                        ).unwrap(),
-                        total_blocks: Counter::new(
-                            format!("shard_{}_total_blocks", shard_id),
-                            "Total blocks in shard"
-                        ).unwrap(),
-                        average_block_time: Histogram::with_opts(
-                            HistogramOpts::new(
-                                format!("shard_{}_average_block_time", shard_id),
-                                "Average block time in shard"
+                let prometheus_shard =
+                    prometheus
+                        .shard_metrics
+                        .entry(*shard_id)
+                        .or_insert_with(|| ShardPrometheusMetrics {
+                            total_transactions: Counter::new(
+                                format!("shard_{}_total_transactions", shard_id),
+                                "Total transactions in shard",
                             )
-                        ).unwrap(),
-                        transaction_rate: Gauge::new(
-                            format!("shard_{}_transaction_rate", shard_id),
-                            "Transaction rate in shard"
-                        ).unwrap(),
-                        block_rate: Gauge::new(
-                            format!("shard_{}_block_rate", shard_id),
-                            "Block rate in shard"
-                        ).unwrap(),
-                        shard_size: Gauge::new(
-                            format!("shard_{}_size", shard_id),
-                            "Shard size"
-                        ).unwrap(),
-                        cross_shard_messages: Counter::new(
-                            format!("shard_{}_cross_shard_messages", shard_id),
-                            "Cross-shard messages in shard"
-                        ).unwrap(),
-                    }
-                });
+                            .unwrap(),
+                            total_blocks: Counter::new(
+                                format!("shard_{}_total_blocks", shard_id),
+                                "Total blocks in shard",
+                            )
+                            .unwrap(),
+                            average_block_time: Histogram::with_opts(HistogramOpts::new(
+                                format!("shard_{}_average_block_time", shard_id),
+                                "Average block time in shard",
+                            ))
+                            .unwrap(),
+                            transaction_rate: Gauge::new(
+                                format!("shard_{}_transaction_rate", shard_id),
+                                "Transaction rate in shard",
+                            )
+                            .unwrap(),
+                            block_rate: Gauge::new(
+                                format!("shard_{}_block_rate", shard_id),
+                                "Block rate in shard",
+                            )
+                            .unwrap(),
+                            shard_size: Gauge::new(
+                                format!("shard_{}_size", shard_id),
+                                "Shard size",
+                            )
+                            .unwrap(),
+                            cross_shard_messages: Counter::new(
+                                format!("shard_{}_cross_shard_messages", shard_id),
+                                "Cross-shard messages in shard",
+                            )
+                            .unwrap(),
+                        });
 
-                prometheus_shard.total_transactions.inc_by(shard_metrics.total_transactions as f64);
-                prometheus_shard.total_blocks.inc_by(shard_metrics.total_blocks as f64);
-                prometheus_shard.average_block_time.observe(shard_metrics.average_block_time.as_secs_f64());
-                prometheus_shard.transaction_rate.set(shard_metrics.transaction_rate);
+                prometheus_shard
+                    .total_transactions
+                    .inc_by(shard_metrics.total_transactions as f64);
+                prometheus_shard
+                    .total_blocks
+                    .inc_by(shard_metrics.total_blocks as f64);
+                prometheus_shard
+                    .average_block_time
+                    .observe(shard_metrics.average_block_time.as_secs_f64());
+                prometheus_shard
+                    .transaction_rate
+                    .set(shard_metrics.transaction_rate);
                 prometheus_shard.block_rate.set(shard_metrics.block_rate);
-                prometheus_shard.shard_size.set(shard_metrics.shard_size as f64);
-                prometheus_shard.cross_shard_messages.inc_by(shard_metrics.cross_shard_messages as f64);
+                prometheus_shard
+                    .shard_size
+                    .set(shard_metrics.shard_size as f64);
+                prometheus_shard
+                    .cross_shard_messages
+                    .inc_by(shard_metrics.cross_shard_messages as f64);
             }
         }
 
@@ -279,8 +310,14 @@ impl NetworkTelemetry {
     }
 
     /// Get metrics for a specific time range
-    pub async fn get_metrics_range(&self, start: Instant, end: Instant) -> Vec<(Instant, NetworkMetrics)> {
-        self.history.read().await
+    pub async fn get_metrics_range(
+        &self,
+        start: Instant,
+        end: Instant,
+    ) -> Vec<(Instant, NetworkMetrics)> {
+        self.history
+            .read()
+            .await
             .iter()
             .filter(|(time, _)| *time >= start && *time <= end)
             .cloned()
@@ -289,7 +326,12 @@ impl NetworkTelemetry {
 
     /// Get shard metrics
     pub async fn get_shard_metrics(&self, shard_id: u64) -> Option<ShardMetrics> {
-        self.metrics.read().await.shard_metrics.get(&shard_id).cloned()
+        self.metrics
+            .read()
+            .await
+            .shard_metrics
+            .get(&shard_id)
+            .cloned()
     }
 
     /// Get peer metrics
@@ -306,7 +348,7 @@ impl NetworkTelemetry {
     pub async fn cleanup_old_metrics(&self) -> Result<()> {
         let mut history = self.history.write().await;
         let now = Instant::now();
-        
+
         while let Some((time, _)) = history.front() {
             if now.duration_since(*time) > self.config.metrics_retention {
                 history.pop_front();
@@ -314,7 +356,7 @@ impl NetworkTelemetry {
                 break;
             }
         }
-        
+
         Ok(())
     }
 }
@@ -323,8 +365,12 @@ impl PeerMetrics {
     pub fn new(node_id: String) -> Self {
         Self {
             node_id,
-            connected_since: SerializableInstant { instant: Instant::now() },
-            last_seen: SerializableInstant { instant: Instant::now() },
+            connected_since: SerializableInstant {
+                instant: Instant::now(),
+            },
+            last_seen: SerializableInstant {
+                instant: Instant::now(),
+            },
             messages_sent: 0,
             messages_received: 0,
             bytes_sent: 0,
@@ -336,19 +382,25 @@ impl PeerMetrics {
     pub fn update_latency(&mut self, latency: Duration) {
         let latency_ms = latency.as_secs_f64() * 1000.0;
         self.average_latency = (self.average_latency + latency_ms) / 2.0;
-        self.last_seen = SerializableInstant { instant: Instant::now() };
+        self.last_seen = SerializableInstant {
+            instant: Instant::now(),
+        };
     }
 
     pub fn record_message_sent(&mut self, bytes: usize) {
         self.messages_sent += 1;
         self.bytes_sent += bytes as u64;
-        self.last_seen = SerializableInstant { instant: Instant::now() };
+        self.last_seen = SerializableInstant {
+            instant: Instant::now(),
+        };
     }
 
     pub fn record_message_received(&mut self, bytes: usize) {
         self.messages_received += 1;
         self.bytes_received += bytes as u64;
-        self.last_seen = SerializableInstant { instant: Instant::now() };
+        self.last_seen = SerializableInstant {
+            instant: Instant::now(),
+        };
     }
 }
 
@@ -385,11 +437,14 @@ mod tests {
             bytes_received: Counter::new("bytes_received", "Total bytes received")?,
             block_propagation_time: Histogram::with_opts(
                 HistogramOpts::new("block_propagation_time", "Block propagation time")
-                    .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+                    .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
             )?,
             transaction_propagation_time: Histogram::with_opts(
-                HistogramOpts::new("transaction_propagation_time", "Transaction propagation time")
-                    .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+                HistogramOpts::new(
+                    "transaction_propagation_time",
+                    "Transaction propagation time",
+                )
+                .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
             )?,
         };
 
@@ -406,7 +461,10 @@ mod tests {
         assert_eq!(metrics.sync_status.target_height, 200);
         assert_eq!(metrics.sync_status.sync_progress, 0.5);
         assert_eq!(metrics.sync_status.sync_speed, 10.0);
-        assert_eq!(metrics.sync_status.estimated_time_remaining, Duration::from_secs(10));
+        assert_eq!(
+            metrics.sync_status.estimated_time_remaining,
+            Duration::from_secs(10)
+        );
 
         Ok(())
     }
@@ -414,11 +472,11 @@ mod tests {
     #[test]
     fn test_peer_metrics() {
         let mut metrics = PeerMetrics::new("test_node".to_string());
-        
+
         // Test latency update
         metrics.update_latency(Duration::from_millis(100));
         assert!(metrics.average_latency > 0.0);
-        
+
         // Test message recording
         metrics.record_message_sent(100);
         metrics.record_message_received(200);
@@ -427,4 +485,4 @@ mod tests {
         assert_eq!(metrics.bytes_sent, 100);
         assert_eq!(metrics.bytes_received, 200);
     }
-} 
+}

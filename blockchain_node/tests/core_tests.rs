@@ -126,7 +126,9 @@ mod tests {
         metadata.size = 1000;
         metadata.gas_used = 21000;
         metadata.gas_limit = 1000000;
-        metadata.signatures.insert("validator1".to_string(), vec![0u8; 65]);
+        metadata
+            .signatures
+            .insert("validator1".to_string(), vec![0u8; 65]);
 
         assert_eq!(metadata.size, 1000);
         assert_eq!(metadata.gas_used, 21000);
@@ -139,8 +141,8 @@ mod tests {
     fn test_simple_passing() {
         assert!(true);
     }
-    
+
     /* Commented out problematic tests
     // We'll need to fix the code to match the actual implementations
-    */
-} 
+     */
+}

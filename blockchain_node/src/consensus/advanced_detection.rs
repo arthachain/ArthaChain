@@ -1,5 +1,5 @@
-use std::time::SystemTime;
 use crate::consensus::social_graph::SocialNode;
+use std::time::SystemTime;
 
 pub struct AdvancedDetectionEngine {
     detection_threshold: f64,
@@ -34,4 +34,4 @@ impl AdvancedDetectionEngine {
     pub fn get_last_update(&self) -> SystemTime {
         self.last_update
     }
-} 
+}

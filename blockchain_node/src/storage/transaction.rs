@@ -25,7 +25,7 @@ impl<'a> StorageTransaction<'a> {
             committed: false,
         }
     }
-    
+
     /// Add store operation to transaction
     pub fn store(&mut self, data: &[u8]) -> &mut Self {
         self.operations.push(StorageOperation::Store {
@@ -33,15 +33,14 @@ impl<'a> StorageTransaction<'a> {
         });
         self
     }
-    
+
     /// Add delete operation to transaction
     pub fn delete(&mut self, hash: &Hash) -> &mut Self {
-        self.operations.push(StorageOperation::Delete {
-            hash: hash.clone(),
-        });
+        self.operations
+            .push(StorageOperation::Delete { hash: hash.clone() });
         self
     }
-    
+
     /// Commit the transaction
     pub async fn commit(mut self) -> Result<()> {
         // Perform all operations
@@ -49,13 +48,13 @@ impl<'a> StorageTransaction<'a> {
             match op {
                 StorageOperation::Store { data } => {
                     self.hybrid.store(data).await?;
-                },
+                }
                 StorageOperation::Delete { hash } => {
                     self.hybrid.delete(hash).await?;
-                },
+                }
             }
         }
-        
+
         self.committed = true;
         Ok(())
     }
@@ -64,8 +63,10 @@ impl<'a> StorageTransaction<'a> {
 impl<'a> Drop for StorageTransaction<'a> {
     fn drop(&mut self) {
         if !self.committed && !self.operations.is_empty() {
-            debug!("Storage transaction dropped without commit ({} operations)", 
-                  self.operations.len());
+            debug!(
+                "Storage transaction dropped without commit ({} operations)",
+                self.operations.len()
+            );
         }
     }
-} 
+}

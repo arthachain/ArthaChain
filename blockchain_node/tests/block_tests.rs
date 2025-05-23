@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
     // Skip the problematic tests for now
-    
+
     #[test]
     fn test_simple_passing() {
         // A simple test that should pass
         assert!(true);
     }
-    
+
     /* Commented out problematic tests
     use blockchain_node::ledger::block::{Block, BlockHeader};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,4 +32,4 @@ mod tests {
         // Test disabled due to API mismatch
     }
     */
-} 
+}

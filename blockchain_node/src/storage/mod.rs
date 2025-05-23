@@ -1,26 +1,28 @@
+pub mod blockchain_storage;
+pub mod hybrid_storage;
+#[cfg(not(skip_problematic_modules))]
+pub mod memmap_storage;
 mod rocksdb_storage;
 mod svdb_storage;
 pub mod transaction;
-pub mod hybrid_storage;
-pub mod blockchain_storage;
-pub mod memmap_storage;
 
+#[cfg(not(skip_problematic_modules))]
+pub use memmap_storage::MemMapStorage;
 pub use rocksdb_storage::RocksDbStorage;
 pub use svdb_storage::SvdbStorage;
-pub use memmap_storage::MemMapStorage;
 
-use std::sync::Arc;
-use log::{warn};
-use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use crate::config::Config;
 use crate::types::Hash;
+use async_trait::async_trait;
 use blake3;
+use log::warn;
 use std::any::Any;
-use thiserror::Error;
-use std::result::Result as StdResult;
+use std::collections::HashMap;
 use std::path::Path;
+use std::result::Result as StdResult;
+use std::sync::Arc;
+use std::sync::Mutex;
+use thiserror::Error;
 
 /// Storage options for memory-mapped database
 #[derive(Clone, Debug)]
@@ -66,19 +68,19 @@ pub enum CompressionAlgorithm {
 pub enum StorageError {
     #[error("Storage initialization error: {0}")]
     InitError(String),
-    
+
     #[error("Storage operation error: {0}")]
     OperationError(String),
-    
+
     #[error("Key not found: {0}")]
     KeyNotFound(String),
-    
+
     #[error("Invalid data: {0}")]
     InvalidData(String),
-    
+
     #[error("Incompatible storage version: {0}")]
     IncompatibleVersion(String),
-    
+
     #[error("Other error: {0}")]
     Other(String),
 }
@@ -91,25 +93,25 @@ pub type Result<T> = StdResult<T, StorageError>;
 pub trait Storage: Send + Sync {
     /// Store data and return the hash
     async fn store(&self, data: &[u8]) -> Result<Hash>;
-    
+
     /// Retrieve data by hash
     async fn retrieve(&self, hash: &Hash) -> Result<Option<Vec<u8>>>;
-    
+
     /// Check if data exists
     async fn exists(&self, hash: &Hash) -> Result<bool>;
-    
+
     /// Delete data
     async fn delete(&self, hash: &Hash) -> Result<()>;
-    
+
     /// Verify that data matches hash
     async fn verify(&self, hash: &Hash, data: &[u8]) -> Result<bool>;
-    
+
     /// Close the storage
     async fn close(&self) -> Result<()>;
-    
+
     /// Convert to Any for downcasting
     fn as_any(&self) -> &dyn Any;
-    
+
     /// Convert to mutable Any for downcasting
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -170,10 +172,10 @@ impl Default for StorageConfig {
 pub struct HybridStorage {
     /// RocksDB storage for on-chain data
     rocksdb: Box<dyn Storage>,
-    
+
     /// SVDB storage for off-chain data
     svdb: Box<dyn Storage>,
-    
+
     /// Size threshold (in bytes) for deciding between RocksDB and SVDB
     size_threshold: usize,
 }
@@ -187,17 +189,17 @@ impl HybridStorage {
             size_threshold: 1024, // Default size threshold
         }
     }
-    
+
     /// Access underlying RocksDB storage
     pub fn rocksdb(&self) -> &Box<dyn Storage> {
         &self.rocksdb
     }
-    
+
     /// Access underlying SVDB storage
     pub fn svdb(&self) -> &Box<dyn Storage> {
         &self.svdb
     }
-    
+
     /// Determine if data should be stored in RocksDB or SVDB
     fn should_use_rocksdb(&self, data: &[u8]) -> bool {
         data.len() < self.size_threshold
@@ -272,8 +274,12 @@ impl Storage for HybridStorage {
         Ok(())
     }
 
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 #[async_trait]
@@ -281,7 +287,7 @@ impl StorageInit for HybridStorage {
     async fn init(&mut self, path: Box<dyn AsRef<Path> + Send + Sync>) -> Result<()> {
         let base_path: &std::path::Path = path.as_ref().as_ref();
         let rocksdb_path = base_path.join("rocksdb");
-        let svdb_path   = base_path.join("svdb");
+        let svdb_path = base_path.join("svdb");
 
         // downcast and init
         if let Some(r) = self.rocksdb.as_any_mut().downcast_mut::<RocksDbStorage>() {
@@ -316,7 +322,7 @@ impl<'a> StorageTransaction<'a> {
             committed: false,
         }
     }
-    
+
     /// Add store operation to transaction
     pub fn store(&mut self, data: &[u8]) -> &mut Self {
         self.operations.push(StorageOperation::Store {
@@ -324,7 +330,7 @@ impl<'a> StorageTransaction<'a> {
         });
         self
     }
-    
+
     /// Add delete operation to transaction
     pub fn delete(&mut self, key: &str) -> &mut Self {
         self.operations.push(StorageOperation::Delete {
@@ -332,7 +338,7 @@ impl<'a> StorageTransaction<'a> {
         });
         self
     }
-    
+
     /// Commit the transaction
     pub async fn commit(mut self) -> Result<()> {
         // Perform all operations
@@ -340,16 +346,16 @@ impl<'a> StorageTransaction<'a> {
             match op {
                 StorageOperation::Store { data } => {
                     self.hybrid.put(data.as_slice(), data.as_slice()).await?;
-                },
+                }
                 StorageOperation::Delete { key } => {
                     // Convert key to Hash
                     let hash_bytes = blake3::hash(key.as_bytes()).as_bytes().to_vec();
                     let hash = Hash::new(hash_bytes);
                     let _ = self.hybrid.delete(&hash).await?;
-                },
+                }
             }
         }
-        
+
         self.committed = true;
         Ok(())
     }
@@ -358,8 +364,10 @@ impl<'a> StorageTransaction<'a> {
 impl<'a> Drop for StorageTransaction<'a> {
     fn drop(&mut self) {
         if !self.committed && !self.operations.is_empty() {
-            warn!("Storage transaction dropped without commit ({} operations)", 
-                  self.operations.len());
+            warn!(
+                "Storage transaction dropped without commit ({} operations)",
+                self.operations.len()
+            );
         }
     }
 }
@@ -377,45 +385,48 @@ impl BlockchainStorage {
     pub fn new(_config: &Config) -> Result<Self> {
         let rocksdb = Box::new(RocksDbStorage::new());
         let memory = Arc::new(Mutex::new(HashMap::new()));
-        
-        Ok(Self {
-            rocksdb,
-            memory,
-        })
+
+        Ok(Self { rocksdb, memory })
     }
-    
+
     /// Put a key-value pair
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         let mut memory = self.memory.lock().unwrap();
         memory.insert(key.to_vec(), value.to_vec());
         Ok(())
     }
-    
+
     /// Get a value by key
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let db = self.rocksdb.as_any().downcast_ref::<RocksDbStorage>()
-            .ok_or_else(|| StorageError::Other("Failed to downcast to RocksDbStorage".to_string()))?;
+        let db = self
+            .rocksdb
+            .as_any()
+            .downcast_ref::<RocksDbStorage>()
+            .ok_or_else(|| {
+                StorageError::Other("Failed to downcast to RocksDbStorage".to_string())
+            })?;
         let value = db.get(key);
         Ok(value)
     }
-    
+
     /// Delete a key-value pair
     pub fn delete(&self, key: &[u8]) -> Result<()> {
         let mut memory = self.memory.lock().unwrap();
         memory.remove(key);
         Ok(())
     }
-    
+
     /// Check if a key exists
     pub fn exists(&self, key: &[u8]) -> Result<bool> {
         let memory = self.memory.lock().unwrap();
         Ok(memory.contains_key(key))
     }
-    
+
     /// Get all keys with a prefix
     pub fn get_keys_with_prefix(&self, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
         let memory = self.memory.lock().unwrap();
-        let keys = memory.keys()
+        let keys = memory
+            .keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect();
@@ -428,6 +439,7 @@ impl BlockchainStorage {
     }
 
     // hashing helper
+    #[allow(dead_code)]
     fn calculate_hash(data: &[u8]) -> Hash {
         Hash::new(blake3::hash(data).as_bytes().to_vec())
     }
@@ -459,8 +471,12 @@ impl Storage for BlockchainStorage {
         self.rocksdb.close().await
     }
 
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 #[async_trait]
@@ -469,11 +485,82 @@ impl StorageInit for BlockchainStorage {
         if let Some(rocks) = self.rocksdb.as_any_mut().downcast_mut::<RocksDbStorage>() {
             rocks.init(path).await
         } else {
-            Err(StorageError::Other("Unable to init BlockchainStorage".into()))
+            Err(StorageError::Other(
+                "Unable to init BlockchainStorage".into(),
+            ))
         }
     }
 }
 
 impl StorageBackend for HybridStorage {}
 impl StorageBackend for BlockchainStorage {}
-impl StorageBackend for MemMapStorage {} 
+#[cfg(not(skip_problematic_modules))]
+impl StorageBackend for MemMapStorage {}
+
+// Stub implementation for MemMapStorage when skipping problematic modules
+#[cfg(skip_problematic_modules)]
+pub struct MemMapStorage;
+
+#[cfg(skip_problematic_modules)]
+impl MemMapStorage {
+    pub fn new(_options: MemMapOptions) -> Self {
+        Self {}
+    }
+}
+
+#[cfg(skip_problematic_modules)]
+#[async_trait]
+impl Storage for MemMapStorage {
+    async fn store(&self, _data: &[u8]) -> Result<Hash> {
+        Err(StorageError::Other(
+            "MemMapStorage not implemented".to_string(),
+        ))
+    }
+
+    async fn retrieve(&self, _hash: &Hash) -> Result<Option<Vec<u8>>> {
+        Err(StorageError::Other(
+            "MemMapStorage not implemented".to_string(),
+        ))
+    }
+
+    async fn exists(&self, _hash: &Hash) -> Result<bool> {
+        Err(StorageError::Other(
+            "MemMapStorage not implemented".to_string(),
+        ))
+    }
+
+    async fn delete(&self, _hash: &Hash) -> Result<()> {
+        Err(StorageError::Other(
+            "MemMapStorage not implemented".to_string(),
+        ))
+    }
+
+    async fn verify(&self, _hash: &Hash, _data: &[u8]) -> Result<bool> {
+        Err(StorageError::Other(
+            "MemMapStorage not implemented".to_string(),
+        ))
+    }
+
+    async fn close(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[cfg(skip_problematic_modules)]
+#[async_trait]
+impl StorageInit for MemMapStorage {
+    async fn init(&mut self, _path: Box<dyn AsRef<Path> + Send + Sync>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(skip_problematic_modules)]
+impl StorageBackend for MemMapStorage {}

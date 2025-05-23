@@ -1,12 +1,12 @@
-pub mod state_tests;
-pub mod transaction_tests;
 pub mod block_tests;
 pub mod config;
+pub mod state_tests;
+pub mod transaction_tests;
 
 #[cfg(test)]
 mod integration_tests {
-    use crate::ledger::state::{State, ShardConfig};
     use crate::config::Config;
+    use crate::ledger::state::{ShardConfig, State};
 
     // Mock implementation of ShardConfig for testing
     #[allow(dead_code)]
@@ -52,4 +52,4 @@ mod integration_tests {
         assert_eq!(state.get_nonce(sender).unwrap(), 0);
         assert_eq!(state.get_next_nonce(sender).unwrap(), 1);
     }
-} 
+}

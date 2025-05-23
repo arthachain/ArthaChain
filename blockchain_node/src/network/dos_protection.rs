@@ -3,21 +3,24 @@
 // Only ~70% complete
 // Missing: Advanced social metrics integration
 // Missing: Full optimization
+use anyhow;
+use libp2p::PeerId;
+use log;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use libp2p::PeerId;
-use std::net::IpAddr;
-use anyhow;
-use log;
 
 // Define our own SecurityMetrics since we can't import it
 #[derive(Debug, Clone)]
 pub struct SecurityMetrics {
     // Fields and methods needed for our implementation
+    #[allow(dead_code)]
     request_count: Arc<RwLock<HashMap<PeerId, u64>>>,
+    #[allow(dead_code)]
     violation_count: Arc<RwLock<HashMap<PeerId, u64>>>,
+    #[allow(dead_code)]
     reputation_updates: Arc<RwLock<HashMap<PeerId, f64>>>,
 }
 
@@ -35,17 +38,20 @@ impl SecurityMetrics {
         // For now, we just log it
         println!("Request processed from peer: {:?}", peer_id);
     }
-    
+
     pub fn record_violation(&self, peer_id: PeerId, violation_type: &str) {
         // In a real implementation, this would update metrics
         // For now, we just log it
         println!("Violation {:?} from peer: {:?}", violation_type, peer_id);
     }
-    
+
     pub fn record_reputation_update(&self, peer_id: PeerId, score_delta: f64) {
         // In a real implementation, this would update metrics
         // For now, we just log it
-        println!("Reputation update {:?} for peer: {:?}", score_delta, peer_id);
+        println!(
+            "Reputation update {:?} for peer: {:?}",
+            score_delta, peer_id
+        );
     }
 }
 
@@ -94,34 +100,45 @@ impl DosProtection {
     }
 
     /// Check if a message is allowed based on rate limiting
-    pub async fn check_message_rate(&self, peer_id: &PeerId, message_size: usize) -> anyhow::Result<bool> {
+    pub async fn check_message_rate(
+        &self,
+        peer_id: &PeerId,
+        message_size: usize,
+    ) -> anyhow::Result<bool> {
         // Convert PeerId to IpAddr for our internal tracking
         // In a real implementation, you would use actual peer IP
         let ip = self.peer_id_to_ip(peer_id);
-        
+
         // Use the existing check_request method for rate limiting
         // In a real implementation, we would also check the message size against bandwidth limits
         // For now, we'll just print a warning if the message is large
-        if message_size > 1024 * 1024 { // If message is larger than 1MB
-            log::warn!("Large message ({} bytes) from peer {}", message_size, peer_id);
+        if message_size > 1024 * 1024 {
+            // If message is larger than 1MB
+            log::warn!(
+                "Large message ({} bytes) from peer {}",
+                message_size,
+                peer_id
+            );
         }
-        
+
         Ok(self.check_request(ip).await)
     }
-    
+
     // Helper method to convert PeerId to IpAddr for testing/demo purposes
     fn peer_id_to_ip(&self, peer_id: &PeerId) -> IpAddr {
         // Use a simple hashing scheme to convert PeerId to IpAddr
         // In a real implementation, you would use the actual peer IP
         let peer_bytes = peer_id.to_bytes();
-        let hash = peer_bytes.iter().fold(0u32, |acc, b| acc.wrapping_add(*b as u32));
-        
+        let hash = peer_bytes
+            .iter()
+            .fold(0u32, |acc, b| acc.wrapping_add(*b as u32));
+
         // Create an IPv4 address using the hash
         let a = ((hash >> 24) & 0xFF) as u8;
         let b = ((hash >> 16) & 0xFF) as u8;
         let c = ((hash >> 8) & 0xFF) as u8;
         let d = (hash & 0xFF) as u8;
-        
+
         IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d))
     }
 
@@ -160,7 +177,10 @@ impl DosProtection {
     /// Ban IP address
     async fn ban_ip(&self, ip: IpAddr) {
         let mut banned = self.banned_ips.write().await;
-        banned.insert(ip, Instant::now() + Duration::from_secs(self.config.ban_duration_secs));
+        banned.insert(
+            ip,
+            Instant::now() + Duration::from_secs(self.config.ban_duration_secs),
+        );
     }
 
     /// Check if IP is banned
@@ -198,7 +218,7 @@ impl Default for RateLimitConfig {
             max_bytes_per_second: 1024 * 1024 * 10, // 10MB/s
             max_connections: 100,
             ban_duration: Duration::from_secs(300), // 5 minutes
-            warning_threshold: 0.8, // 80% of limit
+            warning_threshold: 0.8,                 // 80% of limit
         }
     }
 }
@@ -256,6 +276,7 @@ struct RateLimiter {
     // Global rate limits
     global_limits: HashMap<RequestType, RateLimit>,
     // Burst allowance
+    #[allow(dead_code)]
     burst_allowance: HashMap<PeerId, BurstAllowance>,
 }
 
@@ -263,8 +284,10 @@ struct RequestFilter {
     // Request validation rules
     validation_rules: Vec<Box<dyn ValidationRule>>,
     // Blocked patterns
+    #[allow(dead_code)]
     blocked_patterns: HashSet<RequestPattern>,
     // Request history
+    #[allow(dead_code)]
     request_history: HashMap<PeerId, VecDeque<RequestInfo>>,
 }
 
@@ -298,8 +321,11 @@ struct RateLimit {
 
 #[derive(Clone)]
 struct BurstAllowance {
+    #[allow(dead_code)]
     max_burst: u32,
+    #[allow(dead_code)]
     current_tokens: u32,
+    #[allow(dead_code)]
     last_update: u64,
 }
 
@@ -313,17 +339,23 @@ pub struct RequestInfo {
 
 #[derive(Clone)]
 struct ConnectionStats {
+    #[allow(dead_code)]
     total_connections: u64,
     active_connections: u32,
+    #[allow(dead_code)]
     failed_attempts: u32,
+    #[allow(dead_code)]
     last_connection: u64,
 }
 
 #[derive(Clone)]
 struct ConnectionLimits {
     max_connections_per_ip: u32,
+    #[allow(dead_code)]
     max_connections_global: u32,
+    #[allow(dead_code)]
     connection_rate_limit: u32,
+    #[allow(dead_code)]
     backoff_time: u64,
 }
 
@@ -335,7 +367,7 @@ struct IPProtection {
 }
 
 #[derive(Clone)]
-struct BehaviorProfile {
+pub struct BehaviorProfile {
     request_patterns: HashMap<RequestType, PatternStats>,
     error_count: u32,
     avg_request_size: f64,
@@ -346,12 +378,14 @@ struct BehaviorProfile {
 struct PatternStats {
     count: u32,
     avg_size: f64,
+    #[allow(dead_code)]
     error_rate: f64,
     last_seen: u64,
 }
 
 struct AnomalyDetector {
     // Detection thresholds
+    #[allow(dead_code)]
     thresholds: AnomalyThresholds,
     // Detection algorithms
     detectors: Vec<Box<dyn AnomalyDetection>>,
@@ -361,14 +395,19 @@ struct ReputationSystem {
     // Reputation scores
     scores: HashMap<PeerId, f64>,
     // Score modifiers
+    #[allow(dead_code)]
     modifiers: Vec<Box<dyn ReputationModifier>>,
 }
 
 #[derive(Clone)]
 struct AnomalyThresholds {
+    #[allow(dead_code)]
     request_rate_threshold: f64,
+    #[allow(dead_code)]
     error_rate_threshold: f64,
+    #[allow(dead_code)]
     size_variation_threshold: f64,
+    #[allow(dead_code)]
     pattern_deviation_threshold: f64,
 }
 
@@ -417,13 +456,15 @@ impl DOSProtector {
         }
     }
 
-    pub async fn update_rate_limits(&self, 
-                                    request_type: RequestType, 
-                                    requests_per_second: u32, 
-                                    requests_per_minute: u32, 
-                                    data_per_second: u64) -> anyhow::Result<()> {
+    pub async fn update_rate_limits(
+        &self,
+        request_type: RequestType,
+        requests_per_second: u32,
+        requests_per_minute: u32,
+        data_per_second: u64,
+    ) -> anyhow::Result<()> {
         let mut rate_limiter = self.rate_limiter.write().await;
-        
+
         // Update global limits for the specified request type
         if let Some(limit) = rate_limiter.global_limits.get_mut(&request_type) {
             limit.requests_per_second = requests_per_second;
@@ -454,49 +495,57 @@ impl DOSProtector {
             let mut rate_limiter = self.rate_limiter.write().await;
             rate_limiter.check_rate_limit(peer_id, &request)?;
         } // rate_limiter is dropped here, releasing the lock
-        
+
         // Step 2: Filter request
         {
             let request_filter = self.request_filter.read().await;
             request_filter.validate_request(&request)?;
         } // request_filter is dropped here, releasing the lock
-        
+
         // Step 3: Check connection limits
         {
             let mut connection_guard = self.connection_guard.write().await;
             connection_guard.check_connection(&request)?;
         } // connection_guard is dropped here, releasing the lock
-        
+
         // Step 4: Analyze behavior
         {
             let mut analyzer = self.behavior_analyzer.write().await;
             analyzer.analyze_request(peer_id, &request).await?;
         } // analyzer is dropped here, releasing the lock
-        
+
         // Step 5: Record metrics - done at the end after all other steps
         self.metrics.record_request_processed(peer_id);
         Ok(())
     }
 
-    pub async fn report_violation(&self, peer_id: PeerId, violation_type: &str) -> anyhow::Result<()> {
+    pub async fn report_violation(
+        &self,
+        peer_id: PeerId,
+        violation_type: &str,
+    ) -> anyhow::Result<()> {
         // Step 1: Record the violation in the behavior analyzer
         {
             let mut analyzer = self.behavior_analyzer.write().await;
             analyzer.record_violation(peer_id, violation_type).await?;
         } // analyzer is dropped here, releasing the lock
-        
+
         // Step 2: Record metrics
         self.metrics.record_violation(peer_id, violation_type);
         Ok(())
     }
 
-    pub async fn update_peer_reputation(&self, peer_id: PeerId, score_delta: f64) -> anyhow::Result<()> {
+    pub async fn update_peer_reputation(
+        &self,
+        peer_id: PeerId,
+        score_delta: f64,
+    ) -> anyhow::Result<()> {
         // Step 1: Update reputation in behavior analyzer
         {
             let mut analyzer = self.behavior_analyzer.write().await;
             analyzer.update_reputation(peer_id, score_delta).await?;
         } // analyzer is dropped here, releasing the lock
-        
+
         // Step 2: Record metrics
         self.metrics.record_reputation_update(peer_id, score_delta);
         Ok(())
@@ -507,18 +556,21 @@ impl RateLimiter {
     fn new() -> Self {
         // Initialize the global limits map with some default values
         let mut global_limits = HashMap::new();
-        global_limits.insert(RequestType::Transaction, RateLimit {
-            requests_per_second: 10, // Allow 10 transactions per second
-            requests_per_minute: 200,
-            data_per_second: 500, // Lower this from 1000 to 500 so that a 950 byte message fails
-            current_count: 0,
-            current_bytes: 0,
-            last_reset: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        });
-        
+        global_limits.insert(
+            RequestType::Transaction,
+            RateLimit {
+                requests_per_second: 10, // Allow 10 transactions per second
+                requests_per_minute: 200,
+                data_per_second: 500, // Lower this from 1000 to 500 so that a 950 byte message fails
+                current_count: 0,
+                current_bytes: 0,
+                last_reset: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            },
+        );
+
         Self {
             peer_limits: HashMap::new(),
             global_limits,
@@ -530,19 +582,22 @@ impl RateLimiter {
         // First check if we have a rate limit for this peer
         if !self.peer_limits.contains_key(&peer_id) {
             // Create a new peer limit
-            self.peer_limits.insert(peer_id, RateLimit {
-                requests_per_second: 10, // Allow 10 requests per second by default
-                requests_per_minute: 200,
-                data_per_second: 500, // Lower this from 1000 to 500 to match global limit
-                current_count: 0,
-                current_bytes: 0,
-                last_reset: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            });
+            self.peer_limits.insert(
+                peer_id,
+                RateLimit {
+                    requests_per_second: 10, // Allow 10 requests per second by default
+                    requests_per_minute: 200,
+                    data_per_second: 500, // Lower this from 1000 to 500 to match global limit
+                    current_count: 0,
+                    current_bytes: 0,
+                    last_reset: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                },
+            );
         }
-        
+
         // Check peer limit
         let mut peer_limit = self.peer_limits.get(&peer_id).unwrap().clone();
         if check_limit_static(&mut peer_limit, request).is_err() {
@@ -550,7 +605,7 @@ impl RateLimiter {
         }
         // Update the peer limit with the new state
         self.peer_limits.insert(peer_id, peer_limit);
-        
+
         // Check global limit
         if let Some(global_limit) = self.global_limits.get(&request.request_type) {
             let mut global_limit_clone = global_limit.clone();
@@ -558,14 +613,20 @@ impl RateLimiter {
                 return Err(anyhow::anyhow!("Global rate limit exceeded"));
             }
             // Update the global limit with the new state
-            self.global_limits.insert(request.request_type.clone(), global_limit_clone);
+            self.global_limits
+                .insert(request.request_type.clone(), global_limit_clone);
         }
-        
+
         Ok(())
     }
-    
+
     // Keep existing methods but make them delegate to static functions
-    fn check_peer_limit(&mut self, peer_id: &PeerId, request: &RequestInfo) -> anyhow::Result<bool> {
+    #[allow(unused)]
+    fn check_peer_limit(
+        &mut self,
+        peer_id: &PeerId,
+        request: &RequestInfo,
+    ) -> anyhow::Result<bool> {
         if let Some(mut limit) = self.peer_limits.get(peer_id).cloned() {
             // Use a cloned copy to avoid borrowing self twice
             let result = check_limit_static(&mut limit, request);
@@ -577,20 +638,23 @@ impl RateLimiter {
         }
         Ok(true)
     }
-    
+
+    #[allow(unused)]
     fn check_global_limit(&mut self, request: &RequestInfo) -> anyhow::Result<bool> {
         if let Some(mut limit) = self.global_limits.get(&request.request_type).cloned() {
             // Use a cloned copy to avoid borrowing self twice
             let result = check_limit_static(&mut limit, request);
             // Update the limit in the map
             if result.is_ok() {
-                self.global_limits.insert(request.request_type.clone(), limit);
+                self.global_limits
+                    .insert(request.request_type.clone(), limit);
             }
             result?;
         }
         Ok(true)
     }
-    
+
+    #[allow(unused)]
     fn check_peer_burst_allowance(&mut self, peer_id: &PeerId) -> anyhow::Result<bool> {
         if let Some(mut allowance) = self.burst_allowance.get(peer_id).cloned() {
             // Use a cloned copy to avoid borrowing self twice
@@ -603,11 +667,13 @@ impl RateLimiter {
         }
         Ok(true)
     }
-    
+
+    #[allow(unused)]
     fn check_limit(&mut self, limit: &mut RateLimit, request: &RequestInfo) -> anyhow::Result<()> {
         check_limit_static(limit, request)
     }
-    
+
+    #[allow(unused)]
     fn check_burst(&mut self, allowance: &mut BurstAllowance) -> anyhow::Result<()> {
         check_burst_static(allowance)
     }
@@ -619,54 +685,56 @@ fn check_limit_static(limit: &mut RateLimit, request: &RequestInfo) -> anyhow::R
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-        
+
     // Reset counters if time window has passed (1 second window for requests_per_second)
     if now > limit.last_reset + 1 {
         limit.current_count = 0;
         limit.current_bytes = 0;
         limit.last_reset = now;
     }
-    
+
     // Check if we've exceeded the per-second rate limit (request count)
     if limit.current_count >= limit.requests_per_second {
         return Err(anyhow::anyhow!("Rate limit exceeded: too many requests"));
     }
-    
+
     // Check if this message would exceed the byte rate limit on its own
     if request.size > limit.data_per_second {
         return Err(anyhow::anyhow!("Rate limit exceeded: message too large"));
     }
-    
+
     // Check if total bytes would exceed the limit
     if limit.current_bytes + request.size > limit.data_per_second {
-        return Err(anyhow::anyhow!("Rate limit exceeded: too many bytes in time window"));
+        return Err(anyhow::anyhow!(
+            "Rate limit exceeded: too many bytes in time window"
+        ));
     }
-    
+
     // Increment counters
     limit.current_count += 1;
     limit.current_bytes += request.size;
-    
+
     Ok(())
 }
 
+#[allow(unused)]
 fn check_burst_static(allowance: &mut BurstAllowance) -> anyhow::Result<()> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-        
+
     // Replenish tokens
     let elapsed = now - allowance.last_update;
-    allowance.current_tokens = (allowance.current_tokens + elapsed as u32)
-        .min(allowance.max_burst);
-        
+    allowance.current_tokens = (allowance.current_tokens + elapsed as u32).min(allowance.max_burst);
+
     if allowance.current_tokens == 0 {
         return Err(anyhow::anyhow!("Burst limit exceeded"));
     }
-    
+
     allowance.current_tokens -= 1;
     allowance.last_update = now;
-    
+
     Ok(())
 }
 
@@ -684,14 +752,14 @@ impl RequestFilter {
         if self.matches_blocked_pattern(_request) {
             return Err(anyhow::anyhow!("Request matches blocked pattern"));
         }
-        
+
         // Apply validation rules
         for rule in &self.validation_rules {
             if !rule.validate(_request) {
                 return Err(anyhow::anyhow!("Request failed validation"));
             }
         }
-        
+
         Ok(())
     }
 
@@ -713,7 +781,7 @@ impl ConnectionGuard {
     fn check_connection(&mut self, request: &RequestInfo) -> anyhow::Result<()> {
         // Check IP-based protection
         self.ip_protection.check_ip(&request.source_ip)?;
-        
+
         // Check connection limits - Convert string to PeerId or use a different map type
         let peer_id = PeerId::random(); // This is just a placeholder - you need proper conversion
         if let Some(stats) = self.connection_tracker.get_mut(&peer_id) {
@@ -721,7 +789,7 @@ impl ConnectionGuard {
                 return Err(anyhow::anyhow!("Connection limit exceeded"));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -735,38 +803,49 @@ impl BehaviorAnalyzer {
         }
     }
 
-    async fn analyze_request(&mut self, peer_id: PeerId, request: &RequestInfo) -> anyhow::Result<()> {
+    async fn analyze_request(
+        &mut self,
+        peer_id: PeerId,
+        request: &RequestInfo,
+    ) -> anyhow::Result<()> {
         // Step 1: Get or create the behavior profile
-        let profile = self.peer_behavior.entry(peer_id)
+        let profile = self
+            .peer_behavior
+            .entry(peer_id)
             .or_insert_with(BehaviorProfile::new);
-        
+
         // Step 2: Update the profile with request data
         profile.update_with_request(request);
-        
+
         // Step 3: Check for anomalies - Create a clone to avoid borrowing conflicts
         let should_penalize = {
             // Create a reference to profile to pass to detect_anomalies
             let profile_ref = &self.peer_behavior.get(&peer_id).unwrap();
             self.anomaly_detector.detect_anomalies(profile_ref)
         };
-        
+
         // Step 4: Apply penalty if needed
         if should_penalize {
             self.reputation_system.penalize(peer_id)?;
         }
-        
+
         Ok(())
     }
 
-    async fn record_violation(&mut self, peer_id: PeerId, violation_type: &str) -> anyhow::Result<()> {
+    async fn record_violation(
+        &mut self,
+        peer_id: PeerId,
+        violation_type: &str,
+    ) -> anyhow::Result<()> {
         // Step 1: Record the violation in the behavior profile if it exists
         if let Some(profile) = self.peer_behavior.get_mut(&peer_id) {
             profile.record_violation(violation_type);
         }
-        
+
         // Step 2: Update reputation through the reputation system
-        self.reputation_system.handle_violation(peer_id, violation_type)?;
-        
+        self.reputation_system
+            .handle_violation(peer_id, violation_type)?;
+
         Ok(())
     }
 
@@ -787,14 +866,16 @@ impl BehaviorProfile {
     }
 
     fn update_with_request(&mut self, request: &RequestInfo) {
-        let stats = self.request_patterns.entry(request.request_type.clone())
+        let stats = self
+            .request_patterns
+            .entry(request.request_type.clone())
             .or_insert_with(PatternStats::new);
-            
+
         stats.update(request);
-        
+
         // Update average request size
-        self.avg_request_size = (self.avg_request_size * stats.count as f64 + request.size as f64) /
-            (stats.count as f64 + 1.0);
+        self.avg_request_size = (self.avg_request_size * stats.count as f64 + request.size as f64)
+            / (stats.count as f64 + 1.0);
     }
 
     fn record_violation(&mut self, _violation_type: &str) {
@@ -808,6 +889,7 @@ impl PatternStats {
         Self {
             count: 0,
             avg_size: 0.0,
+            #[allow(dead_code)]
             error_rate: 0.0,
             last_seen: 0,
         }
@@ -815,7 +897,8 @@ impl PatternStats {
 
     fn update(&mut self, request: &RequestInfo) {
         self.count += 1;
-        self.avg_size = (self.avg_size * (self.count - 1) as f64 + request.size as f64) / self.count as f64;
+        self.avg_size =
+            (self.avg_size * (self.count - 1) as f64 + request.size as f64) / self.count as f64;
         self.last_seen = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -845,6 +928,7 @@ impl ReputationSystem {
     fn new() -> Self {
         Self {
             scores: HashMap::new(),
+            #[allow(dead_code)]
             modifiers: Vec::new(),
         }
     }
@@ -864,7 +948,7 @@ impl ReputationSystem {
             "malicious_behavior" => 0.5,
             _ => 0.1,
         };
-        
+
         self.update_score(peer_id, -penalty)
     }
 
@@ -878,8 +962,11 @@ impl Default for ConnectionLimits {
     fn default() -> Self {
         Self {
             max_connections_per_ip: 10,
+            #[allow(dead_code)]
             max_connections_global: 1000,
+            #[allow(dead_code)]
             connection_rate_limit: 5,
+            #[allow(dead_code)]
             backoff_time: 300,
         }
     }
@@ -899,19 +986,18 @@ impl IPProtection {
         if self.blocked_ips.contains(ip) {
             return Err(anyhow::anyhow!("IP is blocked"));
         }
-        
+
         // Check IP reputation
         if let Some(&reputation) = self.ip_reputation.get(ip) {
             if reputation < 0.3 {
                 return Err(anyhow::anyhow!("IP has poor reputation"));
             }
         }
-        
+
         // Update connection count
-        let count = self.connection_counts.entry(ip.to_string())
-            .or_insert(0);
+        let count = self.connection_counts.entry(ip.to_string()).or_insert(0);
         *count += 1;
-        
+
         Ok(())
     }
 }
@@ -948,70 +1034,112 @@ mod tests {
 
         // Test message rate limiting
         for _ in 0..10 {
-            assert!(protection.check_request(peer_id, RequestInfo {
-                request_type: RequestType::Transaction,
-                timestamp: 0,
-                size: 10,
-                source_ip: "127.0.0.1".to_string(),
-            }).await.is_ok());
+            assert!(protection
+                .check_request(
+                    peer_id,
+                    RequestInfo {
+                        request_type: RequestType::Transaction,
+                        timestamp: 0,
+                        size: 10,
+                        source_ip: "127.0.0.1".to_string(),
+                    }
+                )
+                .await
+                .is_ok());
         }
-        assert!(protection.check_request(peer_id, RequestInfo {
-            request_type: RequestType::Transaction,
-            timestamp: 0,
-            size: 10,
-            source_ip: "127.0.0.1".to_string(),
-        }).await.is_err());
+        assert!(protection
+            .check_request(
+                peer_id,
+                RequestInfo {
+                    request_type: RequestType::Transaction,
+                    timestamp: 0,
+                    size: 10,
+                    source_ip: "127.0.0.1".to_string(),
+                }
+            )
+            .await
+            .is_err());
 
         // Section 2: Test byte rate limiting with a fresh protector instance
         let protection = DOSProtector::new(Arc::new(SecurityMetrics::new()));
         let peer_id = PeerId::random();
-        
+
         // 100 is well below the limit, so this should succeed
-        assert!(protection.check_request(peer_id, RequestInfo {
-            request_type: RequestType::Transaction,
-            timestamp: 0,
-            size: 100,
-            source_ip: "127.0.0.1".to_string(),
-        }).await.is_ok());
-        
+        assert!(protection
+            .check_request(
+                peer_id,
+                RequestInfo {
+                    request_type: RequestType::Transaction,
+                    timestamp: 0,
+                    size: 100,
+                    source_ip: "127.0.0.1".to_string(),
+                }
+            )
+            .await
+            .is_ok());
+
         // But a large message exceeding the remaining bytes should fail
-        assert!(protection.check_request(peer_id, RequestInfo {
-            request_type: RequestType::Transaction,
-            timestamp: 0,
-            size: 950,
-            source_ip: "127.0.0.1".to_string(),
-        }).await.is_err());
+        assert!(protection
+            .check_request(
+                peer_id,
+                RequestInfo {
+                    request_type: RequestType::Transaction,
+                    timestamp: 0,
+                    size: 950,
+                    source_ip: "127.0.0.1".to_string(),
+                }
+            )
+            .await
+            .is_err());
 
         // Section 3: Test banning with a fresh protector instance
         let protection = DOSProtector::new(Arc::new(SecurityMetrics::new()));
         let peer_id = PeerId::random();
-        
+
         for _ in 0..3 {
-            assert!(protection.check_request(peer_id, RequestInfo {
-                request_type: RequestType::Transaction,
-                timestamp: 0,
-                size: 1000,
-                source_ip: "127.0.0.1".to_string(),
-            }).await.is_err());
+            assert!(protection
+                .check_request(
+                    peer_id,
+                    RequestInfo {
+                        request_type: RequestType::Transaction,
+                        timestamp: 0,
+                        size: 1000,
+                        source_ip: "127.0.0.1".to_string(),
+                    }
+                )
+                .await
+                .is_err());
         }
-        assert!(protection.check_request(peer_id, RequestInfo {
-            request_type: RequestType::Transaction,
-            timestamp: 0,
-            size: 1000,
-            source_ip: "127.0.0.1".to_string(),
-        }).await.is_err());
+        assert!(protection
+            .check_request(
+                peer_id,
+                RequestInfo {
+                    request_type: RequestType::Transaction,
+                    timestamp: 0,
+                    size: 1000,
+                    source_ip: "127.0.0.1".to_string(),
+                }
+            )
+            .await
+            .is_err());
 
         // Section 4: Test ban expiration with a fresh protector instance
         tokio::time::sleep(Duration::from_secs(2)).await;
-        
+
         let protection = DOSProtector::new(Arc::new(SecurityMetrics::new()));
         let peer_id = PeerId::random();
-        
-        assert!(protection.check_request(peer_id, RequestInfo {
-            request_type: RequestType::Transaction,
-            timestamp: 0,
-            size: 100, // Use a smaller size that won't hit the limit
-            source_ip: "127.0.0.1".to_string(),
-        }).await.is_ok());
+
+        assert!(protection
+            .check_request(
+                peer_id,
+                RequestInfo {
+                    request_type: RequestType::Transaction,
+                    timestamp: 0,
+                    size: 100, // Use a smaller size that won't hit the limit
+                    source_ip: "127.0.0.1".to_string(),
+                }
+            )
+            .await
+            .is_ok());
     }
-} 
+}

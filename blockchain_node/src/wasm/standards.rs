@@ -1,11 +1,11 @@
+use log::{debug, error, warn};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use log::{debug, warn, error};
 
-use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
-use crate::storage::Storage;
 use crate::crypto::hash::Hash;
+use crate::storage::Storage;
+use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
 
 /// Contract standard error
 #[derive(Debug, Error)]
@@ -66,13 +66,13 @@ pub enum SecurityStandard {
 pub trait ContractStandard: Send + Sync {
     /// Get standard type
     fn standard_type(&self) -> StandardType;
-    
+
     /// Validate contract implementation
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError>;
-    
+
     /// Get required functions
     fn required_functions(&self) -> Vec<String>;
-    
+
     /// Get required events
     fn required_events(&self) -> Vec<String>;
 }
@@ -94,15 +94,15 @@ impl ContractStandard for ERC20Standard {
     fn standard_type(&self) -> StandardType {
         StandardType::Token(TokenStandard::ERC20)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement ERC20 validation
         // This should validate that the contract implements
         // all required ERC20 functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "totalSupply".to_string(),
@@ -113,12 +113,9 @@ impl ContractStandard for ERC20Standard {
             "allowance".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
-        vec![
-            "Transfer".to_string(),
-            "Approval".to_string(),
-        ]
+        vec!["Transfer".to_string(), "Approval".to_string()]
     }
 }
 
@@ -139,15 +136,15 @@ impl ContractStandard for ERC721Standard {
     fn standard_type(&self) -> StandardType {
         StandardType::Token(TokenStandard::ERC721)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement ERC721 validation
         // This should validate that the contract implements
         // all required ERC721 functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "balanceOf".to_string(),
@@ -160,7 +157,7 @@ impl ContractStandard for ERC721Standard {
             "isApprovedForAll".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
         vec![
             "Transfer".to_string(),
@@ -187,15 +184,15 @@ impl ContractStandard for ERC1155Standard {
     fn standard_type(&self) -> StandardType {
         StandardType::Token(TokenStandard::ERC1155)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement ERC1155 validation
         // This should validate that the contract implements
         // all required ERC1155 functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "balanceOf".to_string(),
@@ -206,7 +203,7 @@ impl ContractStandard for ERC1155Standard {
             "safeBatchTransferFrom".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
         vec![
             "TransferSingle".to_string(),
@@ -234,15 +231,15 @@ impl ContractStandard for DAOStandard {
     fn standard_type(&self) -> StandardType {
         StandardType::Governance(GovernanceStandard::DAO)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement DAO validation
         // This should validate that the contract implements
         // all required DAO functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "propose".to_string(),
@@ -252,7 +249,7 @@ impl ContractStandard for DAOStandard {
             "getVotes".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
         vec![
             "ProposalCreated".to_string(),
@@ -279,15 +276,15 @@ impl ContractStandard for AccessControlStandard {
     fn standard_type(&self) -> StandardType {
         StandardType::Security(SecurityStandard::AccessControl)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement access control validation
         // This should validate that the contract implements
         // all required access control functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "hasRole".to_string(),
@@ -297,7 +294,7 @@ impl ContractStandard for AccessControlStandard {
             "renounceRole".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
         vec![
             "RoleGranted".to_string(),
@@ -324,15 +321,15 @@ impl ContractStandard for PausableStandard {
     fn standard_type(&self) -> StandardType {
         StandardType::Security(SecurityStandard::Pausable)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement pausable validation
         // This should validate that the contract implements
         // all required pausable functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
         vec![
             "paused".to_string(),
@@ -340,12 +337,9 @@ impl ContractStandard for PausableStandard {
             "unpause".to_string(),
         ]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
-        vec![
-            "Paused".to_string(),
-            "Unpaused".to_string(),
-        ]
+        vec!["Paused".to_string(), "Unpaused".to_string()]
     }
 }
 
@@ -366,21 +360,19 @@ impl ContractStandard for ReentrancyGuardStandard {
     fn standard_type(&self) -> StandardType {
         StandardType::Security(SecurityStandard::ReentrancyGuard)
     }
-    
+
     fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         // TODO: Implement reentrancy guard validation
         // This should validate that the contract implements
         // all required reentrancy guard functions and events
-        
+
         Ok(())
     }
-    
+
     fn required_functions(&self) -> Vec<String> {
-        vec![
-            "nonReentrant".to_string(),
-        ]
+        vec!["nonReentrant".to_string()]
     }
-    
+
     fn required_events(&self) -> Vec<String> {
         vec![]
     }
@@ -399,30 +391,33 @@ impl StandardRegistry {
             standards: Vec::new(),
         }
     }
-    
+
     /// Register a standard
     pub fn register_standard(&mut self, standard: Box<dyn ContractStandard>) {
         self.standards.push(standard);
     }
-    
+
     /// Get standard by type
     pub fn get_standard(&self, standard_type: &StandardType) -> Option<&dyn ContractStandard> {
-        self.standards.iter()
+        self.standards
+            .iter()
             .find(|s| s.standard_type() == *standard_type)
             .map(|s| s.as_ref())
     }
-    
+
     /// Validate contract against standard
     pub fn validate_contract(
         &self,
         bytecode: &[u8],
         standard_type: &StandardType,
     ) -> Result<(), StandardError> {
-        let standard = self.get_standard(standard_type)
-            .ok_or_else(|| StandardError::StandardNotImplemented(
-                format!("Standard not found: {:?}", standard_type)
-            ))?;
-        
+        let standard = self.get_standard(standard_type).ok_or_else(|| {
+            StandardError::StandardNotImplemented(format!(
+                "Standard not found: {:?}",
+                standard_type
+            ))
+        })?;
+
         standard.validate_implementation(bytecode)
     }
-} 
+}

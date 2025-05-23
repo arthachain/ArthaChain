@@ -5,7 +5,7 @@ mod tests {
     fn test_simple_passing() {
         assert!(true);
     }
-    
+
     /* Commented out problematic tests
     // Original imports with issues
     use blockchain_node::consensus::{
@@ -14,4 +14,4 @@ mod tests {
         verification::BlockVerifier,
     };
     */
-} 
+}

@@ -1,12 +1,12 @@
 //! Common blockchain types
 
-use serde::{Serialize, Deserialize};
-use std::fmt;
-use std::collections::HashMap;
-use hex;
-use blake3;
-use anyhow;
 use crate::utils::crypto::Hash as CryptoHash;
+use anyhow;
+use blake3;
+use hex;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
 
 /// Block header
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,8 +100,7 @@ impl Hash {
     }
 
     pub fn from_hex(hex: &str) -> std::result::Result<Self, anyhow::Error> {
-        let bytes = hex::decode(hex)
-            .map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?;
+        let bytes = hex::decode(hex).map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?;
         Ok(Self(bytes))
     }
 }
@@ -139,17 +138,20 @@ impl Address {
     pub fn new(bytes: [u8; 20]) -> Self {
         Self(bytes)
     }
-    
+
     /// Create an address from a byte slice
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         if bytes.len() != 20 {
-            return Err(anyhow::anyhow!("Invalid address length. Expected 20 bytes, got {}", bytes.len()));
+            return Err(anyhow::anyhow!(
+                "Invalid address length. Expected 20 bytes, got {}",
+                bytes.len()
+            ));
         }
         let mut addr = [0u8; 20];
         addr.copy_from_slice(bytes);
         Ok(Self(addr))
     }
-    
+
     /// Create an address from a hex string
     pub fn from_string(s: &str) -> Result<Self, &'static str> {
         let s = s.trim_start_matches("0x");
@@ -161,12 +163,12 @@ impl Address {
         addr.copy_from_slice(&bytes);
         Ok(Self(addr))
     }
-    
+
     /// Get address as bytes
     pub fn as_bytes(&self) -> &[u8; 20] {
         &self.0
     }
-    
+
     /// Get address as hex string
     pub fn to_hex(&self) -> String {
         hex::encode(&self.0)
@@ -382,4 +384,4 @@ impl From<Transaction> for crate::ledger::transaction::Transaction {
             tx.signature,
         )
     }
-} 
+}

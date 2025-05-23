@@ -15,7 +15,9 @@ pub struct SerializableDuration {
 
 impl SerializableInstant {
     pub fn now() -> Self {
-        Self { instant: Instant::now() }
+        Self {
+            instant: Instant::now(),
+        }
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -67,10 +69,11 @@ mod serde_duration {
 // Implementing PartialEq for SerializableInstant
 impl PartialEq for SerializableInstant {
     fn eq(&self, other: &Self) -> bool {
-        // Since Instant doesn't implement PartialEq, we can compare them 
+        // Since Instant doesn't implement PartialEq, we can compare them
         // by calculating the duration since a fixed point
         let base = Instant::now();
-        self.instant.duration_since(base).as_nanos() == other.instant.duration_since(base).as_nanos()
+        self.instant.duration_since(base).as_nanos()
+            == other.instant.duration_since(base).as_nanos()
     }
 }
 
@@ -79,4 +82,4 @@ impl PartialEq for SerializableDuration {
     fn eq(&self, other: &Self) -> bool {
         self.duration == other.duration
     }
-} 
+}
