@@ -11,8 +11,10 @@ pub mod byzantine;
 #[cfg(not(skip_problematic_modules))]
 pub mod adaptive;
 
-// SVBFT module
+// SVBFT modules
 pub mod svbft;
+pub mod quantum_svbft;
+pub mod view_change;
 
 #[cfg(not(skip_problematic_modules))]
 pub mod leader_election;
@@ -41,6 +43,8 @@ pub use batch::BatchProcessor;
 pub use checkpoint::CheckpointManager;
 #[cfg(not(skip_problematic_modules))]
 pub use cross_shard::CrossShardManager;
+// Quantum-resistant enhanced cross-shard coordinator
+pub use cross_shard::{EnhancedCrossShardManager, CrossShardCoordinator, ParticipantHandler, CoordinatorMessage, TxPhase};
 #[cfg(not(skip_problematic_modules))]
 pub use dag::DagManager;
 #[cfg(not(skip_problematic_modules))]
@@ -79,3 +83,6 @@ pub use fraud_detection::FraudDetectionEngine;
 pub use social_graph::SocialGraph;
 #[cfg(not(skip_problematic_modules))]
 pub use weight_adjustment::DynamicWeightAdjuster;
+
+pub use quantum_svbft::QuantumSVBFTConsensus;
+pub use view_change::ViewChangeManager;

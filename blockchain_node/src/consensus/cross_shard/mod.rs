@@ -14,6 +14,25 @@ use crate::sharding::CrossShardStatus;
 
 // Protocol related modules
 pub mod protocol;
+// Resource management
+pub mod resource;
+// Sharding functionality
+pub mod sharding;
+// Routing between shards
+pub mod routing;
+// Cross-shard transaction coordinator
+pub mod coordinator;
+// Integration with existing system
+pub mod integration;
+
+// Tests
+#[cfg(test)]
+pub mod tests;
+
+// Re-export the coordinator
+pub use coordinator::{CrossShardCoordinator, ParticipantHandler, CoordinatorMessage, TxPhase};
+// Re-export the enhanced manager
+pub use integration::EnhancedCrossShardManager;
 
 // Simplified protocol enum to match our implementation
 #[derive(Debug, Clone, PartialEq)]
