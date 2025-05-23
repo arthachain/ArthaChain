@@ -191,6 +191,73 @@ RUST_LOG=debug cargo run
 
 Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for more details.
 
+## Development Roadmap
+
+Artha Chain is under active development with several components at different stages of implementation. Here is our current development status and future plans:
+
+### Current Development Status
+
+The project has a well-structured architecture with many components in place, but several critical systems need further implementation:
+
+#### High Priority Components
+
+1. **WebAssembly (WASM) Virtual Machine**
+   - Complete implementation of host functions for smart contracts
+   - Develop storage operations (read/write/delete)
+   - Implement cryptographic operations
+   - Build contract standards verification (ERC20, ERC721, ERC1155)
+
+2. **Cross-Shard Transaction Coordinator**
+   - Implement atomic transaction guarantees across shards
+   - Build message routing between shards
+   - Develop cross-shard consensus mechanism
+
+3. **Byzantine Fault Tolerance Implementation**
+   - Complete view change management
+   - Implement leader election mechanism
+   - Add checkpoint creation and verification
+
+#### Medium Priority Components
+
+1. **Storage Systems**
+   - Complete MemMapStorage backend implementation
+   - Implement storage verification mechanisms
+   - Enhance hybrid storage for cross-shard operations
+
+2. **AI Security Components**
+   - Implement GPU monitoring for neural validation
+   - Complete biometric verification implementation
+   - Develop data chunking reconstruction system
+
+3. **Node Status Monitoring**
+   - Implement peer count tracking
+   - Add mempool size monitoring
+   - Develop uptime tracking and reporting
+
+#### Future Enhancements
+
+1. **Performance Optimization**
+   - Further SIMD optimizations for transaction processing
+   - Enhanced UDP network protocol with congestion control
+   - Memory-mapped storage improvements
+
+2. **Security Features**
+   - Post-quantum cryptography integration
+   - Advanced zero-knowledge proofs system
+   - Enhanced fraud detection AI
+
+3. **Developer Experience**
+   - Comprehensive SDK development
+   - Enhanced documentation and tutorials
+   - Improved debugging and testing tools
+
+### Target Milestones
+
+1. **Alpha Release (Q3 2023)** - Core consensus and basic transaction support
+2. **Beta Release (Q4 2023)** - Smart contracts and cross-shard operations
+3. **Testnet Launch (Q1 2024)** - Public testnet with full feature set
+4. **Mainnet Launch (Q2 2024)** - Production-ready network launch
+
 ## Website
 
 Visit our website at [https://arthachain.com](https://arthachain.com) for more information.
