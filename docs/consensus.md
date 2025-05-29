@@ -232,7 +232,59 @@ SVBFT integrates reputation in several ways:
 
 3. **Reward Distribution**: Consensus rewards are adjusted based on validator reputation.
 
-## 3. Integration Between SVCP and SVBFT
+## 3. Mobile-Optimized Consensus
+
+Artha Chain's consensus mechanism is specially optimized for mobile devices, allowing smartphones and tablets to participate as full validators:
+
+### 3.1 Mobile-Optimized SVBFT
+
+The SVBFT protocol includes several optimizations for mobile devices:
+
+1. **Reduced Message Size**: Compact message format to minimize bandwidth usage
+2. **Battery-Aware Participation**: Intelligent scheduling that considers device battery level
+3. **Background Processing**: Efficient background consensus processing
+4. **Intermittent Connectivity Handling**: Ability to recover from temporary network disconnections
+5. **HotStuff-Based Protocol**: Linear communication complexity to reduce network overhead
+
+### 3.2 Lightweight Verification
+
+Mobile nodes can participate in consensus with minimal resource requirements:
+
+1. **Partial State Verification**: Only verify state relevant to the validator's committee
+2. **Incremental Block Processing**: Process blocks in small chunks to avoid memory pressure
+3. **Configurable Resource Limits**: Set maximum CPU, memory, and bandwidth usage
+4. **Mobile-Specific Optimizations**: ARM-optimized cryptographic operations
+
+## 4. Objective Sharding
+
+Artha Chain implements Objective Sharding to scale throughput as more validators join the network:
+
+### 4.1 Dynamic Shard Management
+
+1. **Auto Shard Resizing**: Shards automatically grow or shrink as validators join or leave
+2. **Performance-Based Scaling**: New shards are created when transaction load approaches capacity
+3. **Optimal Shard Size**: Each shard maintains 50-200 validators for optimal performance
+
+### 4.2 Cross-Shard Transactions
+
+1. **Coordinator Selection**: For each cross-shard transaction, one shard acts as coordinator
+2. **Two-Phase Commit Protocol**: Ensures atomicity across shards
+3. **Minimized Cross-Shard Communication**: Transaction routing algorithm minimizes cross-shard operations
+4. **Parallel Processing**: Independent cross-shard transactions are processed in parallel
+
+### 4.3 Mobile-Optimized Shard Assignment
+
+1. **Device Capability Awareness**: Mobile devices are assigned to shards based on their capabilities
+2. **Proximity-Based Assignment**: Devices are assigned to shards with low network latency
+3. **Battery-Aware Rotation**: Mobile devices can rotate between active and standby roles based on battery level
+
+### 4.4 Shard Security
+
+1. **Random Validator Assignment**: Validators are randomly assigned to shards to prevent attacks
+2. **Cross-Shard Verification**: Transactions affecting multiple shards are verified by all involved shards
+3. **Reshuffling**: Periodic reshuffling of validators between shards for enhanced security
+
+## 5. Integration Between SVCP and SVBFT
 
 The two consensus components work together in the following manner:
 
@@ -246,7 +298,7 @@ The two consensus components work together in the following manner:
 
 4. **Dynamic Adjustment**: Both components adapt to network conditions and validator behavior.
 
-## 4. Security Properties
+## 6. Security Properties
 
 The combined SVCP+SVBFT consensus mechanism provides several key security properties:
 
@@ -260,9 +312,9 @@ The combined SVCP+SVBFT consensus mechanism provides several key security proper
 
 5. **Social Verification Layer**: Additional security through reputation and social graph analysis.
 
-## 5. Implementation Notes
+## 7. Implementation Notes
 
-### 5.1 Key Data Structures
+### 7.1 Key Data Structures
 
 ```rust
 // Block proposal
@@ -294,7 +346,7 @@ struct Vote {
 }
 ```
 
-### 5.2 State Management
+### 7.2 State Management
 
 The consensus mechanism maintains several key state components:
 
@@ -308,7 +360,7 @@ The consensus mechanism maintains several key state components:
 
 5. **Block Times**: Recent block creation times for difficulty adjustment.
 
-### 5.3 Performance Characteristics
+### 7.3 Performance Characteristics
 
 The consensus mechanism achieves the following performance characteristics:
 
@@ -325,9 +377,9 @@ The consensus mechanism achieves the following performance characteristics:
    - Minimal energy usage compared to Proof of Work
    - Optimized message patterns to reduce network overhead
 
-## 6. Configuration and Tuning
+## 8. Configuration and Tuning
 
-### 6.1 Important Configuration Options
+### 8.1 Important Configuration Options
 
 The following parameters can be adjusted to tune consensus behavior:
 
@@ -341,7 +393,7 @@ The following parameters can be adjusted to tune consensus behavior:
    - `rotation_frequency`: How often committee membership rotates
    - `timeout_period`: Timeout for view change initiation
 
-### 6.2 Recommended Configurations
+### 8.2 Recommended Configurations
 
 #### Development Environment
 ```
@@ -364,9 +416,9 @@ min_score_threshold: 0.7
 committee_size: 100
 ```
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
-### 7.1 Common Issues
+### 9.1 Common Issues
 
 1. **Low Proposer Count**: If there are too few proposer candidates:
    - Check the `min_score_threshold` (may be too high)
@@ -383,7 +435,7 @@ committee_size: 100
    - Verify validator connectivity
    - Ensure sufficient validator participation
 
-### 7.2 Diagnostic Tools
+### 9.2 Diagnostic Tools
 
 The system provides several tools for diagnosing consensus issues:
 
@@ -392,7 +444,7 @@ The system provides several tools for diagnosing consensus issues:
 3. **Proposer Analytics**: Analysis of proposer selection patterns
 4. **Score Breakdown**: Detailed breakdown of node scores
 
-## 8. Future Development
+## 10. Future Development
 
 The consensus mechanism is actively being developed with several planned enhancements:
 
