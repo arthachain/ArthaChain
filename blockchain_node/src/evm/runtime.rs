@@ -1,19 +1,15 @@
 use crate::evm::backend::{EvmAccount, EvmBackend};
-use crate::evm::precompiles::init_precompiles;
 use crate::evm::types::{
     EvmAddress, EvmConfig, EvmError, EvmExecutionResult, EvmLog, EvmTransaction,
 };
 use crate::storage::HybridStorage;
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use ethereum_types::{H160, H256, U256};
 use log::{debug, error, info, warn};
-use std::collections::HashMap;
+
 use std::sync::Arc;
 
 #[cfg(feature = "evm-runtime")]
-use evm_runtime::{Config as EvmRuntimeConfig, ExitError, ExitReason, ExitSucceed, Machine};
-use sha3::{Digest, Keccak256};
+use evm_runtime::{Config as EvmRuntimeConfig, ExitReason, Machine};
 
 /// EVM Runtime for executing Solidity smart contracts
 pub struct EvmRuntime {

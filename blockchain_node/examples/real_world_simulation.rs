@@ -20,7 +20,7 @@ use blockchain_node::execution::parallel::{
     ConflictStrategy, ParallelConfig, ParallelExecutionManager,
 };
 use blockchain_node::ledger::state::storage::StateStorage;
-use blockchain_node::ledger::state::StateTree;
+use blockchain_node::ledger::state::State;
 use blockchain_node::ledger::transaction::TransactionType;
 use blockchain_node::transaction::Transaction;
 
@@ -199,7 +199,7 @@ impl TransactionGenerator {
         let gas_price = rng.gen_range(self.tx_mix.min_gas_price..self.tx_mix.max_gas_price) * 2;
 
         Transaction {
-            tx_type: TransactionType::Deploy,
+            tx_type: TransactionType::ContractCreate,
             sender,
             recipient: "0x0000000000000000000000000000000000000000".to_string(), // Zero address for contract creation
             amount: 0,
@@ -316,7 +316,7 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
 
     // Initialize state
     let _storage = Arc::new(StateStorage::new());
-    let state_tree = Arc::new(StateTree::new());
+    let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
 
     // Create transaction generator
     let mut tx_generator = TransactionGenerator::new(
@@ -326,7 +326,12 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
     );
 
     // Create parallel execution manager
-    let executor = Arc::new(TransactionExecutor::new());
+    let executor = Arc::new(TransactionExecutor::new(
+        None,      // wasm_executor: no WASM for examples
+        1.0,       // gas_price_adjustment
+        1_000_000, // max_gas_limit
+        1,         // min_gas_price
+    ));
     let parallel_config = ParallelConfig {
         max_parallel: config.max_parallel,
         max_group_size: 10,
@@ -350,14 +355,14 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
     // Transaction type statistics
     let mut tx_type_counts = HashMap::new();
     tx_type_counts.insert(TransactionType::Transfer, 0);
-    tx_type_counts.insert(TransactionType::Deploy, 0);
+    tx_type_counts.insert(TransactionType::ContractCreate, 0);
     tx_type_counts.insert(TransactionType::Call, 0);
     tx_type_counts.insert(TransactionType::System, 0); // For data storage
 
     // Timing statistics by transaction type
     let mut tx_type_times = HashMap::new();
     tx_type_times.insert(TransactionType::Transfer, Duration::new(0, 0));
-    tx_type_times.insert(TransactionType::Deploy, Duration::new(0, 0));
+    tx_type_times.insert(TransactionType::ContractCreate, Duration::new(0, 0));
     tx_type_times.insert(TransactionType::Call, Duration::new(0, 0));
     tx_type_times.insert(TransactionType::System, Duration::new(0, 0)); // For data storage
 
@@ -382,7 +387,7 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
 
         // Count transaction types and total data size
         for tx in &transactions {
-            *tx_type_counts.entry(tx.tx_type).or_insert(0) += 1;
+            *tx_type_counts.entry(tx.tx_type.clone()).or_insert(0) += 1;
             total_size_bytes += tx.data.len();
         }
 
@@ -439,7 +444,7 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
     let mut tx_type_tps = HashMap::new();
     for (tx_type, count) in &tx_type_counts {
         let tx_tps = *count as f64 / test_duration.as_secs_f64();
-        tx_type_tps.insert(*tx_type, tx_tps);
+        tx_type_tps.insert(tx_type.clone(), tx_tps);
     }
 
     println!("\n\nReal-World Simulation Complete");
@@ -459,7 +464,7 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
     println!("----------------------------");
     for tx_type in &[
         TransactionType::Transfer,
-        TransactionType::Deploy,
+        TransactionType::ContractCreate,
         TransactionType::Call,
         TransactionType::System,
     ] {

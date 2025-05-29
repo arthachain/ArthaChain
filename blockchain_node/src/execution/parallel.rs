@@ -1,5 +1,5 @@
 use crate::execution::executor::TransactionExecutor;
-use crate::ledger::state::{State, StateTree};
+use crate::ledger::state::State;
 use crate::ledger::transaction::Transaction;
 use anyhow::{anyhow, Error, Result};
 use log::debug;
@@ -104,15 +104,15 @@ pub struct ParallelExecutionManager {
     dependency_graph: DependencyGraph,
     /// Execution groups
     execution_groups: Vec<ExecutionGroup>,
-    /// State tree
-    state_tree: Arc<StateTree>,
+    /// State
+    state: Arc<State>,
     /// Transaction executor
     executor: Arc<TransactionExecutor>,
     /// Execution semaphore
     #[allow(dead_code)]
     semaphore: Arc<Semaphore>,
     /// Execution results
-    results: Arc<Mutex<HashMap<String, Result<()>>>>,
+    results: Arc<Mutex<HashMap<String, Result<crate::execution::executor::ExecutionResult>>>>,
     /// Thread pool for parallel execution
     #[allow(dead_code)]
     thread_pool: Option<rayon::ThreadPool>,
@@ -144,6 +144,7 @@ pub struct ExecutionGroup {
     /// Group dependencies (keys only for faster access)
     dependencies: HashSet<String>,
     /// Group dependents (keys only for faster access)
+    #[allow(dead_code)]
     dependents: HashSet<String>,
 }
 
@@ -151,7 +152,7 @@ impl ParallelExecutionManager {
     /// Create a new parallel execution manager with optimizations
     pub fn new(
         config: ParallelConfig,
-        state_tree: Arc<StateTree>,
+        state: Arc<State>,
         executor: Arc<TransactionExecutor>,
     ) -> Self {
         let semaphore = Arc::new(Semaphore::new(config.max_parallel));
@@ -165,11 +166,10 @@ impl ParallelExecutionManager {
 
         // Create thread pool if needed
         let thread_pool = if worker_count > 0 {
-            let pool = rayon::ThreadPoolBuilder::new()
+            rayon::ThreadPoolBuilder::new()
                 .num_threads(worker_count)
                 .build()
-                .ok();
-            pool
+                .ok()
         } else {
             None
         };
@@ -178,7 +178,7 @@ impl ParallelExecutionManager {
             config: config.clone(),
             dependency_graph: DependencyGraph::new(),
             execution_groups: Vec::new(),
-            state_tree,
+            state,
             executor,
             semaphore,
             results: Arc::new(Mutex::new(HashMap::new())),
@@ -190,7 +190,7 @@ impl ParallelExecutionManager {
     pub async fn process_transactions(
         &mut self,
         transactions: Vec<Transaction>,
-    ) -> Result<HashMap<String, Result<()>>> {
+    ) -> Result<HashMap<String, Result<crate::execution::executor::ExecutionResult>>> {
         debug!("Processing {} transactions in parallel", transactions.len());
 
         // Initialize thread-local memory pool
@@ -198,11 +198,12 @@ impl ParallelExecutionManager {
             let mut pool_ref = pool.borrow_mut();
             if pool_ref.is_none() {
                 *pool_ref = Some(bumpalo::Bump::with_capacity(self.config.memory_pool_size));
-            } else {
-                // Reset the existing pool
-                pool_ref.as_mut().unwrap().reset();
             }
         });
+
+        // Clear previous state
+        self.dependency_graph = DependencyGraph::new();
+        self.execution_groups.clear();
 
         // Build dependency graph
         self.build_dependency_graph_optimized(&transactions).await?;
@@ -210,29 +211,20 @@ impl ParallelExecutionManager {
         // Create execution groups
         self.create_execution_groups_optimized().await?;
 
-        // Execute groups in parallel
+        // Execute groups
         self.execute_groups_optimized().await?;
 
         // Return results
-        let results_guard = self.results.lock().await;
-        let results: HashMap<String, Result<()>> = results_guard
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.as_ref().map(|_| ()).map_err(|e| anyhow!(e.to_string())),
-                )
-            })
-            .collect();
-        Ok(results)
+        let mut results = self.results.lock().await;
+        Ok(std::mem::take(&mut *results))
     }
 
-    /// Build dependency graph with optimizations
+    /// Build dependency graph with SIMD optimizations (single-threaded for safety)
     async fn build_dependency_graph_optimized(
         &mut self,
         transactions: &[Transaction],
     ) -> Result<()> {
-        // Clear existing graph
+        // Clear previous graph
         self.dependency_graph.nodes.clear();
         self.dependency_graph.edges.clear();
         self.dependency_graph.reverse_edges.clear();
@@ -244,7 +236,7 @@ impl ParallelExecutionManager {
         for batch in transactions.chunks(batch_size) {
             // Add nodes to graph sequentially to avoid thread safety issues
             for tx in batch {
-                let tx_hash = tx.hash();
+                let tx_hash = tx.hash().to_string();
                 self.dependency_graph
                     .nodes
                     .insert(tx_hash.clone(), tx.clone());
@@ -254,7 +246,7 @@ impl ParallelExecutionManager {
 
         // Analyze dependencies sequentially
         for tx in transactions {
-            let tx_hash = tx.hash();
+            let tx_hash = tx.hash().to_string();
 
             // Use pre-allocated memory for temporary sets
             let dependencies = self.analyze_dependencies_simd(tx, transactions);
@@ -294,7 +286,7 @@ impl ParallelExecutionManager {
     ) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        let tx_hash = tx.hash();
+        let tx_hash = tx.hash().to_string();
         let batch_size = self.config.simd_batch_size;
 
         // Get read/write sets for this transaction
@@ -316,7 +308,7 @@ impl ParallelExecutionManager {
                 let chunk_results: Vec<(String, HashSet<String>, HashSet<String>)> = chunk
                     .iter() // Use sequential processing to avoid thread safety issues
                     .filter_map(|other_tx| {
-                        if other_tx.hash() == tx_hash {
+                        if other_tx.hash().to_string() == tx_hash {
                             return None;
                         }
 
@@ -326,7 +318,11 @@ impl ParallelExecutionManager {
                             futures::executor::block_on(self.executor.get_write_set(other_tx));
 
                         if other_read.is_ok() && other_write.is_ok() {
-                            Some((other_tx.hash(), other_read.unwrap(), other_write.unwrap()))
+                            Some((
+                                other_tx.hash().to_string(),
+                                other_read.unwrap(),
+                                other_write.unwrap(),
+                            ))
                         } else {
                             None
                         }
@@ -347,7 +343,7 @@ impl ParallelExecutionManager {
         } else {
             // Non-SIMD fallback
             for other_tx in all_transactions {
-                if other_tx.hash() == tx_hash {
+                if other_tx.hash().to_string() == tx_hash {
                     continue;
                 }
 
@@ -366,7 +362,7 @@ impl ParallelExecutionManager {
                     || !write_set.is_disjoint(&other_read)
                     || !write_set.is_disjoint(&other_write)
                 {
-                    dependencies.push(other_tx.hash());
+                    dependencies.push(other_tx.hash().to_string());
                 }
             }
         }
@@ -438,39 +434,67 @@ impl ParallelExecutionManager {
             };
 
             // Check if transaction can be added to current group
-            if current_group.transactions.len() >= max_group_size {
-                self.execution_groups.push(current_group);
+            let tx_dependencies = self.get_transaction_dependencies(&tx_hash);
+
+            if current_group.transactions.is_empty()
+                || (current_group.transactions.len() < max_group_size
+                    && !self.has_conflicts(&current_group, &tx_dependencies))
+            {
+                // Add to current group
+                current_group.transactions.push(tx);
+                current_group.dependencies.extend(tx_dependencies);
+            } else {
+                // Start new group
+                if !current_group.transactions.is_empty() {
+                    self.execution_groups.push(current_group);
+                }
+
                 current_group = ExecutionGroup {
-                    transactions: Vec::with_capacity(max_group_size),
-                    dependencies: HashSet::new(),
+                    transactions: vec![tx],
+                    dependencies: tx_dependencies,
                     dependents: HashSet::new(),
                 };
             }
-
-            // Add transaction to group
-            current_group.transactions.push(tx);
-
-            // Add dependencies
-            if let Some(deps) = self.dependency_graph.edges.get(&tx_hash) {
-                for dep in deps.iter() {
-                    current_group.dependencies.insert(dep.clone());
-                }
-            }
-
-            // Add dependents
-            if let Some(deps) = self.dependency_graph.reverse_edges.get(&tx_hash) {
-                for dep in deps.iter() {
-                    current_group.dependents.insert(dep.clone());
-                }
-            }
         }
 
-        // Add last group
+        // Add the last group if not empty
         if !current_group.transactions.is_empty() {
             self.execution_groups.push(current_group);
         }
 
         Ok(())
+    }
+
+    /// Get transaction dependencies
+    fn get_transaction_dependencies(&self, tx_hash: &str) -> HashSet<String> {
+        match self.dependency_graph.edges.get(tx_hash) {
+            Some(edge_set) => edge_set.iter().map(|dep| dep.key().clone()).collect(),
+            None => HashSet::new(),
+        }
+    }
+
+    /// Check if there are conflicts between current group and new transaction
+    fn has_conflicts(&self, group: &ExecutionGroup, new_dependencies: &HashSet<String>) -> bool {
+        // Check if any transaction in the group is a dependency of the new transaction
+        for tx in &group.transactions {
+            let tx_hash = tx.hash().to_string();
+            if new_dependencies.contains(&tx_hash) {
+                return true;
+            }
+        }
+
+        // Check if the new transaction is a dependency of any transaction in the group
+        for tx in &group.transactions {
+            let tx_hash = tx.hash().to_string();
+            let tx_deps = self.get_transaction_dependencies(&tx_hash);
+            for new_dep in new_dependencies {
+                if tx_deps.contains(new_dep) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Get topological order using parallel algorithm
@@ -561,7 +585,7 @@ impl ParallelExecutionManager {
             debug!("Executing group {}/{}", i + 1, groups_count);
 
             let group_results = self
-                .execute_group_simd(group, &self.executor, &self.state_tree)
+                .execute_group_simd(group, &self.executor, &self.state)
                 .await;
 
             let mut results_guard = self.results.lock().await;
@@ -578,8 +602,8 @@ impl ParallelExecutionManager {
         &self,
         group: &ExecutionGroup,
         executor: &Arc<TransactionExecutor>,
-        state_tree: &Arc<StateTree>,
-    ) -> HashMap<String, Result<()>> {
+        state: &Arc<State>,
+    ) -> HashMap<String, Result<crate::execution::executor::ExecutionResult>> {
         let mut results = HashMap::new();
         let batch_size = self.config.simd_batch_size;
 
@@ -587,8 +611,12 @@ impl ParallelExecutionManager {
         for chunk in group.transactions.chunks(batch_size) {
             // Process transactions in sequence
             for tx in chunk {
-                let tx_hash = tx.hash();
-                let result = executor.execute_transaction(tx, state_tree.as_ref()).await;
+                let tx_hash = tx.hash().to_string();
+                // Clone transaction to make it mutable for execute_transaction
+                let mut tx_mut = tx.clone();
+                let result = executor
+                    .execute_transaction(&mut tx_mut, state.as_ref())
+                    .await;
                 results.insert(tx_hash, result);
             }
         }
@@ -666,7 +694,7 @@ impl ParallelProcessor {
     }
 
     pub async fn add_transaction(&mut self, tx: Transaction) -> Result<()> {
-        let tx_hash = tx.hash();
+        let tx_hash = tx.hash().to_string();
         self.dependency_graph
             .edges
             .insert(tx_hash.clone(), dashmap::DashSet::new());
@@ -677,7 +705,7 @@ impl ParallelProcessor {
     // Simple sequential processing - this could be enhanced later with proper parallel execution
     pub async fn process_transactions(&self, transactions: Vec<Transaction>) -> Result<()> {
         for tx in transactions {
-            let tx_hash = tx.hash();
+            let tx_hash = tx.hash().to_string();
             if !self.processed_txs.contains(&tx_hash) {
                 self.processed_txs.insert(tx_hash.clone());
 

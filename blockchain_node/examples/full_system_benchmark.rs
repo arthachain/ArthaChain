@@ -27,7 +27,7 @@ use blockchain_node::execution::parallel::{
     ConflictStrategy, ParallelConfig, ParallelExecutionManager,
 };
 use blockchain_node::ledger::state::storage::StateStorage;
-use blockchain_node::ledger::state::StateTree;
+use blockchain_node::ledger::state::State;
 use blockchain_node::transaction::Transaction;
 
 // Simulation parameters
@@ -54,10 +54,15 @@ async fn simulate_transactions(config: &SimulationConfig) -> Result<()> {
 
     // Initialize state
     let _storage = Arc::new(StateStorage::new());
-    let state_tree = Arc::new(StateTree::new());
+    let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
 
     // Create parallel execution manager
-    let executor = Arc::new(TransactionExecutor::new());
+    let executor = Arc::new(TransactionExecutor::new(
+        None,      // wasm_executor: no WASM for examples
+        1.0,       // gas_price_adjustment
+        1_000_000, // max_gas_limit
+        1,         // min_gas_price
+    ));
     let parallel_config = ParallelConfig {
         max_parallel: config.max_parallel,
         max_group_size: 10,

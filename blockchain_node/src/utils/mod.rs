@@ -4,5 +4,7 @@ pub mod logging;
 pub mod merkle;
 pub mod metrics;
 pub mod proofs;
+pub mod quantum_merkle;
+// pub mod quantum_neural_monitor;
 pub mod security_audit;
 pub mod security_logger;

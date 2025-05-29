@@ -9,6 +9,10 @@ pub use state::State as BlockchainState;
 // Export BlockExt trait for use by consensus modules
 pub use block::BlockExt;
 
+// Re-export important types
+pub use state::StateStorage;
+pub use transaction::Transaction;
+
 use crate::config::Config;
 use crate::ledger::state::State;
 use crate::storage::Storage;

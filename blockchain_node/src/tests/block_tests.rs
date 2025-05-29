@@ -16,17 +16,18 @@ mod tests {
         amount: u64,
         nonce: u64,
     ) -> Transaction {
-        Transaction::new(
+        let mut tx = Transaction::new(
             TransactionType::Transfer,
             sender.to_string(),
             recipient.to_string(),
             amount,
             nonce,
-            10,               // gas_price
-            1000,             // gas_limit
-            vec![],           // data
-            vec![0, 1, 2, 3], // signature
-        )
+            10,     // gas_price
+            1000,   // gas_limit
+            vec![], // data
+        );
+        tx.signature = vec![0, 1, 2, 3]; // Set signature after creation
+        tx
     }
 
     #[test]

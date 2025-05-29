@@ -3,7 +3,6 @@
 //! Provides host functions and utilities that are exposed to WebAssembly contracts,
 //! allowing them to interact with the blockchain environment.
 
-use crate::crypto::hash::Hash;
 use crate::types::Address;
 use crate::wasm::types::WasmError;
 use std::sync::Arc;
@@ -243,23 +242,9 @@ pub fn decode_address(address_str: &str) -> Result<Address, WasmError> {
         .map_err(|_| WasmError::ExecutionError(format!("Invalid address format: {}", address_str)))
 }
 
-/// Log a debug message from the contract (only enabled in dev mode)
-pub fn debug_log(message: &str, contract_address: &str) {
-    debug!("[Contract {}] {}", contract_address, message);
-}
-
 // Storage host functions
 
-/// Read value from storage
-///
-/// Arguments:
-/// * `key_ptr`: Pointer to the key in WASM memory
-/// * `key_len`: Length of the key
-/// * `value_ptr`: Pointer to the buffer for the value
-/// * `value_len`: Length of the buffer
-///
-/// Returns:
-/// * Length of the value read, or -1 if the key doesn't exist
+/// Read data from storage
 fn storage_read(
     env: FunctionEnv<HostEnv>,
     key_ptr: u32,
@@ -267,27 +252,59 @@ fn storage_read(
     value_ptr: u32,
     value_len: u32,
 ) -> i32 {
-    // TODO: Implement the storage read functionality
     // This would involve:
     // 1. Reading the key from WASM memory
     // 2. Looking up the value in storage
     // 3. Writing the value to WASM memory
-    // 4. Returning the length of the value
 
-    // For now, just return -1 to indicate the key doesn't exist
-    -1
+    let env_ref = env.data();
+    let memory = env_ref.memory.clone();
+
+    // Track gas for read operation
+    if let Err(e) = env_ref.gas_meter.track_gas(Gas::storage_read(key_len)) {
+        log::error!("Storage read out of gas: {}", e);
+        return -1;
+    }
+
+    // Read the key from WASM memory
+    let key = match read_memory_bytes(&memory, WasmPtr::new(key_ptr), key_len) {
+        Ok(k) => k,
+        Err(e) => {
+            log::error!("Failed to read key from memory: {}", e);
+            return -1;
+        }
+    };
+
+    // Look up the value in storage
+    let value = match env_ref.storage.get(&key) {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            // Key not found
+            return 0;
+        }
+        Err(e) => {
+            log::error!("Storage read failed: {}", e);
+            return -1;
+        }
+    };
+
+    // Check if the provided buffer is large enough
+    if value.len() > value_len as usize {
+        // Return the required size
+        return value.len() as i32;
+    }
+
+    // Write value to WASM memory
+    if let Err(e) = write_memory_bytes(&memory, WasmPtr::new(value_ptr), &value) {
+        log::error!("Failed to write value to memory: {}", e);
+        return -1;
+    }
+
+    // Return the number of bytes written
+    value.len() as i32
 }
 
-/// Write value to storage
-///
-/// Arguments:
-/// * `key_ptr`: Pointer to the key in WASM memory
-/// * `key_len`: Length of the key
-/// * `value_ptr`: Pointer to the value in WASM memory
-/// * `value_len`: Length of the value
-///
-/// Returns:
-/// * 0 on success, or a negative value on error
+/// Write data to storage
 fn storage_write(
     env: FunctionEnv<HostEnv>,
     key_ptr: u32,
@@ -295,92 +312,179 @@ fn storage_write(
     value_ptr: u32,
     value_len: u32,
 ) -> i32 {
-    // TODO: Implement the storage write functionality
     // This would involve:
     // 1. Reading the key from WASM memory
     // 2. Reading the value from WASM memory
     // 3. Writing the key-value pair to storage
 
-    // For now, just return 0 to indicate success
-    0
+    let env_ref = env.data();
+    let memory = env_ref.memory.clone();
+
+    // Track gas for write operation
+    if let Err(e) = env_ref
+        .gas_meter
+        .track_gas(Gas::storage_write(key_len, value_len))
+    {
+        log::error!("Storage write out of gas: {}", e);
+        return -1;
+    }
+
+    // Read the key from WASM memory
+    let key = match read_memory_bytes(&memory, WasmPtr::new(key_ptr), key_len) {
+        Ok(k) => k,
+        Err(e) => {
+            log::error!("Failed to read key from memory: {}", e);
+            return -1;
+        }
+    };
+
+    // Read the value from WASM memory
+    let value = match read_memory_bytes(&memory, WasmPtr::new(value_ptr), value_len) {
+        Ok(v) => v,
+        Err(e) => {
+            log::error!("Failed to read value from memory: {}", e);
+            return -1;
+        }
+    };
+
+    // Write to storage
+    match env_ref.storage.set(&key, &value) {
+        Ok(_) => 1, // Success
+        Err(e) => {
+            log::error!("Storage write failed: {}", e);
+            -1
+        }
+    }
 }
 
-/// Delete value from storage
-///
-/// Arguments:
-/// * `key_ptr`: Pointer to the key in WASM memory
-/// * `key_len`: Length of the key
-///
-/// Returns:
-/// * 0 on success, or a negative value on error
+/// Delete data from storage
 fn storage_delete(env: FunctionEnv<HostEnv>, key_ptr: u32, key_len: u32) -> i32 {
-    // TODO: Implement the storage delete functionality
     // This would involve:
     // 1. Reading the key from WASM memory
     // 2. Deleting the key-value pair from storage
 
-    // For now, just return 0 to indicate success
-    0
+    let env_ref = env.data();
+    let memory = env_ref.memory.clone();
+
+    // Track gas for delete operation
+    if let Err(e) = env_ref.gas_meter.track_gas(Gas::storage_delete(key_len)) {
+        log::error!("Storage delete out of gas: {}", e);
+        return -1;
+    }
+
+    // Read the key from WASM memory
+    let key = match read_memory_bytes(&memory, WasmPtr::new(key_ptr), key_len) {
+        Ok(k) => k,
+        Err(e) => {
+            log::error!("Failed to read key from memory: {}", e);
+            return -1;
+        }
+    };
+
+    // Delete from storage
+    match env_ref.storage.delete(&key) {
+        Ok(_) => 1, // Success
+        Err(e) => {
+            log::error!("Storage delete failed: {}", e);
+            -1
+        }
+    }
 }
 
-// Context host functions
-
-/// Get the caller address
-///
-/// Arguments:
-/// * `ptr`: Pointer to the buffer for the address
-/// * `len`: Length of the buffer
-///
-/// Returns:
-/// * Length of the address, or a negative value on error
+/// Get the caller's address
 fn get_caller(env: FunctionEnv<HostEnv>, ptr: u32, len: u32) -> i32 {
-    // TODO: Implement the get_caller functionality
     // This would involve:
     // 1. Getting the caller address from the context
     // 2. Writing the address to WASM memory
 
-    // For now, just return 0 to indicate an empty address
-    0
+    let env_ref = env.data();
+    let memory = env_ref.memory.clone();
+
+    // Track gas for context operation
+    if let Err(e) = env_ref.gas_meter.track_gas(Gas::context_operation()) {
+        log::error!("Get caller out of gas: {}", e);
+        return -1;
+    }
+
+    // Get caller address from context
+    let caller = &env_ref.context.caller;
+    let caller_bytes = caller.as_bytes();
+
+    // Check if buffer is large enough
+    if caller_bytes.len() > len as usize {
+        return caller_bytes.len() as i32;
+    }
+
+    // Write address to WASM memory
+    match write_memory_bytes(&memory, WasmPtr::new(ptr), caller_bytes) {
+        Ok(_) => caller_bytes.len() as i32, // Return bytes written
+        Err(e) => {
+            log::error!("Failed to write caller address to memory: {}", e);
+            -1
+        }
+    }
 }
 
 /// Get the current block number
-///
-/// Returns:
-/// * The current block number
 fn get_block_number(env: FunctionEnv<HostEnv>) -> u64 {
-    // TODO: Implement the get_block_number functionality
     // This would involve getting the block number from the context
 
-    // For now, just return 0
-    0
+    let env_ref = env.data();
+
+    // Track gas for context operation
+    if let Err(e) = env_ref.gas_meter.track_gas(Gas::context_operation()) {
+        log::error!("Get block number out of gas: {}", e);
+        return 0;
+    }
+
+    // Return the block number from context
+    env_ref.context.block_number
 }
 
 /// Get the current block timestamp
-///
-/// Returns:
-/// * The current block timestamp
 fn get_block_timestamp(env: FunctionEnv<HostEnv>) -> u64 {
-    // TODO: Implement the get_block_timestamp functionality
     // This would involve getting the block timestamp from the context
 
-    // For now, just return 0
-    0
+    let env_ref = env.data();
+
+    // Track gas for context operation
+    if let Err(e) = env_ref.gas_meter.track_gas(Gas::context_operation()) {
+        log::error!("Get block timestamp out of gas: {}", e);
+        return 0;
+    }
+
+    // Return the block timestamp from context
+    env_ref.context.block_timestamp
 }
 
 // Debug host functions
 
-/// Log a debug message
-///
-/// Arguments:
-/// * `ptr`: Pointer to the message in WASM memory
-/// * `len`: Length of the message
+/// Log a debug message from the contract
 fn debug_log(env: FunctionEnv<HostEnv>, ptr: u32, len: u32) {
-    // TODO: Implement the debug_log functionality
     // This would involve:
     // 1. Reading the message from WASM memory
     // 2. Logging the message
 
-    // For now, do nothing
+    let env_ref = env.data();
+    let memory = env_ref.memory.clone();
+
+    // Skip gas tracking for debug operations
+
+    // Read message from WASM memory
+    let message = match read_memory_string(&memory, WasmPtr::new(ptr), len) {
+        Ok(msg) => msg,
+        Err(e) => {
+            log::error!("Failed to read debug message from memory: {}", e);
+            return;
+        }
+    };
+
+    // Log the message with contract address for context
+    log::debug!(
+        "[Contract {}] {}",
+        env_ref.context.contract_address,
+        message
+    );
 }
 
 // Host function interface for WASM contracts
@@ -388,11 +492,7 @@ fn debug_log(env: FunctionEnv<HostEnv>, ptr: u32, len: u32) {
 // Implements the host functions that are exposed to WASM smart contracts.
 // These functions allow the contracts to interact with the blockchain environment.
 
-use crate::types::Address;
-use crate::wasm::{
-    runtime::WasmEnv,
-    types::{HostFunctionCallback, WasmError},
-};
+use crate::wasm::{runtime::WasmEnv, types::HostFunctionCallback};
 use wasmer::{Function, FunctionType, ImportObject, Store, Type, Value};
 
 /// Create an import object with all host functions for the WASM module

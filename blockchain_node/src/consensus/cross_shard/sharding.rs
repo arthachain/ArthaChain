@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Shard configuration
@@ -26,9 +26,7 @@ pub enum ShardStatus {
         target_block: u64,
     },
     /// Shard is inactive or has failed
-    Inactive {
-        reason: String,
-    },
+    Inactive { reason: String },
 }
 
 /// Cross-shard routing table
@@ -38,6 +36,12 @@ pub struct RoutingTable {
     routes: HashMap<(u32, u32), Vec<u32>>,
     /// Shard statuses
     shard_status: HashMap<u32, ShardStatus>,
+}
+
+impl Default for RoutingTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RoutingTable {
@@ -51,7 +55,8 @@ impl RoutingTable {
 
     /// Add a route between shards
     pub fn add_route(&mut self, from_shard: u32, to_shard: u32, intermediate_shards: Vec<u32>) {
-        self.routes.insert((from_shard, to_shard), intermediate_shards);
+        self.routes
+            .insert((from_shard, to_shard), intermediate_shards);
     }
 
     /// Get the route between two shards
@@ -78,6 +83,12 @@ pub struct ShardManager {
     routing: RoutingTable,
 }
 
+impl Default for ShardManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShardManager {
     /// Create a new shard manager
     pub fn new() -> Self {
@@ -97,7 +108,10 @@ impl ShardManager {
     pub async fn find_route(&self, from_shard: u32, to_shard: u32) -> Result<Vec<u32>> {
         if let Some(route) = self.routing.get_route(from_shard, to_shard) {
             // Check if all shards in the route are active
-            if route.iter().all(|&shard| self.routing.is_shard_active(shard)) {
+            if route
+                .iter()
+                .all(|&shard| self.routing.is_shard_active(shard))
+            {
                 Ok(route.clone())
             } else {
                 Err(anyhow::anyhow!("Some shards in the route are inactive"))
@@ -106,4 +120,4 @@ impl ShardManager {
             Err(anyhow::anyhow!("No route found between shards"))
         }
     }
-} 
+}

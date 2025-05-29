@@ -92,6 +92,7 @@ impl NodeScore {
 }
 
 /// Handler for network message processing
+#[derive(Default)]
 pub struct MessageHandler {
     /// Node scores for connected peers
     pub peer_scores: Arc<Mutex<HashMap<String, NodeScore>>>,
@@ -102,10 +103,7 @@ pub struct MessageHandler {
 impl MessageHandler {
     /// Create a new message handler
     pub fn new() -> Self {
-        Self {
-            peer_scores: Arc::new(Mutex::new(HashMap::new())),
-            known_peers: Arc::new(Mutex::new(HashSet::new())),
-        }
+        Self::default()
     }
 
     /// Get a peer's score
@@ -130,5 +128,9 @@ impl MessageHandler {
             .entry(peer_id.to_string())
             .or_insert_with(|| NodeScore::new(peer_id));
         score.record_failure();
+    }
+
+    pub fn decay_score(&mut self, score: &mut f32) {
+        *score *= 0.9;
     }
 }

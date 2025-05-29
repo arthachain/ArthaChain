@@ -277,6 +277,7 @@ impl DataChunkingAI {
     }
 
     /// Process a chunk (compression, encryption, etc.)
+    #[allow(clippy::too_many_arguments)]
     fn process_chunk(
         &self,
         file_id: &str,
@@ -317,7 +318,7 @@ impl DataChunkingAI {
 
         // Create the chunk
         let chunk = DataChunk {
-            id: format!("{}-{}", file_id, chunk_index),
+            id: format!("{file_id}-{chunk_index}"),
             data: final_data,
             size: data.len(),
             hash,
@@ -485,7 +486,7 @@ impl DataChunkingAI {
         };
 
         reconstructions.insert(file_id.to_string(), reconstruction);
-        info!("Started reconstruction for file {}", file_id);
+        info!("Started reconstruction for file {file_id}");
 
         Ok(())
     }
@@ -524,7 +525,7 @@ impl DataChunkingAI {
 
         if is_complete {
             reconstruction.status = ReconstructionStatus::Complete;
-            info!("Reconstruction complete for file {}", file_id);
+            info!("Reconstruction complete for file {file_id}");
         }
 
         Ok(is_complete)
@@ -568,7 +569,7 @@ impl DataChunkingAI {
             return Err(anyhow!("File reconstruction failed: hash mismatch"));
         }
 
-        info!("File {} successfully reconstructed", file_id);
+        info!("File {file_id} successfully reconstructed");
 
         Ok(reconstructed_data)
     }
@@ -624,7 +625,7 @@ impl DataChunkingAI {
     /// Update the AI model with new version
     pub async fn update_model(&mut self, model_path: &str) -> Result<()> {
         // In a real implementation, this would load a new model from storage
-        info!("Updating Data Chunking AI model from: {}", model_path);
+        info!("Updating Data Chunking AI model from: {model_path}");
 
         // Simulate model update
         self.model_version = "1.1.0".to_string();
@@ -671,10 +672,7 @@ impl DataChunkingAI {
     /// Map a chunk's ID to a blockchain hash reference
     pub fn map_chunk_to_blockchain(&self, chunk_id: &str, blockchain_hash: &str) -> Result<()> {
         // In a real implementation, this would record the mapping in a database
-        info!(
-            "Mapped chunk {} to blockchain hash {}",
-            chunk_id, blockchain_hash
-        );
+        info!("Mapped chunk {chunk_id} to blockchain hash {blockchain_hash}");
         Ok(())
     }
 
@@ -724,7 +722,7 @@ impl DataChunkingAI {
                     .values()
                     .next()
                     .map(|c| c.metadata.created_at)
-                    .unwrap_or_else(|| std::time::SystemTime::now()),
+                    .unwrap_or_else(std::time::SystemTime::now),
             ) {
                 // Keep reconstructions less than 24 hours old
                 duration.as_secs() < 24 * 60 * 60

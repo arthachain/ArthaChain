@@ -77,19 +77,13 @@ mod tests {
 
     #[test]
     fn test_block_header_creation() {
-        let version = 1;
-        let shard_id = 0;
-        let height = 1;
+        let version = 1u32;
+        let shard_id = 0u32;
+        let height = 1u64;
         let prev_hash = create_test_hash();
-        let timestamp = 12345;
+        let timestamp = 12345u64;
         let merkle_root = create_test_hash();
         let state_root = create_test_hash();
-        let receipt_root = create_test_hash();
-        let proposer = create_test_address();
-        let signature = vec![0u8; 65];
-        let gas_limit = 1000000;
-        let gas_used = 21000;
-        let extra_data = vec![];
 
         let header = BlockHeader::new(
             version,
@@ -99,12 +93,6 @@ mod tests {
             timestamp,
             merkle_root.clone(),
             state_root.clone(),
-            receipt_root.clone(),
-            proposer.clone(),
-            signature,
-            gas_limit,
-            gas_used,
-            extra_data,
         );
 
         assert_eq!(header.version, version);
@@ -114,10 +102,6 @@ mod tests {
         assert_eq!(header.timestamp, timestamp);
         assert_eq!(header.merkle_root, merkle_root);
         assert_eq!(header.state_root, state_root);
-        assert_eq!(header.receipt_root, receipt_root);
-        assert_eq!(header.proposer, proposer);
-        assert_eq!(header.gas_limit, gas_limit);
-        assert_eq!(header.gas_used, gas_used);
     }
 
     #[test]
@@ -139,7 +123,7 @@ mod tests {
     // Simple test that will pass
     #[test]
     fn test_simple_passing() {
-        assert!(true);
+        // This test is a placeholder and should be implemented
     }
 
     /* Commented out problematic tests

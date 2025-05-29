@@ -67,6 +67,8 @@ pub struct MemMapStorage {
     data_file: Arc<Mutex<Option<File>>>,
     // In-memory index for faster lookups (hash -> offset)
     index: Arc<DashMap<Hash, (u64, u32, u8)>>, // Hash -> (offset, size, compression)
+    // Secondary index for key lookups (key hash -> data hash)
+    key_index: Arc<DashMap<u64, Hash>>,
     // Pending writes batch
     pending_batch: Arc<Mutex<Batch>>,
     // Semaphore for controlling concurrent operations
@@ -123,6 +125,7 @@ impl MemMapStorage {
             index_file: Arc::new(Mutex::new(None)),
             data_file: Arc::new(Mutex::new(None)),
             index: Arc::new(DashMap::new()),
+            key_index: Arc::new(DashMap::new()),
             pending_batch: Arc::new(Mutex::new(Batch {
                 writes: Vec::new(),
                 deletes: Vec::new(),
@@ -220,11 +223,11 @@ impl MemMapStorage {
                 0 => Ok(data.to_vec()), // No compression
                 1 => decompress_size_prepended(data) // LZ4
                     .map_err(|e| {
-                        StorageError::InvalidData(format!("LZ4 decompression error: {}", e))
+                        StorageError::InvalidData(format!("LZ4 decompression error: {e}"))
                     }),
                 2 => decode_all(data) // Zstd
                     .map_err(|e| {
-                        StorageError::InvalidData(format!("Zstd decompression error: {}", e))
+                        StorageError::InvalidData(format!("Zstd decompression error: {e}"))
                     }),
                 3 => {
                     // Brotli
@@ -233,14 +236,12 @@ impl MemMapStorage {
                     match decompressor.read_to_end(&mut decompressed) {
                         Ok(_) => Ok(decompressed),
                         Err(e) => Err(StorageError::InvalidData(format!(
-                            "Brotli decompression error: {}",
-                            e
+                            "Brotli decompression error: {e}"
                         ))),
                     }
                 }
                 _ => Err(StorageError::InvalidData(format!(
-                    "Unknown compression algorithm: {}",
-                    algorithm
+                    "Unknown compression algorithm: {algorithm}"
                 ))),
             };
 
@@ -251,335 +252,204 @@ impl MemMapStorage {
         result
     }
 
-    /// Flush pending writes to storage
+    /// Flush pending writes and deletes to storage
     async fn flush_pending(&self) -> StorageResult<()> {
-        let mut batch = {
-            let mut batch_guard = self.pending_batch.lock();
-            std::mem::replace(
-                &mut *batch_guard,
-                Batch {
-                    writes: Vec::new(),
-                    deletes: Vec::new(),
-                },
-            )
-        };
+        // Acquire batch
+        let mut batch = self.pending_batch.lock();
 
-        // Process all writes
-        if !batch.writes.is_empty() {
-            let index_map = self.index_map.clone();
-            let data_map = self.data_map.clone();
-            let index = self.index.clone();
-            let data_size = self.data_size.clone();
-            let options = self.options.clone();
-            let stats = self.stats.clone();
-            let this = self.clone();
-
-            // Process writes in a blocking task to not block the async runtime
-            let result = task::spawn_blocking(move || {
-                let start = Instant::now();
-                let mut data_size_guard = data_size.write();
-                let mut data_map_guard = data_map.write();
-                let mut index_map_guard = index_map.write();
-
-                if let (Some(ref mut data_mmap), Some(ref mut index_mmap)) =
-                    (data_map_guard.as_mut(), index_map_guard.as_mut())
-                {
-                    // Sort writes by size (larger first) for better packing
-                    batch.writes.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
-
-                    // Process each write
-                    for (hash, data) in batch.writes {
-                        let (compressed_data, compression_algo) = this.compress_data(&data);
-
-                        // For small data, store inline in index
-                        if compressed_data.len() <= MAX_INLINE_DATA_SIZE {
-                            // Create inline entry in index
-                            let mut entry = IndexEntry {
-                                hash: [0u8; 32],
-                                offset: 0, // Special marker for inline
-                                size: compressed_data.len() as u32,
-                                compression: compression_algo,
-                                flags: 1, // Bit 0 = inline
-                                _padding: [0; 2],
-                            };
-                            entry.hash.copy_from_slice(hash.as_bytes());
-
-                            // Find space in index or append
-                            // For simplicity, we'll just append for now
-                            let index_offset = index_mmap.len() as u64;
-                            let entry_bytes = unsafe {
-                                std::slice::from_raw_parts(
-                                    &entry as *const _ as *const u8,
-                                    std::mem::size_of::<IndexEntry>(),
-                                )
-                            };
-
-                            // Resize index if needed
-                            if index_offset as usize
-                                + std::mem::size_of::<IndexEntry>()
-                                + compressed_data.len()
-                                > index_mmap.len()
-                            {
-                                // Grow to new size
-                                let new_size = index_mmap
-                                    .metadata()
-                                    .map_err(|e| {
-                                        StorageError::OperationError(format!(
-                                            "Failed to get current metadata: {}",
-                                            e
-                                        ))
-                                    })?
-                                    .len()
-                                    + BLOCK_SIZE as u64;
-
-                                index_mmap.set_len(new_size).map_err(|e| {
-                                    StorageError::OperationError(format!(
-                                        "Failed to extend index file: {}",
-                                        e
-                                    ))
-                                })?;
-
-                                // Re-map the file
-                                drop(index_map_guard); // Release lock to resize
-
-                                let new_mmap = unsafe { MmapOptions::new().map_mut(&index_mmap) }
-                                    .map_err(|e| {
-                                    StorageError::OperationError(format!(
-                                        "Failed to remap index file: {}",
-                                        e
-                                    ))
-                                })?;
-
-                                index_map_guard = index_map.write();
-                                *index_map_guard = Some(new_mmap);
-
-                                // Re-check if we have enough space now
-                                let total_size =
-                                    std::mem::size_of::<IndexEntry>() + compressed_data.len();
-
-                                if let Some(ref mut index_mmap) = *index_map_guard {
-                                    if index_offset + total_size > index_mmap.len() {
-                                        return Err(StorageError::OperationError(
-                                            "Failed to extend index file enough".to_string(),
-                                        ));
-                                    }
-                                } else {
-                                    return Err(StorageError::OperationError(
-                                        "Index map is None after resize".to_string(),
-                                    ));
-                                }
-                            }
-
-                            // Write entry to index
-                            if let Some(ref mut index_mmap) = *index_map_guard {
-                                let start_pos = index_offset as usize;
-                                let end_pos = start_pos + std::mem::size_of::<IndexEntry>();
-                                index_mmap[start_pos..end_pos].copy_from_slice(entry_bytes);
-
-                                // Write inline data right after entry
-                                let data_start = end_pos;
-                                let data_end = data_start + compressed_data.len();
-                                index_mmap[data_start..data_end].copy_from_slice(&compressed_data);
-
-                                // Update in-memory index
-                                index.insert(
-                                    hash,
-                                    (index_offset, compressed_data.len() as u32, 0xFF),
-                                ); // 0xFF = inline marker
-                            }
-                        } else {
-                            // Append to data file
-                            let offset = *data_size_guard;
-                            let padded_size =
-                                (compressed_data.len() + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
-
-                            // Ensure data file has enough space
-                            if let Some(ref data_map) = *data_mmap {
-                                if (offset as usize + padded_size) > data_map.len() {
-                                    // Need to grow data file
-                                    drop(data_map_guard); // Release lock to resize
-                                    if let Some(data_file) = this.data_file.lock().as_mut() {
-                                        let new_size =
-                                            offset as usize + padded_size + (1024 * 1024); // Add 1MB extra
-                                        data_file.set_len(new_size as u64).map_err(|e| {
-                                            StorageError::OperationError(format!(
-                                                "Failed to resize data file: {}",
-                                                e
-                                            ))
-                                        })?;
-
-                                        // Recreate mmap with new size
-                                        let new_mmap =
-                                            unsafe { MmapOptions::new().map_mut(data_file) }
-                                                .map_err(|e| {
-                                                    StorageError::OperationError(format!(
-                                                        "Failed to remap data: {}",
-                                                        e
-                                                    ))
-                                                })?;
-
-                                        data_map_guard = data_map.write();
-                                        *data_map_guard = Some(new_mmap);
-                                    } else {
-                                        return Err(StorageError::OperationError(
-                                            "Data file not open".to_string(),
-                                        ));
-                                    }
-                                }
-                            } else {
-                                return Err(StorageError::OperationError(
-                                    "Data map is None".to_string(),
-                                ));
-                            }
-
-                            // Write data
-                            if let Some(ref mut data_mmap) = *data_map_guard {
-                                let start_pos = offset as usize;
-                                let end_pos = start_pos + compressed_data.len();
-                                data_mmap[start_pos..end_pos].copy_from_slice(&compressed_data);
-
-                                // Create index entry
-                                let mut entry = IndexEntry {
-                                    hash: [0u8; 32],
-                                    offset,
-                                    size: compressed_data.len() as u32,
-                                    compression: compression_algo,
-                                    flags: 0, // Bit 0 = 0 (not inline)
-                                    _padding: [0; 2],
-                                };
-                                entry.hash.copy_from_slice(hash.as_bytes());
-
-                                // Write entry to index
-                                let index_offset = index_mmap.len() as u64;
-                                let entry_bytes = unsafe {
-                                    std::slice::from_raw_parts(
-                                        &entry as *const _ as *const u8,
-                                        std::mem::size_of::<IndexEntry>(),
-                                    )
-                                };
-
-                                // Resize index if needed
-                                if index_offset as usize + std::mem::size_of::<IndexEntry>()
-                                    > index_mmap.len()
-                                {
-                                    // Grow to new size
-                                    let new_size = index_mmap
-                                        .metadata()
-                                        .map_err(|e| {
-                                            StorageError::OperationError(format!(
-                                                "Failed to get current metadata: {}",
-                                                e
-                                            ))
-                                        })?
-                                        .len()
-                                        + BLOCK_SIZE as u64;
-
-                                    index_mmap.set_len(new_size).map_err(|e| {
-                                        StorageError::OperationError(format!(
-                                            "Failed to extend index file: {}",
-                                            e
-                                        ))
-                                    })?;
-
-                                    // Re-map the file
-                                    drop(index_map_guard); // Release lock to resize
-
-                                    let new_mmap =
-                                        unsafe { MmapOptions::new().map_mut(&index_mmap) }
-                                            .map_err(|e| {
-                                                StorageError::OperationError(format!(
-                                                    "Failed to remap index file: {}",
-                                                    e
-                                                ))
-                                            })?;
-
-                                    index_map_guard = index_map.write();
-                                    *index_map_guard = Some(new_mmap);
-
-                                    // Re-check if we have enough space now
-                                    let total_size =
-                                        std::mem::size_of::<IndexEntry>() + compressed_data.len();
-
-                                    if let Some(ref mut index_mmap) = *index_map_guard {
-                                        if index_offset + total_size > index_mmap.len() {
-                                            return Err(StorageError::OperationError(
-                                                "Failed to extend index file enough".to_string(),
-                                            ));
-                                        }
-                                    } else {
-                                        return Err(StorageError::OperationError(
-                                            "Index map is None after resize".to_string(),
-                                        ));
-                                    }
-                                }
-
-                                // Write entry to index
-                                if let Some(ref mut index_mmap) = *index_map_guard {
-                                    let start_pos = index_offset as usize;
-                                    let end_pos = start_pos + std::mem::size_of::<IndexEntry>();
-                                    index_mmap[start_pos..end_pos].copy_from_slice(entry_bytes);
-
-                                    // Update in-memory index
-                                    index.insert(
-                                        hash,
-                                        (offset, compressed_data.len() as u32, compression_algo),
-                                    );
-
-                                    // Update data size
-                                    *data_size_guard = offset + padded_size as u64;
-                                }
-                            }
-                        }
-                    }
-
-                    // Flush mmaps to ensure durability
-                    if let Some(ref mut data_mmap) = *data_mmap {
-                        data_mmap.flush().map_err(|e| {
-                            StorageError::OperationError(format!(
-                                "Failed to flush data file: {}",
-                                e
-                            ))
-                        })?;
-                    } else {
-                        return Err(StorageError::OperationError("Data map is None".to_string()));
-                    }
-
-                    if let Some(ref mut index_mmap) = *index_mmap {
-                        index_mmap.flush().map_err(|e| {
-                            StorageError::OperationError(format!(
-                                "Failed to flush index file: {}",
-                                e
-                            ))
-                        })?;
-                    } else {
-                        return Err(StorageError::OperationError(
-                            "Index map is None".to_string(),
-                        ));
-                    }
-
-                    // Update stats
-                    let mut stats_guard = stats.write();
-                    stats_guard.writes += batch.writes.len() as u64;
-                    stats_guard.write_time_ns += start.elapsed().as_nanos() as u64;
-                }
-
-                Ok(())
-            })
-            .await
-            .map_err(|e| StorageError::OperationError(format!("Task join error: {}", e)))?;
-
+        // If batch is empty, nothing to do
+        if batch.writes.is_empty() && batch.deletes.is_empty() {
             return Ok(());
         }
 
-        // Process deletes (mark as deleted in index)
-        // For simplicity, we're not reclaiming space yet
-        if !batch.deletes.is_empty() {
-            for hash in batch.deletes {
-                self.index.remove(&hash);
+        // Take ownership of batch and reset
+        let writes = std::mem::take(&mut batch.writes);
+        let deletes = std::mem::take(&mut batch.deletes);
+
+        // Release batch lock
+        drop(batch);
+
+        // Process deletes
+        for hash in &deletes {
+            // Remove from in-memory index
+            self.index.remove(hash);
+
+            // Remove from key index if it exists
+            // We need to scan through the existing key indices to find the one that points to this hash
+            let mut keys_to_remove = Vec::new();
+            for entry in self.key_index.iter() {
+                if entry.value() == hash {
+                    keys_to_remove.push(*entry.key());
+                }
             }
 
-            let mut stats = self.stats.write();
-            stats.deletes += batch.deletes.len() as u64;
+            // Now remove all the keys we found
+            for key_hash in keys_to_remove {
+                self.key_index.remove(&key_hash);
+            }
+
+            // Note: We don't actually reclaim the space in the data file
+            // That would require a more complex compaction process
+            // For now, we just remove the index entry
+        }
+
+        // Process writes
+        if !writes.is_empty() {
+            // Acquire data file lock and map
+            let mut data_size = self.data_size.write();
+            let index_map = self.index_map.write();
+            let data_map = self.data_map.write();
+
+            // Ensure we have maps
+            if index_map.is_none() || data_map.is_none() {
+                return Err(StorageError::OperationError(
+                    "Storage not initialized".to_string(),
+                ));
+            }
+
+            let index_mmap = index_map.as_ref().unwrap();
+            let data_mmap = data_map.as_ref().unwrap();
+
+            // Store each entry
+            for (hash, data) in writes {
+                let data_len = data.len();
+
+                // Check if data is small enough to store inline
+                let is_inline = data_len <= MAX_INLINE_DATA_SIZE;
+
+                // Look for key structure to update the key index
+                if data.len() >= 8 {
+                    // Try to extract the key if this is a key-value pair
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let key = &data[8..8 + key_len];
+
+                        // Update key index
+                        let key_hash = self.hash_key(key);
+                        self.key_index.insert(key_hash, hash);
+                    }
+                }
+
+                if is_inline {
+                    // Store inline in index
+                    // Find a free entry in the index
+                    let mut index_offset = MAGIC_BYTES.len();
+                    let entry_size = std::mem::size_of::<IndexEntry>();
+
+                    while index_offset + entry_size <= index_mmap.len() {
+                        // Check if this slot is free (first bytes are zero)
+                        if index_mmap[index_offset] == 0 && index_mmap[index_offset + 1] == 0 {
+                            break;
+                        }
+
+                        index_offset += entry_size;
+                    }
+
+                    // Check if we have space in the index
+                    if index_offset + entry_size > index_mmap.len() {
+                        return Err(StorageError::OperationError(
+                            "Index file is full".to_string(),
+                        ));
+                    }
+
+                    // Create entry
+                    let entry = IndexEntry {
+                        hash: hash.0,
+                        offset: (index_offset + entry_size) as u64, // Data follows entry
+                        size: data_len as u32,
+                        compression: 0 | 0x80, // High bit indicates inline
+                        flags: 0,              // 0 = active
+                        _padding: [0; 2],
+                    };
+
+                    // Write entry
+                    unsafe {
+                        std::ptr::write_unaligned(
+                            index_mmap[index_offset..].as_mut_ptr() as *mut IndexEntry,
+                            entry,
+                        );
+                    }
+
+                    // Write data after entry
+                    let data_start = index_offset + entry_size;
+                    if data_start + data_len <= index_mmap.len() {
+                        index_mmap[data_start..data_start + data_len].copy_from_slice(&data);
+                    } else {
+                        return Err(StorageError::OperationError(
+                            "Not enough space for inline data".to_string(),
+                        ));
+                    }
+
+                    // Add to in-memory index
+                    self.index.insert(
+                        hash,
+                        (
+                            (index_offset + entry_size) as u64,
+                            data_len as u32,
+                            0x80, // High bit indicates inline
+                        ),
+                    );
+                } else {
+                    // Store in data file
+                    let data_offset = *data_size;
+
+                    // Check if we have space
+                    if data_offset as usize + data_len > data_mmap.len() {
+                        return Err(StorageError::OperationError(
+                            "Data file is full".to_string(),
+                        ));
+                    }
+
+                    // Write data
+                    data_mmap[data_offset as usize..data_offset as usize + data_len]
+                        .copy_from_slice(&data);
+
+                    // Update data size
+                    *data_size += data_len as u64;
+
+                    // Find a free entry in the index
+                    let mut index_offset = MAGIC_BYTES.len();
+                    let entry_size = std::mem::size_of::<IndexEntry>();
+
+                    while index_offset + entry_size <= index_mmap.len() {
+                        // Check if this slot is free
+                        if index_mmap[index_offset] == 0 && index_mmap[index_offset + 1] == 0 {
+                            break;
+                        }
+
+                        index_offset += entry_size;
+                    }
+
+                    // Check if we have space in the index
+                    if index_offset + entry_size > index_mmap.len() {
+                        return Err(StorageError::OperationError(
+                            "Index file is full".to_string(),
+                        ));
+                    }
+
+                    // Create entry
+                    let entry = IndexEntry {
+                        hash: hash.0,
+                        offset: data_offset,
+                        size: data_len as u32,
+                        compression: 0, // No compression flag
+                        flags: 0,       // 0 = active
+                        _padding: [0; 2],
+                    };
+
+                    // Write entry
+                    unsafe {
+                        std::ptr::write_unaligned(
+                            index_mmap[index_offset..].as_mut_ptr() as *mut IndexEntry,
+                            entry,
+                        );
+                    }
+
+                    // Add to in-memory index
+                    self.index.insert(hash, (data_offset, data_len as u32, 0));
+                }
+            }
         }
 
         Ok(())
@@ -588,6 +458,238 @@ impl MemMapStorage {
     /// Get storage statistics
     pub fn get_stats(&self) -> StorageStats {
         self.stats.read().clone()
+    }
+
+    /// Put a key-value pair into storage, returns the hash
+    pub async fn put(&self, key: &[u8], value: &[u8]) -> StorageResult<Hash> {
+        // Create composite buffer with key and value
+        let mut buffer = Vec::with_capacity(key.len() + value.len() + 8);
+
+        // Add key length as u32
+        buffer.extend_from_slice(&(key.len() as u32).to_le_bytes());
+
+        // Add value length as u32
+        buffer.extend_from_slice(&(value.len() as u32).to_le_bytes());
+
+        // Add key and value
+        buffer.extend_from_slice(key);
+        buffer.extend_from_slice(value);
+
+        // Store in the underlying storage
+        let hash = self.store(&buffer).await?;
+
+        // Add to key index
+        let key_hash = self.hash_key(key);
+        self.key_index.insert(key_hash, hash);
+
+        Ok(hash)
+    }
+
+    /// Get a value by key using the secondary index
+    pub async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        // Look up in secondary index
+        let key_hash = self.hash_key(key);
+
+        if let Some(hash) = self.key_index.get(&key_hash) {
+            // Found in key index, retrieve data
+            if let Some(data) = self.retrieve(hash.value()).await? {
+                // Verify this is the right key (in case of hash collision)
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let stored_key = &data[8..8 + key_len];
+
+                        if stored_key == key {
+                            // Extract the value
+                            let value_len =
+                                u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+
+                            if data.len() >= 8 + key_len + value_len {
+                                return Ok(Some(
+                                    data[8 + key_len..8 + key_len + value_len].to_vec(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Not found in index or verification failed, fall back to linear scan
+        // This should be rare but provides robustness
+        self.get_by_linear_scan(key).await
+    }
+
+    /// Delete a key-value pair
+    pub async fn delete_key(&self, key: &[u8]) -> StorageResult<()> {
+        // Look up in secondary index
+        let key_hash = self.hash_key(key);
+
+        if let Some((_, hash)) = self.key_index.remove(&key_hash) {
+            // Delete the underlying data
+            self.delete(&hash).await?;
+            return Ok(());
+        }
+
+        // Not found in index, fall back to linear scan
+        // This should be rare but provides robustness
+        self.delete_by_linear_scan(key).await
+    }
+
+    /// Compute a simple key hash for the secondary index
+    fn hash_key(&self, key: &[u8]) -> u64 {
+        // Simple FNV-1a hash
+        let mut hash = 0xcbf29ce484222325u64;
+        for &b in key {
+            hash = hash.wrapping_mul(0x100000001b3);
+            hash ^= b as u64;
+        }
+        hash
+    }
+
+    /// Fall back to a linear scan if the key index lookup fails
+    async fn get_by_linear_scan(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        // If we get here, the secondary index failed us, so scan all entries
+        for entry in self.index.iter() {
+            let hash = entry.key();
+
+            // Retrieve the data
+            if let Some(data) = self.retrieve(hash).await? {
+                // Parse the data to extract the key and value
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+                    let value_len =
+                        u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let stored_key = &data[8..8 + key_len];
+
+                        if stored_key == key && data.len() >= 8 + key_len + value_len {
+                            // Found the key, extract the value
+                            let value = data[8 + key_len..8 + key_len + value_len].to_vec();
+
+                            // Update the secondary index for future lookups
+                            let key_hash = self.hash_key(key);
+                            self.key_index.insert(key_hash, *hash);
+
+                            return Ok(Some(value));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Fall back to a linear scan for deleting if the key index lookup fails
+    async fn delete_by_linear_scan(&self, key: &[u8]) -> StorageResult<()> {
+        // For each entry in the index
+        for entry in self.index.iter() {
+            let hash = entry.key();
+
+            // Retrieve the data
+            if let Some(data) = self.retrieve(hash).await? {
+                // Parse the data to extract the key
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let stored_key = &data[8..8 + key_len];
+
+                        if stored_key == key {
+                            // Found the key, delete it
+                            self.delete(hash).await?;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Key not found, but that's not an error for delete
+        Ok(())
+    }
+
+    /// List all keys in storage
+    pub async fn list_keys(&self) -> StorageResult<Vec<Vec<u8>>> {
+        let mut keys = Vec::new();
+
+        // For each entry in the index
+        for entry in self.index.iter() {
+            let hash = entry.key();
+            let (offset, size, compression) = *entry.value();
+
+            // Retrieve the data
+            if let Some(data) = self.retrieve(hash).await? {
+                // Parse the data to extract the key
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let key = data[8..8 + key_len].to_vec();
+                        keys.push(key);
+                    }
+                }
+            }
+        }
+
+        Ok(keys)
+    }
+
+    /// Get hash for a specific key
+    async fn hash_for_key(&self, key: &[u8]) -> StorageResult<Option<Hash>> {
+        for entry in self.index.iter() {
+            let hash = entry.key();
+            let (offset, size, compression) = *entry.value();
+
+            // Retrieve the data
+            if let Some(data) = self.retrieve(hash).await? {
+                // Parse the data to extract the key
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let stored_key = &data[8..8 + key_len];
+                        if stored_key == key {
+                            return Ok(Some(*hash));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get value for a specific key directly
+    async fn get_by_key(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        // Get the hash for this key
+        if let Some(hash) = self.hash_for_key(key).await? {
+            // Retrieve the data
+            if let Some(data) = self.retrieve(&hash).await? {
+                // Parse the data to extract the value
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+                    let value_len =
+                        u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+
+                    if data.len() >= 8 + key_len + value_len {
+                        let value = data[8 + key_len..8 + key_len + value_len].to_vec();
+                        return Ok(Some(value));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -600,6 +702,7 @@ impl Clone for MemMapStorage {
             index_file: self.index_file.clone(),
             data_file: self.data_file.clone(),
             index: self.index.clone(),
+            key_index: self.key_index.clone(),
             pending_batch: self.pending_batch.clone(),
             semaphore: self.semaphore.clone(),
             options: self.options.clone(),
@@ -630,25 +733,49 @@ impl Clone for StorageStats {
 impl Storage for MemMapStorage {
     async fn store(&self, data: &[u8]) -> StorageResult<Hash> {
         // Acquire semaphore to limit concurrent operations
-        let _permit = self.semaphore.acquire().await.map_err(|e| {
-            StorageError::OperationError(format!("Failed to acquire semaphore: {}", e))
-        })?;
+        let _permit = self.semaphore.acquire().await.unwrap();
+        let start = Instant::now();
 
         // Calculate hash
-        let hash_value = blake3::hash(data);
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(hash_value.as_bytes());
-        let hash = Hash::new(hash_bytes.to_vec());
+        let hash_bytes = blake3::hash(data).as_bytes().clone();
+        let hash = Hash::new(hash_bytes);
+
+        // Check if data already exists
+        if self.exists(&hash).await? {
+            // Already stored, update stats
+            let mut stats = self.stats.write();
+            stats.writes += 1;
+            stats.write_time_ns += start.elapsed().as_nanos() as u64;
+            stats.cache_hits += 1;
+            return Ok(hash);
+        }
+
+        // Compress data
+        let (compressed_data, compression_type) = self.compress_data(data);
 
         // Add to pending batch
         {
             let mut batch = self.pending_batch.lock();
-            batch.writes.push((hash.clone(), data.to_vec()));
+            batch.writes.push((hash, compressed_data.clone()));
 
-            // If batch is full, flush it
+            // Check if batch is full - if so, flush it
             if batch.writes.len() >= self.options.max_pending_writes {
-                drop(batch); // Release lock before flush
+                drop(batch); // Release lock before async call
                 self.flush_pending().await?;
+            }
+        }
+
+        // Update statistics
+        {
+            let mut stats = self.stats.write();
+            stats.writes += 1;
+            stats.write_time_ns += start.elapsed().as_nanos() as u64;
+
+            if compression_type > 0 {
+                stats.compression_saved += (data.len() - compressed_data.len()) as u64;
+                stats.compressed_blocks += 1;
+            } else {
+                stats.uncompressed_blocks += 1;
             }
         }
 
@@ -657,131 +784,167 @@ impl Storage for MemMapStorage {
 
     async fn retrieve(&self, hash: &Hash) -> StorageResult<Option<Vec<u8>>> {
         // Acquire semaphore to limit concurrent operations
-        let _permit = self.semaphore.acquire().await.map_err(|e| {
-            StorageError::OperationError(format!("Failed to acquire semaphore: {}", e))
-        })?;
-
+        let _permit = self.semaphore.acquire().await.unwrap();
         let start = Instant::now();
 
-        // Check in-memory index
+        // Start with in-memory index lookup
         if let Some(entry) = self.index.get(hash) {
             let (offset, size, compression) = *entry;
 
-            // Track stats
+            // Handle inlined data (small values stored directly in index)
+            if (compression & 0x80) != 0 {
+                // High bit indicates inline data
+                let compression_algo = compression & 0x7F; // Low 7 bits are actual compression type
+
+                // Read the data from the index map (it's inlined)
+                let data = {
+                    let index_map = self.index_map.read();
+                    if let Some(ref mmap) = *index_map {
+                        let entry_offset = offset as usize;
+                        let entry_size = size as usize;
+
+                        // Safety: bounds checked by size and we validate the index on load
+                        if entry_offset + entry_size <= mmap.len() {
+                            mmap[entry_offset..entry_offset + entry_size].to_vec()
+                        } else {
+                            return Err(StorageError::OperationError(
+                                "Index entry points outside of mmap bounds".to_string(),
+                            ));
+                        }
+                    } else {
+                        return Err(StorageError::OperationError(
+                            "Storage not initialized".to_string(),
+                        ));
+                    }
+                };
+
+                // Decompress if needed
+                let result = if compression_algo > 0 {
+                    self.decompress_data(&data, compression_algo)?
+                } else {
+                    data
+                };
+
+                // Update stats
+                {
+                    let mut stats = self.stats.write();
+                    stats.reads += 1;
+                    stats.read_time_ns += start.elapsed().as_nanos() as u64;
+                }
+
+                return Ok(Some(result));
+            }
+
+            // Read the data from the data file
+            let data = {
+                let data_map = self.data_map.read();
+                if let Some(ref mmap) = *data_map {
+                    let data_offset = offset as usize;
+                    let data_size = size as usize;
+
+                    // Safety: bounds checked by size and we validate the data map on load
+                    if data_offset + data_size <= mmap.len() {
+                        mmap[data_offset..data_offset + data_size].to_vec()
+                    } else {
+                        return Err(StorageError::OperationError(
+                            "Data entry points outside of mmap bounds".to_string(),
+                        ));
+                    }
+                } else {
+                    return Err(StorageError::OperationError(
+                        "Storage not initialized".to_string(),
+                    ));
+                }
+            };
+
+            // Decompress if needed
+            let result = if compression > 0 {
+                self.decompress_data(&data, compression)?
+            } else {
+                data
+            };
+
+            // Update stats
             {
                 let mut stats = self.stats.write();
                 stats.reads += 1;
+                stats.read_time_ns += start.elapsed().as_nanos() as u64;
             }
 
-            // Check if data is stored inline (compression = 0xFF)
-            if compression == 0xFF {
-                // Data is stored inline in index
-                let index_map = self.index_map.read();
-                if let Some(ref index_mmap) = *index_map {
-                    let entry_size = std::mem::size_of::<IndexEntry>();
-                    let data_start = offset as usize + entry_size;
-                    let data_end = data_start + size as usize;
-
-                    if data_end <= index_mmap.as_ref().unwrap().len() {
-                        let data = index_mmap[data_start..data_end].to_vec();
-
-                        // Track stats
-                        {
-                            let mut stats = self.stats.write();
-                            stats.cache_hits += 1;
-                            stats.read_time_ns += start.elapsed().as_nanos() as u64;
-                        }
-
-                        return Ok(Some(data));
-                    }
-                }
-            } else {
-                // Data is in main storage
-                let data_map = self.data_map.read();
-                if let Some(ref data_mmap) = *data_map {
-                    let start_pos = offset as usize;
-                    let end_pos = start_pos + size as usize;
-
-                    if end_pos <= data_mmap.as_ref().unwrap().len() {
-                        let compressed_data = data_mmap[start_pos..end_pos].to_vec();
-
-                        // Decompress if needed
-                        let result = self.decompress_data(&compressed_data, compression)?;
-
-                        // Track stats
-                        {
-                            let mut stats = self.stats.write();
-                            stats.read_time_ns += start.elapsed().as_nanos() as u64;
-                        }
-
-                        return Ok(Some(result));
-                    }
-                }
-            }
+            return Ok(Some(result));
         }
 
-        // Data not found
+        // Not found in memory index
         Ok(None)
     }
 
     async fn exists(&self, hash: &Hash) -> StorageResult<bool> {
-        // Just check in-memory index
+        // Simple check in the in-memory index
         Ok(self.index.contains_key(hash))
     }
 
     async fn delete(&self, hash: &Hash) -> StorageResult<()> {
-        // Add to pending batch
+        // Acquire semaphore to limit concurrent operations
+        let _permit = self.semaphore.acquire().await.unwrap();
+
+        // Add to pending deletes batch
         {
             let mut batch = self.pending_batch.lock();
-            batch.deletes.push(hash.clone());
+            batch.deletes.push(*hash);
 
-            // If batch is full, flush it
+            // Check if batch is full
             if batch.deletes.len() >= self.options.max_pending_writes {
-                drop(batch); // Release lock before flush
+                drop(batch); // Release lock before async call
                 self.flush_pending().await?;
             }
+        }
+
+        // Update stats
+        {
+            let mut stats = self.stats.write();
+            stats.deletes += 1;
         }
 
         Ok(())
     }
 
     async fn verify(&self, hash: &Hash, data: &[u8]) -> StorageResult<bool> {
-        let calculated_hash = blake3::hash(data);
-        let calculated = Hash::new(calculated_hash.as_bytes().to_vec());
-        Ok(calculated == *hash)
+        // Calculate hash
+        let calculated_hash = Hash::new(blake3::hash(data).as_bytes().clone());
+
+        // Compare with provided hash
+        Ok(*hash == calculated_hash)
     }
 
     async fn close(&self) -> StorageResult<()> {
-        // Flush any pending changes
+        // Flush any pending writes
         self.flush_pending().await?;
 
-        // Explicitly flush and close mmaps
+        // Sync files to disk
         {
-            let mut index_map = self.index_map.write();
-            if let Some(ref mut mmap) = *index_map {
-                mmap.as_mut().unwrap().flush().map_err(|e| {
-                    StorageError::OperationError(format!("Failed to flush index: {}", e))
-                })?;
+            if let Some(ref mut file) = *self.index_file.lock() {
+                file.sync_all()?;
             }
-            *index_map = None;
+
+            if let Some(ref mut file) = *self.data_file.lock() {
+                file.sync_all()?;
+            }
         }
 
+        // Release memory maps
         {
+            let mut index_map = self.index_map.write();
+            *index_map = None;
+
             let mut data_map = self.data_map.write();
-            if let Some(ref mut mmap) = *data_map {
-                mmap.as_mut().unwrap().flush().map_err(|e| {
-                    StorageError::OperationError(format!("Failed to flush data: {}", e))
-                })?;
-            }
             *data_map = None;
         }
 
+        // Close files
         {
             let mut index_file = self.index_file.lock();
             *index_file = None;
-        }
 
-        {
             let mut data_file = self.data_file.lock();
             *data_file = None;
         }
@@ -798,129 +961,105 @@ impl Storage for MemMapStorage {
     }
 }
 
-#[async_trait]
 impl StorageInit for MemMapStorage {
     async fn init(&mut self, path: Box<dyn AsRef<Path> + Send + Sync>) -> StorageResult<()> {
         let base_path = path.as_ref();
-        let index_path = {
-            let path_ref = base_path.as_ref();
-            path_ref.join(INDEX_FILENAME)
-        };
-        let data_path = {
-            let path_ref = base_path.as_ref();
-            path_ref.join(DATA_FILENAME)
-        };
 
         // Create directory if it doesn't exist
-        std::fs::create_dir_all(base_path)
-            .map_err(|e| StorageError::InitError(format!("Failed to create directory: {}", e)))?;
+        if !base_path.exists() {
+            std::fs::create_dir_all(base_path)
+                .map_err(|e| StorageError::InitError(format!("Failed to create directory: {e}")))?;
+        }
 
-        // Open index file
+        let index_path = base_path.join(INDEX_FILENAME);
+        let data_path = base_path.join(DATA_FILENAME);
+
+        // Open or create files
         let index_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&index_path)
-            .map_err(|e| StorageError::InitError(format!("Failed to open index file: {}", e)))?;
+            .map_err(|e| StorageError::InitError(format!("Failed to open index file: {e}")))?;
 
-        // Get file size and initialize if new
-        let index_metadata = index_file
-            .metadata()
-            .map_err(|e| StorageError::InitError(format!("Failed to get index metadata: {}", e)))?;
-
-        let is_new_index = index_metadata.len() == 0;
-        if is_new_index {
-            // Initialize with header
-            index_file.set_len(BLOCK_SIZE as u64).map_err(|e| {
-                StorageError::InitError(format!("Failed to set index file size: {}", e))
-            })?;
-
-            // Initialize with magic bytes and version
-            let mut header = [0u8; BLOCK_SIZE];
-            header[0..8].copy_from_slice(MAGIC_BYTES);
-
-            // Write version (1.0)
-            header[8] = 1;
-            header[9] = 0;
-
-            index_file.write_all(&header).map_err(|e| {
-                StorageError::InitError(format!("Failed to write index header: {}", e))
-            })?;
-        }
-
-        // Open data file
         let data_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&data_path)
-            .map_err(|e| StorageError::InitError(format!("Failed to open data file: {}", e)))?;
+            .map_err(|e| StorageError::InitError(format!("Failed to open data file: {e}")))?;
 
-        // Get file size and initialize if new
-        let data_metadata = data_file
+        // Initialize file sizes
+        let index_size = index_file
             .metadata()
-            .map_err(|e| StorageError::InitError(format!("Failed to get data metadata: {}", e)))?;
+            .map_err(|e| StorageError::InitError(format!("Failed to get index metadata: {e}")))?
+            .len();
 
-        let is_new_data = data_metadata.len() == 0;
-        let data_len = if is_new_data {
-            // Initialize with minimum size
-            let initial_size = std::cmp::max(BLOCK_SIZE, self.options.map_size / 100);
-            data_file.set_len(initial_size as u64).map_err(|e| {
-                StorageError::InitError(format!("Failed to set data file size: {}", e))
+        let data_size = data_file
+            .metadata()
+            .map_err(|e| StorageError::InitError(format!("Failed to get data metadata: {e}")))?
+            .len();
+
+        // Initialize empty files if needed
+        if index_size == 0 {
+            // Write magic bytes
+            index_file.write_all(MAGIC_BYTES).map_err(|e| {
+                StorageError::InitError(format!("Failed to initialize index file: {e}"))
             })?;
-            initial_size as u64
+
+            // Extend to required size
+            index_file
+                .set_len(self.options.map_size as u64)
+                .map_err(|e| {
+                    StorageError::InitError(format!("Failed to resize index file: {e}"))
+                })?;
+        }
+
+        if data_size == 0 {
+            // Write magic bytes
+            data_file.write_all(MAGIC_BYTES).map_err(|e| {
+                StorageError::InitError(format!("Failed to initialize data file: {e}"))
+            })?;
+
+            // Extend to required size
+            data_file
+                .set_len(self.options.map_size as u64)
+                .map_err(|e| StorageError::InitError(format!("Failed to resize data file: {e}")))?;
+
+            // Reset data size counter
+            *self.data_size.write() = MAGIC_BYTES.len() as u64;
         } else {
-            data_metadata.len()
-        };
-
-        // Create memory maps
-        let index_mmap = unsafe { MmapOptions::new().map_mut(&index_file) }
-            .map_err(|e| StorageError::InitError(format!("Failed to map index file: {}", e)))?;
-
-        let data_mmap = unsafe { MmapOptions::new().map_mut(&data_file) }
-            .map_err(|e| StorageError::InitError(format!("Failed to map data file: {}", e)))?;
-
-        // Check magic bytes
-        if !is_new_index {
-            let magic = &index_mmap[0..8];
-            if magic != MAGIC_BYTES {
-                return Err(StorageError::InitError(
-                    "Invalid magic bytes in index file".to_string(),
-                ));
-            }
-
-            // Load index entries into memory
-            self.load_index(&index_mmap).await?;
+            // Set current data size counter
+            *self.data_size.write() = data_size;
         }
 
-        // Store file handles and mmaps
-        {
-            let mut index_file_guard = self.index_file.lock();
-            *index_file_guard = Some(index_file);
+        // Memory map files
+        unsafe {
+            let index_mmap = MmapOptions::new().map_mut(&index_file).map_err(|e| {
+                StorageError::InitError(format!("Failed to memory map index file: {e}"))
+            })?;
+
+            let data_mmap = MmapOptions::new().map_mut(&data_file).map_err(|e| {
+                StorageError::InitError(format!("Failed to memory map data file: {e}"))
+            })?;
+
+            // Store memory maps and file handles
+            *self.index_map.write() = Some(index_mmap);
+            *self.data_map.write() = Some(data_mmap);
+            *self.index_file.lock() = Some(index_file);
+            *self.data_file.lock() = Some(data_file);
         }
 
-        {
-            let mut data_file_guard = self.data_file.lock();
-            *data_file_guard = Some(data_file);
+        // Load existing index entries
+        if let Some(ref index_mmap) = *self.index_map.read() {
+            self.load_index(index_mmap).await?;
         }
 
-        {
-            let mut index_map_guard = self.index_map.write();
-            *index_map_guard = Some(index_mmap);
-        }
+        // Build the key index for fast key-value lookups
+        self.build_key_index().await?;
 
-        {
-            let mut data_map_guard = self.data_map.write();
-            *data_map_guard = Some(data_mmap);
-        }
-
-        {
-            let mut data_size_guard = self.data_size.write();
-            *data_size_guard = data_len;
-        }
-
-        // Preload data if configured
-        if self.options.preload_data && !is_new_data {
+        // Preload data into memory if configured
+        if self.options.preload_data {
             self.preload_data().await?;
         }
 
@@ -933,75 +1072,146 @@ impl MemMapStorage {
     async fn load_index(&self, index_mmap: &MmapMut) -> StorageResult<()> {
         let start = Instant::now();
 
-        // Skip header block
-        let mut offset = BLOCK_SIZE;
+        // Validate magic bytes
+        if index_mmap.len() < MAGIC_BYTES.len() || &index_mmap[0..MAGIC_BYTES.len()] != MAGIC_BYTES
+        {
+            return Err(StorageError::InitError(
+                "Invalid index file format".to_string(),
+            ));
+        }
+
+        // Clear existing index
+        self.index.clear();
+
+        // Read index entries
+        let mut offset = MAGIC_BYTES.len();
         let entry_size = std::mem::size_of::<IndexEntry>();
 
+        // Use rayon for parallel loading of the index
+        let chunk_size = 1024; // Process entries in chunks
+        let mut entries = Vec::new();
+
         while offset + entry_size <= index_mmap.len() {
-            // Read entry
-            let entry_bytes = &index_mmap[offset..offset + entry_size];
-            let entry =
-                unsafe { std::ptr::read_unaligned(entry_bytes.as_ptr() as *const IndexEntry) };
-
-            // Check if entry is valid (non-zero hash)
-            if entry.hash.iter().any(|&b| b != 0) {
-                let hash = Hash::new(entry.hash.to_vec());
-
-                // Add to in-memory index
-                let is_inline = (entry.flags & 1) != 0;
-                if is_inline {
-                    // Inline data
-                    self.index.insert(hash, (offset as u64, entry.size, 0xFF)); // 0xFF = inline marker
-                } else {
-                    // Normal data reference
-                    self.index
-                        .insert(hash, (entry.offset, entry.size, entry.compression));
-                }
+            // Check if we've reached the end of valid entries
+            if index_mmap[offset] == 0 && index_mmap[offset + 1] == 0 {
+                break;
             }
+
+            // Read entry
+            let entry = unsafe {
+                std::ptr::read_unaligned(index_mmap[offset..].as_ptr() as *const IndexEntry)
+            };
+
+            // Add to temporary list
+            entries.push((
+                Hash::new(entry.hash),
+                (entry.offset, entry.size, entry.compression),
+                entry.flags,
+            ));
 
             // Move to next entry
             offset += entry_size;
 
-            // If entry contains inline data, skip it
-            if (entry.flags & 1) != 0 {
-                offset += entry.size as usize;
+            // Process in parallel if we have enough entries
+            if entries.len() >= chunk_size {
+                self.process_entries_parallel(&entries);
+                entries.clear();
             }
         }
 
-        // Log loading time
-        let elapsed = start.elapsed();
-        log::info!("Loaded {} index entries in {:?}", self.index.len(), elapsed);
+        // Process remaining entries
+        if !entries.is_empty() {
+            self.process_entries_parallel(&entries);
+        }
+
+        let duration = start.elapsed();
+        log::info!(
+            "Loaded {} index entries in {:?}",
+            self.index.len(),
+            duration
+        );
 
         Ok(())
     }
 
-    /// Preload data into memory to improve performance
+    /// Process a batch of index entries in parallel
+    fn process_entries_parallel(&self, entries: &[(Hash, (u64, u32, u8), u8)]) {
+        entries.par_iter().for_each(|(hash, entry, flags)| {
+            // Check if the entry is marked as deleted
+            if (*flags & 0x01) == 0 {
+                self.index.insert(*hash, *entry);
+            }
+        });
+    }
+
+    /// Preload data into memory for faster access
     async fn preload_data(&self) -> StorageResult<()> {
         let start = Instant::now();
 
-        // For memory-mapped files, reading the data forces it into memory
-        // We'll read in parallel for better performance
         let data_map = self.data_map.read();
-        if let Some(ref data_mmap) = *data_map {
-            let chunk_size = 1024 * 1024; // 1MB chunks
-            let total_size = data_mmap.len();
-            let chunks = (total_size + chunk_size - 1) / chunk_size;
-
-            // Read in parallel
-            (0..chunks).into_par_iter().for_each(|i| {
-                let start = i * chunk_size;
-                let end = std::cmp::min(start + chunk_size, total_size);
-
-                // Read chunk (forces page into memory)
-                let _data = &data_mmap[start..end];
-
-                // This is enough to cause the kernel to load the page
-                let _sum: u64 = _data.iter().take(10).map(|&b| b as u64).sum();
-            });
+        if data_map.is_none() {
+            return Ok(());
         }
 
-        let elapsed = start.elapsed();
-        log::info!("Preloaded data in {:?}", elapsed);
+        // Access the entire memory map to force pages into memory
+        let data_len = data_map.as_ref().unwrap().len();
+        let chunk_size = 1024 * 1024; // 1MB chunks
+        let chunks = (data_len + chunk_size - 1) / chunk_size;
+
+        // Use rayon to parallelize the preloading
+        (0..chunks).into_par_iter().for_each(|i| {
+            let start = i * chunk_size;
+            let end = std::cmp::min(start + chunk_size, data_len);
+
+            if let Some(ref mmap) = *data_map {
+                // Just access the memory to force it into RAM
+                let _sum: u64 = mmap[start..end].iter().map(|&b| b as u64).sum();
+            }
+        });
+
+        let duration = start.elapsed();
+        log::info!(
+            "Preloaded {} MB in {:?}",
+            data_len / (1024 * 1024),
+            duration
+        );
+
+        Ok(())
+    }
+
+    /// Load existing key-value pairs into the secondary index
+    async fn build_key_index(&self) -> StorageResult<()> {
+        let start = Instant::now();
+
+        // Clear the existing key index
+        self.key_index.clear();
+
+        // For each entry in the main index
+        let mut added = 0;
+        for entry in self.index.iter() {
+            let hash = entry.key();
+
+            // Retrieve the data
+            if let Some(data) = self.retrieve(hash).await? {
+                // Parse the data to extract the key
+                if data.len() >= 8 {
+                    // Minimum size: key_len(4) + value_len(4)
+                    let key_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                    if data.len() >= 8 + key_len {
+                        let key = &data[8..8 + key_len];
+
+                        // Add to key index
+                        let key_hash = self.hash_key(key);
+                        self.key_index.insert(key_hash, *hash);
+                        added += 1;
+                    }
+                }
+            }
+        }
+
+        let duration = start.elapsed();
+        log::info!("Built key index with {} entries in {:?}", added, duration);
 
         Ok(())
     }

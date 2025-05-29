@@ -221,7 +221,7 @@ impl ReputationManager {
             .max(-self.config.max_adjustment)
             .min(self.config.max_adjustment);
 
-        entry.score = (entry.score + bounded_delta).max(0.0).min(1.0);
+        entry.score = (entry.score + bounded_delta).clamp(0.0, 1.0);
         entry.last_update = now;
 
         // Add to history, keeping last 10 updates

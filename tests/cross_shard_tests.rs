@@ -56,7 +56,7 @@ fn create_test_transaction(source: u64, target: u64) -> CrossShardTransaction {
         from_shard: source as u32,
         to_shard: target as u32,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         // Legacy fields
         id: tx_id,
         source_shard: source,
@@ -168,7 +168,7 @@ fn test_cross_shard_transaction_basic() {
         source_shard: 0,
         target_shard: 1,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         data: vec![5, 6, 7, 8],
         timestamp: SystemTime::now(),
     };

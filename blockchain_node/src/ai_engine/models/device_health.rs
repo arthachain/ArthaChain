@@ -1,15 +1,12 @@
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use anyhow::Result;
 use numpy::PyArray2;
-use serde::{Serialize, Deserialize};
-use anyhow::{Result, anyhow};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use log::{info, warn, debug};
 
 /// Device health anomaly detection model
 pub struct DeviceHealthDetector {
-    /// Python interpreter
-    py_interpreter: Python<'static>,
     /// Isolation Forest model
     isolation_forest: PyObject,
     /// Feature names
@@ -34,24 +31,22 @@ pub struct ModelParams {
 impl DeviceHealthDetector {
     /// Create a new device health detector
     pub fn new(params: ModelParams) -> Result<Self> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let isolation_forest = Python::with_gil(|py| -> PyResult<PyObject> {
+            // Import required Python modules
+            let pyod = py.import_bound("pyod.models.iforest")?;
 
-        // Import required Python modules
-        let pyod = py.import("pyod.models.iforest")?;
-        let np = py.import("numpy")?;
+            // Initialize Isolation Forest model
+            let kwargs = PyDict::new_bound(py);
+            kwargs.set_item("n_estimators", params.n_estimators)?;
+            kwargs.set_item("contamination", params.contamination)?;
+            kwargs.set_item("random_state", params.random_state)?;
 
-        // Initialize Isolation Forest model
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("n_estimators", params.n_estimators)?;
-        kwargs.set_item("contamination", params.contamination)?;
-        kwargs.set_item("random_state", params.random_state)?;
-        
-        let isolation_forest = pyod.getattr("IsolationForest")?.call((), Some(kwargs))?;
+            let isolation_forest = pyod.getattr("IsolationForest")?.call((), Some(&kwargs))?;
+            Ok(isolation_forest.into())
+        })?;
 
         Ok(Self {
-            py_interpreter: py,
-            isolation_forest: isolation_forest.into(),
+            isolation_forest,
             feature_names: vec![
                 "cpu_usage".to_string(),
                 "memory_usage".to_string(),
@@ -66,50 +61,53 @@ impl DeviceHealthDetector {
 
     /// Train the model with historical data
     pub fn train(&self, data: &[Vec<f32>]) -> Result<()> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        Python::with_gil(|py| -> PyResult<()> {
+            // Convert data to numpy array
+            let data_array = PyArray2::from_vec2_bound(py, data)?;
 
-        // Convert data to numpy array
-        let np = py.import("numpy")?;
-        let data_array = PyArray2::from_vec2(py, data)?;
-        
-        // Fit the model
-        self.isolation_forest
-            .call_method1(py, "fit", (data_array,))?;
+            // Fit the model
+            self.isolation_forest
+                .call_method1(py, "fit", (data_array,))?;
+
+            Ok(())
+        })?;
 
         Ok(())
     }
 
     /// Detect anomalies in device health metrics
     pub fn detect_anomalies(&self, metrics: &HashMap<String, f32>) -> Result<AnomalyResult> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let (score, is_anomaly, contributions) =
+            Python::with_gil(|py| -> PyResult<(f32, bool, HashMap<String, f32>)> {
+                // Prepare input data
+                let mut data_vec = Vec::new();
+                for name in &self.feature_names {
+                    data_vec.push(*metrics.get(name).unwrap_or(&0.0));
+                }
 
-        // Prepare input data
-        let mut data_vec = Vec::new();
-        for name in &self.feature_names {
-            data_vec.push(*metrics.get(name).unwrap_or(&0.0));
-        }
+                // Convert to numpy array
+                let data_array = PyArray2::from_vec2_bound(py, &[data_vec.clone()])?;
 
-        // Convert to numpy array
-        let np = py.import("numpy")?;
-        let data_array = PyArray2::from_vec2(py, &[data_vec])?;
+                // Get anomaly scores
+                let scores = self
+                    .isolation_forest
+                    .call_method1(py, "decision_function", (&data_array,))?
+                    .extract::<Vec<f32>>(py)?;
 
-        // Get anomaly scores
-        let scores = self.isolation_forest
-            .call_method1(py, "decision_function", (data_array,))?
-            .extract::<Vec<f32>>()?;
+                // Get predictions (1: normal, -1: anomaly)
+                let predictions = self
+                    .isolation_forest
+                    .call_method1(py, "predict", (&data_array,))?
+                    .extract::<Vec<i32>>(py)?;
 
-        // Get predictions (1: normal, -1: anomaly)
-        let predictions = self.isolation_forest
-            .call_method1(py, "predict", (data_array,))?
-            .extract::<Vec<i32>>()?;
+                let score = scores[0];
+                let is_anomaly = predictions[0] == -1;
 
-        let score = scores[0];
-        let is_anomaly = predictions[0] == -1;
+                // Calculate feature contributions
+                let contributions = self.calculate_feature_contributions(py, &data_vec)?;
 
-        // Calculate feature contributions
-        let contributions = self.calculate_feature_contributions(py, &data_vec)?;
+                Ok((score, is_anomaly, contributions))
+            })?;
 
         Ok(AnomalyResult {
             is_anomaly,
@@ -124,13 +122,14 @@ impl DeviceHealthDetector {
         &self,
         py: Python,
         data: &[f32],
-    ) -> Result<HashMap<String, f32>> {
+    ) -> PyResult<HashMap<String, f32>> {
         let mut contributions = HashMap::new();
-        
+
         // Get feature importances from the model
-        let importances = self.isolation_forest
+        let importances = self
+            .isolation_forest
             .call_method0(py, "get_feature_importances")?
-            .extract::<Vec<f32>>()?;
+            .extract::<Vec<f32>>(py)?;
 
         // Calculate contribution for each feature
         for (i, name) in self.feature_names.iter().enumerate() {
@@ -153,4 +152,4 @@ pub struct AnomalyResult {
     pub feature_contributions: HashMap<String, f32>,
     /// Threshold used for detection
     pub threshold: f32,
-} 
+}

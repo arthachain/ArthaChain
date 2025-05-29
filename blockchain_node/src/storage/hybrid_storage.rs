@@ -69,8 +69,7 @@ impl Storage for HybridStorage {
         match (rocksdb_result, svdb_result) {
             (Ok(_), _) | (_, Ok(_)) => Ok(()),
             (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to delete from both storages - RocksDB: {}, SVDB: {}",
-                e1, e2
+                "Failed to delete from both storages - RocksDB: {e1}, SVDB: {e2}"
             ))),
         }
     }
@@ -92,8 +91,7 @@ impl Storage for HybridStorage {
         match (rocksdb_result, svdb_result) {
             (Ok(_), _) | (_, Ok(_)) => Ok(()),
             (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to close both storages - RocksDB: {}, SVDB: {}",
-                e1, e2
+                "Failed to close both storages - RocksDB: {e1}, SVDB: {e2}"
             ))),
         }
     }

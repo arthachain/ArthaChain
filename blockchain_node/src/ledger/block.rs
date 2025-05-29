@@ -804,6 +804,30 @@ impl Block {
     pub fn hash(&self) -> Hash {
         self.header.hash.clone()
     }
+
+    /// Encode block data for cryptographic signing
+    pub fn encode_for_signing(&self) -> Result<Vec<u8>, anyhow::Error> {
+        // Serialize the block header for signing (excluding the hash itself)
+        let mut buffer = Vec::new();
+
+        // Add header data without the hash field
+        buffer.extend_from_slice(&self.header.version.to_le_bytes());
+        buffer.extend_from_slice(self.header.previous_hash.as_bytes());
+        buffer.extend_from_slice(self.header.merkle_root.as_bytes());
+        buffer.extend_from_slice(&self.header.timestamp.to_le_bytes());
+        buffer.extend_from_slice(&self.header.height.to_le_bytes());
+        buffer.extend_from_slice(&self.header.nonce.to_le_bytes());
+        buffer.extend_from_slice(&self.header.shard_id.to_le_bytes());
+        buffer.extend_from_slice(&self.header.difficulty.to_le_bytes());
+        buffer.extend_from_slice(self.header.proposer_id.as_bytes());
+
+        // Add body data (transaction hashes)
+        for transaction in &self.body.transactions {
+            buffer.extend_from_slice(transaction.hash().as_bytes());
+        }
+
+        Ok(buffer)
+    }
 }
 
 // Implement Default trait for Block
@@ -889,7 +913,6 @@ mod tests {
                 1,    // gas_price
                 1000, // gas_limit
                 "data1".as_bytes().to_vec(),
-                vec![], // signature
             ),
             Transaction::new(
                 TransactionType::Transfer,
@@ -900,7 +923,6 @@ mod tests {
                 1,    // gas_price
                 1000, // gas_limit
                 "data2".as_bytes().to_vec(),
-                vec![], // signature
             ),
         ];
         let merkle_root = Block::calculate_merkle_root(&transactions);
@@ -963,7 +985,6 @@ mod tests {
             1,    // gas_price
             1000, // gas_limit
             "data1".as_bytes().to_vec(),
-            vec![], // signature
         )];
         let block = Block::new(
             Hash([0; 32].to_vec()),

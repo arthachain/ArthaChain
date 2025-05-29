@@ -166,9 +166,9 @@ impl SecurityScore {
         let previous_score = self.overall_score;
 
         // Update component scores
-        self.trust_score = (self.trust_score + trust_delta).max(0.0).min(1.0);
-        self.risk_score = (self.risk_score + risk_delta).max(0.0).min(1.0);
-        self.reputation_score = (self.reputation_score + reputation_delta).max(0.0).min(1.0);
+        self.trust_score = (self.trust_score + trust_delta).clamp(0.0, 1.0);
+        self.risk_score = (self.risk_score + risk_delta).clamp(0.0, 1.0);
+        self.reputation_score = (self.reputation_score + reputation_delta).clamp(0.0, 1.0);
 
         // Calculate new overall score
         // Formula: (trust_score + (1.0 - risk_score) + reputation_score) / 3.0
@@ -265,6 +265,9 @@ pub struct RiskCacheEntry {
     pub last_update: SystemTime,
 }
 
+/// Type alias for rate limiting tracking
+type RateLimitMap = HashMap<String, HashMap<String, VecDeque<SystemTime>>>;
+
 /// Fraud Detection AI that monitors for suspicious activity
 #[derive(Debug, Clone)]
 pub struct FraudDetectionAI {
@@ -273,7 +276,7 @@ pub struct FraudDetectionAI {
     /// Security scores by user/node ID
     scores: Arc<Mutex<HashMap<String, SecurityScore>>>,
     /// Rate limiting tracking
-    rate_limits: Arc<Mutex<HashMap<String, HashMap<String, VecDeque<SystemTime>>>>>,
+    rate_limits: Arc<Mutex<RateLimitMap>>,
     /// Risk cache for quick lookup
     risk_cache: Arc<Mutex<HashMap<String, RiskCacheEntry>>>,
     /// Configuration for fraud detection
@@ -331,7 +334,7 @@ impl FraudDetectionAI {
         // If anything looks suspicious, record an event and update score
         if is_large_amount || exceeds_rate_limit {
             let description = if is_large_amount {
-                format!("Suspicious transaction amount: {}", amount)
+                format!("Suspicious transaction amount: {amount}")
             } else {
                 "Transaction rate limit exceeded".to_string()
             };
@@ -515,7 +518,7 @@ impl FraudDetectionAI {
             let description = if invalid_hash {
                 "Invalid file hash format".to_string()
             } else {
-                format!("Suspiciously large file: {} bytes", file_size)
+                format!("Suspiciously large file: {file_size} bytes")
             };
 
             self.record_security_event(
@@ -640,10 +643,10 @@ impl FraudDetectionAI {
 
         // Log the event
         match severity {
-            SecurityEventSeverity::Low => info!("Security event: {}", description),
-            SecurityEventSeverity::Medium => warn!("Security event: {}", description),
+            SecurityEventSeverity::Low => info!("Security event: {description}"),
+            SecurityEventSeverity::Medium => warn!("Security event: {description}"),
             SecurityEventSeverity::High | SecurityEventSeverity::Extreme => {
-                error!("Critical security event: {}", description)
+                error!("Critical security event: {description}")
             }
         }
 
@@ -682,9 +685,7 @@ impl FraudDetectionAI {
         let mut rate_limits = self.rate_limits.lock().unwrap();
 
         // Get or create target's rate limit tracking
-        let target_limits = rate_limits
-            .entry(target_id.to_string())
-            .or_insert_with(HashMap::new);
+        let target_limits = rate_limits.entry(target_id.to_string()).or_default();
 
         // Get or create action's timestamp queue
         let timestamps = target_limits
@@ -780,17 +781,13 @@ impl FraudDetectionAI {
             SecurityEventType::SuspiciousInteraction,
             SecurityEventSeverity::High,
             target_id,
-            &format!("Target banned: {}", reason),
+            &format!("Target banned: {reason}"),
             HashMap::new(),
         )?;
 
         // Log the ban
-        warn!(
-            "Banned target {} for {} ({} months)",
-            target_id,
-            reason,
-            duration.map(|d| d.as_secs() / (86400 * 30)).unwrap_or(5)
-        );
+        let months = duration.map(|d| d.as_secs() / (86400 * 30)).unwrap_or(5);
+        warn!("Banned target {target_id} for {reason} ({months} months)");
 
         Ok(())
     }
@@ -801,7 +798,7 @@ impl FraudDetectionAI {
 
         if let Some(expiry) = banned.get(target_id) {
             // Check if ban has expired
-            if let Ok(_) = expiry.duration_since(SystemTime::now()) {
+            if expiry.duration_since(SystemTime::now()).is_ok() {
                 // Ban is still active
                 return true;
             }
@@ -864,7 +861,7 @@ impl FraudDetectionAI {
     /// Update the AI model with new version
     pub async fn update_model(&mut self, model_path: &str) -> Result<()> {
         // In a real implementation, this would load a new model from storage
-        info!("Updating Fraud Detection AI model from: {}", model_path);
+        info!("Updating Fraud Detection AI model from: {model_path}");
 
         // Simulate model update
         self.model_version = "1.1.0".to_string();
@@ -917,17 +914,17 @@ impl FraudDetectionAI {
         log.push_str("=== Security Event Audit Log ===\n");
 
         for event in events.iter() {
+            let timestamp = event
+                .timestamp
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+            let severity = format!("{:?}", event.severity);
+            let event_type = format!("{:?}", event.event_type);
+
             log.push_str(&format!(
-                "[{}] [{}] [{}] {}: {}\n",
-                event
-                    .timestamp
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs(),
-                format!("{:?}", event.severity),
-                event.target_id,
-                format!("{:?}", event.event_type),
-                event.description
+                "[{timestamp}] [{severity}] [{}] {event_type}: {}\n",
+                event.target_id, event.description
             ));
         }
 
@@ -941,29 +938,25 @@ impl FraudDetectionAI {
         action_type: SecurityActionType,
         _target_id: &str,
     ) -> SecurityAction {
-        let _action = SecurityAction {
+        SecurityAction {
             action_type,
             timestamp: SystemTime::now(),
             initiated_by: "system".to_string(),
             duration: None,
             notes: "".to_string(),
-        };
-
-        // Return the action
-        _action
+        }
     }
 
     // If the fraud detection module requires hashing, use BLAKE3
     #[allow(dead_code)]
     fn hash_data(&self, data: &[u8]) -> String {
-        let hash = blake3::hash(data);
-        hex::encode(hash.as_bytes())
+        hex::encode(blake3::hash(data).as_bytes())
     }
 
     pub fn process_action(&self, node_id: &str, _action: &str) -> Result<()> {
         // In a real implementation, this would process a security action
         // For now, just log it
-        info!("Processing action {} for node {}", _action, node_id);
+        info!("Processing action {_action} for node {node_id}");
 
         // Mock implementation - just update the risk score
         let mut cache = self.risk_cache.lock().unwrap();

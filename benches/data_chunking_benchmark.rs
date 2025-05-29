@@ -16,15 +16,15 @@ fn bench_chunking(c: &mut Criterion) {
         let data = generate_sample_file(size);
         let mut config = Config::default();
         config.chunking_config.max_chunk_size = 10 * 1024 * 1024;
-        config.chunking_config.min_chunk_size = 1 * 1024 * 1024;
+        config.chunking_config.min_chunk_size = 1024 * 1024;
         config.chunking_config.default_compression = CompressionType::None;
         let ai = Arc::new(DataChunkingAI::new(&config));
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| {
                 let _ = ai.split_file(
-                    &format!("bench_file_{}", size),
-                    &format!("bench_file_{}.dat", size),
+                    &format!("bench_file_{size}"),
+                    &format!("bench_file_{size}.dat"),
                     &data,
                     "application/octet-stream",
                 );
@@ -42,13 +42,13 @@ fn bench_reconstruction(c: &mut Criterion) {
         let data = generate_sample_file(size);
         let mut config = Config::default();
         config.chunking_config.max_chunk_size = 10 * 1024 * 1024;
-        config.chunking_config.min_chunk_size = 1 * 1024 * 1024;
+        config.chunking_config.min_chunk_size = 1024 * 1024;
         config.chunking_config.default_compression = CompressionType::None;
 
         // Pre-generate chunks outside the benchmark loop
         let ai = Arc::new(DataChunkingAI::new(&config));
-        let file_id = format!("bench_reconstruction_{}", size);
-        let file_name = format!("bench_reconstruction_{}.dat", size);
+        let file_id = format!("bench_reconstruction_{size}");
+        let file_name = format!("bench_reconstruction_{size}.dat");
         let chunks = ai
             .split_file(&file_id, &file_name, &data, "application/octet-stream")
             .unwrap();

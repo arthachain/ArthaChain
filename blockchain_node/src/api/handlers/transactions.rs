@@ -49,7 +49,7 @@ impl TransactionResponse {
         confirmations: u64,
     ) -> Self {
         Self {
-            hash: tx.hash(),
+            hash: tx.hash().to_string(),
             sender: tx.sender.clone(),
             recipient: Some(tx.recipient.clone()),
             amount: tx.amount,
@@ -61,7 +61,8 @@ impl TransactionResponse {
             confirmations,
             tx_type: match tx.tx_type {
                 TransactionType::Transfer => 0,
-                TransactionType::Deploy => 1,
+                TransactionType::ContractCreate => 1,
+                TransactionType::Deploy => 1, // Same as ContractCreate
                 TransactionType::Call => 2,
                 TransactionType::ValidatorRegistration => 3,
                 TransactionType::Stake => 4,
@@ -70,6 +71,11 @@ impl TransactionResponse {
                 TransactionType::ClaimReward => 7,
                 TransactionType::Batch => 8,
                 TransactionType::System => 9,
+                TransactionType::ContractCall => 2, // Same as Call
+                TransactionType::Undelegate => 5,   // Same as Unstake
+                TransactionType::ClaimRewards => 7, // Same as ClaimReward
+                TransactionType::SetValidator => 3, // Same as ValidatorRegistration
+                TransactionType::Custom(_) => 10,
             },
             data: if tx.data.is_empty() {
                 None
@@ -138,7 +144,7 @@ pub async fn get_transaction(
 
     if let Some((tx, block_hash, block_height)) = state.get_transaction_by_hash(&hash.to_string()) {
         // Convert types::Transaction to ledger::transaction::Transaction
-        let ledger_tx: crate::ledger::transaction::Transaction = tx.clone().into();
+        let ledger_tx: crate::ledger::transaction::Transaction = tx.clone();
 
         // Calculate confirmations if the transaction is in a block
         let confirmations = if let Some(latest_block) = state.latest_block() {
@@ -191,7 +197,7 @@ pub async fn submit_transaction(
     // Parse transaction type
     let tx_type = match req.tx_type {
         0 => TransactionType::Transfer,
-        1 => TransactionType::Deploy,
+        1 => TransactionType::ContractCreate,
         2 => TransactionType::Call,
         3 => TransactionType::ValidatorRegistration,
         4 => TransactionType::Stake,
@@ -210,7 +216,7 @@ pub async fn submit_transaction(
 
     // Create the transaction
     let recipient = req.recipient.unwrap_or_default();
-    let tx = Transaction::new(
+    let mut tx = Transaction::new(
         tx_type,
         req.sender.clone(),
         recipient,
@@ -219,8 +225,10 @@ pub async fn submit_transaction(
         1,     // Default gas price
         21000, // Default gas limit
         data,
-        signature,
     );
+
+    // Set the signature after creation
+    tx.signature = signature;
 
     let state = state.write().await;
     let types_tx = crate::types::Transaction {
@@ -242,7 +250,7 @@ pub async fn submit_transaction(
         })?;
 
     Ok(Json(SubmitTransactionResponse {
-        hash: tx.hash(),
+        hash: tx.hash().to_string(),
         success: true,
         message: "Transaction submitted successfully".to_string(),
     }))

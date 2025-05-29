@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blockchain Fraud Detection Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .dashboard-card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            background-color: white;
+        }
+        .card-header {
+            font-weight: bold;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .stats-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .risk-low {
+            color: #28a745;
+        }
+        .risk-medium {
+            color: #ffc107;
+        }
+        .risk-high {
+            color: #fd7e14;
+        }
+        .risk-critical {
+            color: #dc3545;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        .refresh-btn {
+            margin-left: 10px;
+        }
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        #refreshIcon {
+            transition: transform 0.5s ease;
+        }
+        .rotating {
+            animation: rotate 1s linear infinite;
+        }
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-shield-lock"></i> Blockchain Fraud Detection
+            </a>
+            <button class="btn btn-outline-light btn-sm refresh-btn" id="refreshBtn">
+                <i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh Data
+            </button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row mb-4">
+            <div class="col-md-12 d-flex justify-content-between align-items-center">
+                <h2>Fraud Detection Dashboard</h2>
+                <span class="text-muted">Last Updated: <span id="lastUpdated">...</span></span>
+            </div>
+        </div>
+
+        <!-- Summary Stats Row -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="dashboard-card p-3">
+                    <div class="text-muted">Total Transactions</div>
+                    <div class="stats-value" id="totalTransactions">...</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="dashboard-card p-3">
+                    <div class="text-muted">Suspicious Transactions</div>
+                    <div class="stats-value" id="suspiciousTransactions">...</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="dashboard-card p-3">
+                    <div class="text-muted">Suspicious Rate</div>
+                    <div class="stats-value" id="suspiciousRate">...</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="dashboard-card p-3">
+                    <div class="text-muted">High Risk Count</div>
+                    <div class="stats-value risk-high" id="highRiskCount">...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="dashboard-card p-3">
+                    <div class="card-header p-2">Detection Rate Over Time</div>
+                    <div class="chart-container" style="position: relative; height: 250px;">
+                        <canvas id="detectionRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="dashboard-card p-3">
+                    <div class="card-header p-2">Risk Level Distribution</div>
+                    <div class="chart-container" style="position: relative; height: 250px;">
+                        <canvas id="riskDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Detections Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="dashboard-card p-3">
+                    <div class="card-header p-2 d-flex justify-content-between align-items-center">
+                        <span>Recent Suspicious Transactions</span>
+                        <div>
+                            <select class="form-select form-select-sm" id="riskLevelFilter" style="width: auto; display: inline-block;">
+                                <option value="all">All Risk Levels</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Transaction Hash</th>
+                                    <th>Timestamp</th>
+                                    <th>Fraud Probability</th>
+                                    <th>Anomaly Score</th>
+                                    <th>Risk Level</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentDetectionsTable">
+                                <tr>
+                                    <td colspan="6" class="text-center">Loading data...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Risky Addresses -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="dashboard-card p-3">
+                    <div class="card-header p-2">Top Risky Addresses</div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Address</th>
+                                    <th>Risk Score</th>
+                                    <th>Transaction Count</th>
+                                    <th>Last Activity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="riskyAddressesTable">
+                                <tr>
+                                    <td colspan="4" class="text-center">Loading data...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Details Modal -->
+    <div class="modal fade" id="txDetailsModal" tabindex="-1" aria-labelledby="txDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="txDetailsModalLabel">Transaction Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="txDetailsContent">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Charts
+        let detectionRateChart = null;
+        let riskDistributionChart = null;
+        
+        // Bootstrap modal
+        let txDetailsModal = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize modal
+            txDetailsModal = new bootstrap.Modal(document.getElementById('txDetailsModal'));
+            
+            // Initialize charts
+            initCharts();
+            
+            // Load initial data
+            loadDashboardData();
+            
+            // Set up refresh button
+            document.getElementById('refreshBtn').addEventListener('click', function() {
+                const icon = document.getElementById('refreshIcon');
+                icon.classList.add('rotating');
+                loadDashboardData().finally(() => {
+                    setTimeout(() => {
+                        icon.classList.remove('rotating');
+                    }, 500);
+                });
+            });
+            
+            // Set up risk level filter
+            document.getElementById('riskLevelFilter').addEventListener('change', function() {
+                loadHistoryData();
+            });
+        });
+        
+        function initCharts() {
+            // Detection Rate Chart
+            const rateCtx = document.getElementById('detectionRateChart').getContext('2d');
+            detectionRateChart = new Chart(rateCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Suspicious Transaction Rate',
+                        data: [],
+                        borderColor: '#fd7e14',
+                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            ticks: {
+                                callback: value => (value * 100).toFixed(0) + '%'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Rate: ' + (context.parsed.y * 100).toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Risk Distribution Chart
+            const distCtx = document.getElementById('riskDistributionChart').getContext('2d');
+            riskDistributionChart = new Chart(distCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Low', 'Medium', 'High', 'Critical'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: [
+                            '#28a745',
+                            '#ffc107',
+                            '#fd7e14',
+                            '#dc3545'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/fraud/dashboard');
+                const data = await response.json();
+                
+                // Update summary stats
+                document.getElementById('totalTransactions').textContent = data.total_transactions.toLocaleString();
+                document.getElementById('suspiciousTransactions').textContent = data.suspicious_transactions.toLocaleString();
+                document.getElementById('suspiciousRate').textContent = (data.suspicious_rate * 100).toFixed(2) + '%';
+                
+                // Calculate high risk count (high + critical)
+                const highRiskCount = (data.risk_level_counts['High'] || 0) + (data.risk_level_counts['Critical'] || 0);
+                document.getElementById('highRiskCount').textContent = highRiskCount.toLocaleString();
+                
+                // Update last updated time
+                document.getElementById('lastUpdated').textContent = new Date(data.last_update).toLocaleString();
+                
+                // Update detection rate chart
+                updateDetectionRateChart(data.detection_rate_history);
+                
+                // Update risk distribution chart
+                updateRiskDistributionChart(data.risk_level_counts);
+                
+                // Update recent detections table
+                updateRecentDetectionsTable(data.recent_detections);
+                
+                // Update risky addresses table
+                updateRiskyAddressesTable(data.top_risky_addresses);
+                
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+        
+        async function loadHistoryData() {
+            try {
+                const riskLevel = document.getElementById('riskLevelFilter').value;
+                const url = riskLevel === 'all' 
+                    ? '/api/fraud/history?limit=50' 
+                    : `/api/fraud/history?limit=50&risk_level=${riskLevel}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                updateRecentDetectionsTable(data);
+                
+            } catch (error) {
+                console.error('Error loading history data:', error);
+            }
+        }
+        
+        function updateDetectionRateChart(history) {
+            const labels = history.map(point => {
+                const date = new Date(point.timestamp);
+                return date.getHours() + ':00';
+            });
+            
+            const data = history.map(point => point.value);
+            
+            detectionRateChart.data.labels = labels;
+            detectionRateChart.data.datasets[0].data = data;
+            detectionRateChart.update();
+        }
+        
+        function updateRiskDistributionChart(riskCounts) {
+            const data = [
+                riskCounts['Low'] || 0,
+                riskCounts['Medium'] || 0,
+                riskCounts['High'] || 0,
+                riskCounts['Critical'] || 0
+            ];
+            
+            riskDistributionChart.data.datasets[0].data = data;
+            riskDistributionChart.update();
+        }
+        
+        function updateRecentDetectionsTable(detections) {
+            const table = document.getElementById('recentDetectionsTable');
+            
+            if (detections.length === 0) {
+                table.innerHTML = '<tr><td colspan="6" class="text-center">No suspicious transactions found</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            detections.forEach(detection => {
+                const date = new Date(detection.timestamp).toLocaleString();
+                const txHash = detection.tx_hash.substring(0, 10) + '...';
+                const fraudProb = (detection.fraud_probability * 100).toFixed(2) + '%';
+                const anomalyScore = (detection.anomaly_score * 100).toFixed(2) + '%';
+                const riskClass = `risk-${detection.risk_level.toLowerCase()}`;
+                
+                html += `
+                <tr>
+                    <td><a href="#" class="tx-details-link" data-tx-hash="${detection.tx_hash}">${txHash}</a></td>
+                    <td>${date}</td>
+                    <td>${fraudProb}</td>
+                    <td>${anomalyScore}</td>
+                    <td><span class="${riskClass}">${detection.risk_level}</span></td>
+                    <td>${detection.recommended_action.replace(/([A-Z])/g, ' $1').trim()}</td>
+                </tr>
+                `;
+            });
+            
+            table.innerHTML = html;
+            
+            // Add click handlers for transaction details
+            document.querySelectorAll('.tx-details-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const txHash = this.getAttribute('data-tx-hash');
+                    showTransactionDetails(txHash);
+                });
+            });
+        }
+        
+        function updateRiskyAddressesTable(addresses) {
+            const table = document.getElementById('riskyAddressesTable');
+            
+            if (addresses.length === 0) {
+                table.innerHTML = '<tr><td colspan="4" class="text-center">No risky addresses found</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            addresses.forEach(address => {
+                const shortAddr = address.address.substring(0, 10) + '...' + address.address.substring(address.address.length - 8);
+                const date = new Date(address.last_activity).toLocaleString();
+                const riskScore = (address.risk_score * 100).toFixed(1) + '%';
+                
+                // Determine risk class
+                let riskClass = 'risk-low';
+                if (address.risk_score > 0.75) riskClass = 'risk-critical';
+                else if (address.risk_score > 0.5) riskClass = 'risk-high';
+                else if (address.risk_score > 0.25) riskClass = 'risk-medium';
+                
+                html += `
+                <tr>
+                    <td>${shortAddr}</td>
+                    <td class="${riskClass}">${riskScore}</td>
+                    <td>${address.transaction_count}</td>
+                    <td>${date}</td>
+                </tr>
+                `;
+            });
+            
+            table.innerHTML = html;
+        }
+        
+        async function showTransactionDetails(txHash) {
+            try {
+                // Show modal with loading spinner
+                document.getElementById('txDetailsContent').innerHTML = `
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                `;
+                txDetailsModal.show();
+                
+                // Load transaction details
+                const response = await fetch(`/api/fraud/transaction/${txHash}`);
+                const data = await response.json();
+                
+                // Format the timestamp
+                const timestamp = new Date(data.timestamp).toLocaleString();
+                
+                // Create feature importance bars
+                let featureImportanceHtml = '';
+                Object.entries(data.feature_importance).forEach(([feature, importance]) => {
+                    const percent = (importance * 100).toFixed(1);
+                    featureImportanceHtml += `
+                    <div class="mb-1">
+                        <div class="d-flex justify-content-between">
+                            <span>${feature}</span>
+                            <span>${percent}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-info" role="progressbar" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                    `;
+                });
+                
+                // Update modal content
+                document.getElementById('txDetailsContent').innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Transaction Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th>Transaction Hash</th>
+                                    <td class="text-break">${data.tx_hash}</td>
+                                </tr>
+                                <tr>
+                                    <th>Detection Time</th>
+                                    <td>${timestamp}</td>
+                                </tr>
+                                <tr>
+                                    <th>Fraud Probability</th>
+                                    <td>${(data.fraud_probability * 100).toFixed(2)}%</td>
+                                </tr>
+                                <tr>
+                                    <th>Anomaly Score</th>
+                                    <td>${(data.anomaly_score * 100).toFixed(2)}%</td>
+                                </tr>
+                                <tr>
+                                    <th>Risk Level</th>
+                                    <td><span class="risk-${data.risk_level.toLowerCase()}">${data.risk_level}</span></td>
+                                </tr>
+                                <tr>
+                                    <th>Recommended Action</th>
+                                    <td>${data.recommended_action.replace(/([A-Z])/g, ' $1').trim()}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Quantum Verification</h6>
+                            <div class="mb-3">
+                                <small class="text-muted">Quantum-resistant verification hash:</small>
+                                <div class="border p-2 bg-light text-break small">${data.quantum_verification}</div>
+                            </div>
+                            
+                            <h6>Feature Importance</h6>
+                            <div>
+                                ${featureImportanceHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('Error loading transaction details:', error);
+                document.getElementById('txDetailsContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        Error loading transaction details. Please try again.
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 

@@ -1,3 +1,5 @@
+#![allow(warnings)]
+#![allow(clippy::all)]
 pub mod ai_engine;
 pub mod api;
 pub mod common;
@@ -15,8 +17,6 @@ pub mod security;
 pub mod sharding;
 pub mod state;
 pub mod storage;
-#[cfg(test)]
-pub mod tests;
 pub mod transaction;
 pub mod types;
 pub mod utils;

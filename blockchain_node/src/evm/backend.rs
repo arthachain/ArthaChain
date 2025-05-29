@@ -1,9 +1,9 @@
 use crate::evm::types::{EvmAddress, EvmError};
-use crate::storage::{Storage, StorageError};
+use crate::storage::Storage;
 use crate::types::Hash;
-use ethereum_types::{H160, H256, U256};
-use log::{debug, error};
-use primitive_types::Bytes;
+use ethereum_types::{H256, U256};
+use log::debug;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +17,7 @@ pub struct EvmBackend {
     /// Cache for storage data
     storage_cache: std::collections::HashMap<(EvmAddress, H256), H256>,
     /// Cache for contract code
-    code_cache: std::collections::HashMap<EvmAddress, Bytes>,
+    code_cache: std::collections::HashMap<EvmAddress, Vec<u8>>,
 }
 
 /// EVM account structure
@@ -137,7 +137,7 @@ impl EvmBackend {
     pub fn get_code(&self, address: &EvmAddress) -> Result<Vec<u8>, EvmError> {
         // Check cache first
         if let Some(code) = self.code_cache.get(address) {
-            return Ok(code.to_vec());
+            return Ok(code.clone());
         }
 
         let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
@@ -153,7 +153,7 @@ impl EvmBackend {
     pub fn set_code(&mut self, address: &EvmAddress, code: &[u8]) -> Result<(), EvmError> {
         let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
         let hash = self.storage.store_sync(code)?;
-        self.code_cache.insert(*address, code.to_vec().into());
+        self.code_cache.insert(*address, code.to_vec());
         Ok(())
     }
 

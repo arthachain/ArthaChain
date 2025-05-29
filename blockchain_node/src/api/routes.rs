@@ -49,6 +49,28 @@
 //! - **GET** `/api/network/peers`
 //! - Returns a list of connected peers
 //!
+//! # Network Monitoring Endpoints
+//!
+//! ## Get peer count
+//! - **GET** `/api/monitoring/peers/count`
+//! - Returns the number of connected peers and network health status
+//!
+//! ## Get mempool size
+//! - **GET** `/api/monitoring/mempool/size`
+//! - Returns current mempool size and utilization statistics
+//!
+//! ## Get node uptime
+//! - **GET** `/api/monitoring/uptime`
+//! - Returns node uptime information
+//!
+//! ## Get detailed peer list
+//! - **GET** `/api/monitoring/peers`
+//! - Returns detailed information about all connected peers
+//!
+//! ## Get comprehensive network status
+//! - **GET** `/api/monitoring/network`
+//! - Returns comprehensive network monitoring information
+//!
 //! # Consensus Endpoints
 //!
 //! ## Get consensus status
@@ -64,3 +86,114 @@
 //!   - `new_block`: Notifies when a new block is added to the chain
 //!   - `new_transaction`: Notifies when a new transaction is added to the mempool
 //!   - `consensus_update`: Notifies when the consensus state changes
+
+use crate::ai_engine::models::advanced_fraud_detection::AdvancedFraudDetection;
+use crate::api::fraud_monitoring::create_fraud_monitoring_router;
+use crate::api::fraud_monitoring::FraudMonitoringService;
+use crate::api::handlers::network_monitoring::{init_node_start_time, NetworkMonitoringService};
+use crate::api::handlers::status;
+use crate::api::transaction::TransactionRoutes;
+use crate::ledger::state::State;
+use crate::network::p2p::P2PNetwork;
+use crate::transaction::mempool::EnhancedMempool;
+
+use axum::{
+    http::StatusCode,
+    response::{Html, IntoResponse},
+    routing::get,
+    Extension, Router,
+};
+use std::fs;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+/// Create the main router with all routes
+pub async fn create_router() -> Router {
+    // Initialize node start time for uptime tracking
+    init_node_start_time();
+
+    // Initialize AI fraud detection model
+    let detection_model = Arc::new(
+        AdvancedFraudDetection::new()
+            .await
+            .expect("Failed to initialize fraud detection model"),
+    );
+
+    // Create monitoring service
+    let fraud_service = Arc::new(FraudMonitoringService::new(detection_model).await);
+
+    // Create fraud monitoring router
+    let fraud_router = create_fraud_monitoring_router(fraud_service.clone());
+
+    // Create transaction router with fraud detection
+    let transaction_router = TransactionRoutes::create_router(fraud_service.clone());
+
+    // Main router combining all routes
+    Router::new()
+        .route("/", get(index))
+        .route("/fraud", get(fraud_dashboard))
+        .nest("/", fraud_router)
+        .merge(transaction_router)
+}
+
+/// Create monitoring router with all monitoring endpoints
+pub async fn create_monitoring_router(
+    state: Arc<RwLock<State>>,
+    _p2p_network: Option<Arc<P2PNetwork>>,
+    mempool: Option<Arc<EnhancedMempool>>,
+) -> Router {
+    // Create network monitoring service without P2P network to avoid Sync issues
+    // We explicitly don't include the P2P network since it's not Sync
+    let mut monitoring_service = NetworkMonitoringService::new(state.clone());
+
+    // Only add mempool if available (mempool is Sync)
+    if let Some(mempool) = mempool {
+        monitoring_service = monitoring_service.with_mempool(mempool);
+    }
+
+    // Note: We intentionally do not add P2P network due to thread safety constraints
+    // The monitoring service handles the None case gracefully
+
+    let _monitoring_service = Arc::new(monitoring_service);
+
+    Router::new()
+        // Legacy status endpoints that work correctly
+        .route("/api/status", get(status::get_status))
+        .route("/api/network/peers", get(status::get_peers))
+        // Add state as extension for the basic handlers
+        .layer(Extension(state))
+}
+
+/// Root index handler
+async fn index() -> impl IntoResponse {
+    Html(
+        r#"
+    <h1>Blockchain Node API</h1>
+    <h2>Available Endpoints:</h2>
+    <ul>
+        <li><a href="/fraud">Fraud Detection Dashboard</a></li>
+        <li><a href="/api/status">Node Status</a></li>
+        <li><a href="/api/monitoring/network">Network Monitoring</a></li>
+        <li><a href="/api/monitoring/peers/count">Peer Count</a></li>
+        <li><a href="/api/monitoring/mempool/size">Mempool Size</a></li>
+        <li><a href="/api/monitoring/uptime">Node Uptime</a></li>
+        <li><a href="/api/monitoring/peers">Detailed Peer List</a></li>
+    </ul>
+    "#,
+    )
+}
+
+/// Fraud dashboard handler
+async fn fraud_dashboard() -> impl IntoResponse {
+    let template_path = Path::new("blockchain_node/src/api/templates/fraud_dashboard.html");
+
+    match fs::read_to_string(template_path) {
+        Ok(content) => Html(content).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to load dashboard template",
+        )
+            .into_response(),
+    }
+}

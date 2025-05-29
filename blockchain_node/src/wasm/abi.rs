@@ -1,6 +1,6 @@
 use crate::wasm::types::{ContractMetadata, FunctionMetadata, ParameterMetadata, WasmError};
-use serde::{Serialize, Deserialize};
 use bincode;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// ABI parameter types
@@ -106,54 +106,60 @@ impl ContractAbi {
             types: HashMap::new(),
         }
     }
-    
+
     /// Add a function to the ABI
     pub fn add_function(&mut self, function: FunctionAbi) {
         self.functions.insert(function.name.clone(), function);
     }
-    
+
     /// Add a struct type to the ABI
     pub fn add_struct(&mut self, struct_def: StructAbi) {
         self.types.insert(struct_def.name.clone(), struct_def);
     }
-    
+
     /// Get a function by name
     pub fn get_function(&self, name: &str) -> Option<&FunctionAbi> {
         self.functions.get(name)
     }
-    
+
     /// Serialize the ABI to JSON
     pub fn to_json(&self) -> Result<String, WasmError> {
         serde_json::to_string_pretty(self)
             .map_err(|e| WasmError::Internal(format!("Failed to serialize ABI: {}", e)))
     }
-    
+
     /// Deserialize the ABI from JSON
     pub fn from_json(json: &str) -> Result<Self, WasmError> {
         serde_json::from_str(json)
             .map_err(|e| WasmError::Internal(format!("Failed to deserialize ABI: {}", e)))
     }
-    
+
     /// Convert to contract metadata
     pub fn to_metadata(&self) -> ContractMetadata {
         // Convert functions to metadata format
-        let functions = self.functions.values()
+        let functions = self
+            .functions
+            .values()
             .map(|f| {
                 // Convert parameters to metadata format
-                let inputs = f.inputs.iter()
+                let inputs = f
+                    .inputs
+                    .iter()
                     .map(|p| ParameterMetadata {
                         name: p.name.clone(),
                         type_name: format!("{:?}", p.type_info),
                     })
                     .collect();
-                
-                let outputs = f.outputs.iter()
+
+                let outputs = f
+                    .outputs
+                    .iter()
                     .map(|p| ParameterMetadata {
                         name: p.name.clone(),
                         type_name: format!("{:?}", p.type_info),
                     })
                     .collect();
-                
+
                 FunctionMetadata {
                     name: f.name.clone(),
                     inputs,
@@ -163,10 +169,10 @@ impl ContractAbi {
                 }
             })
             .collect();
-        
+
         // Create a dummy hash for now - this would be calculated from the contract bytecode
         let hash = [0u8; 32];
-        
+
         ContractMetadata {
             name: self.name.clone(),
             version: self.version.clone(),
@@ -199,4 +205,4 @@ pub fn encode_result<T: Serialize>(result: &T) -> Result<Vec<u8>, WasmError> {
 pub fn decode_result<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, WasmError> {
     bincode::deserialize(bytes)
         .map_err(|e| WasmError::Internal(format!("Failed to decode result: {}", e)))
-} 
+}

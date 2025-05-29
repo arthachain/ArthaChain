@@ -3,11 +3,11 @@
 //! Provides storage access for WASM contracts with key-value semantics.
 //! Uses a prefixed namespace for each contract to isolate storage between contracts.
 
-use std::sync::Arc;
-use parking_lot::RwLock;
 use crate::storage::Storage;
 use crate::types::Address;
-use crate::wasm::types::WasmError;
+
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Storage interface for the WASM environment
 pub struct WasmStorage {
@@ -47,7 +47,8 @@ impl WasmStorage {
 
     /// Create a deterministic storage key prefix for a contract to isolate storage
     fn prefixed_key(&self, contract_address: &Address, key: &[u8]) -> Vec<u8> {
-        let mut prefixed_key = Vec::with_capacity(contract_address.as_bytes().len() + 1 + key.len());
+        let mut prefixed_key =
+            Vec::with_capacity(contract_address.as_bytes().len() + 1 + key.len());
         prefixed_key.extend_from_slice(contract_address.as_bytes());
         prefixed_key.push(b':');
         prefixed_key.extend_from_slice(key);
@@ -103,7 +104,8 @@ mod tests {
     #[test]
     fn test_wasm_storage() {
         let storage = Arc::new(MemoryStorage::new());
-        let contract_address = Address::from_hex("0x1234567890123456789012345678901234567890").unwrap();
+        let contract_address =
+            Address::from_hex("0x1234567890123456789012345678901234567890").unwrap();
         let wasm_storage = WasmStorage::new(storage);
 
         // Test write and read
@@ -122,8 +124,10 @@ mod tests {
     #[test]
     fn test_storage_namespacing() {
         let storage = Arc::new(MemoryStorage::new());
-        let contract_address1 = Address::from_hex("0x1234567890123456789012345678901234567890").unwrap();
-        let contract_address2 = Address::from_hex("0x0987654321098765432109876543210987654321").unwrap();
+        let contract_address1 =
+            Address::from_hex("0x1234567890123456789012345678901234567890").unwrap();
+        let contract_address2 =
+            Address::from_hex("0x0987654321098765432109876543210987654321").unwrap();
         let wasm_storage1 = WasmStorage::new(storage.clone());
         let wasm_storage2 = WasmStorage::new(storage);
 
@@ -140,4 +144,4 @@ mod tests {
         assert_eq!(read_value1, value1.to_vec());
         assert_eq!(read_value2, value2.to_vec());
     }
-} 
+}

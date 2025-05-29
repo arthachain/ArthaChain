@@ -340,6 +340,12 @@ pub struct BlockSync {
     download_queue: Vec<BlockHash>,
 }
 
+impl Default for BlockSync {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockSync {
     pub fn new() -> Self {
         Self {
@@ -357,6 +363,12 @@ pub struct StateSync {
     /// State trie nodes being synced
     #[allow(dead_code)]
     nodes: HashMap<Hash, Vec<u8>>,
+}
+
+impl Default for StateSync {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateSync {
@@ -770,7 +782,7 @@ impl SyncManager {
 
         // Send the message
         if let Err(e) = self.network_sender.send(message).await {
-            return Err(format!("Failed to send height request: {}", e));
+            return Err(format!("Failed to send height request: {e}"));
         }
 
         Ok(())
@@ -788,17 +800,17 @@ impl SyncManager {
 
         // Process download queue
         if let Err(e) = self.process_download_queue().await {
-            warn!("Failed to process download queue: {}", e);
+            warn!("Failed to process download queue: {e}");
         }
 
         // Process processing queue
         if let Err(e) = self.process_processing_queue().await {
-            warn!("Failed to process blocks: {}", e);
+            warn!("Failed to process blocks: {e}");
         }
 
         // Rebroadcast transactions
         if let Err(e) = self.rebroadcast_pending_transactions().await {
-            warn!("Failed to rebroadcast transactions: {}", e);
+            warn!("Failed to rebroadcast transactions: {e}");
         }
 
         Ok(())
@@ -853,7 +865,7 @@ impl SyncManager {
             let mut valid_peers = Vec::new();
             for (peer, &peer_height) in peer_heights.iter() {
                 if peer_height >= height {
-                    valid_peers.push(peer.clone());
+                    valid_peers.push(*peer);
                 }
             }
 
@@ -864,7 +876,7 @@ impl SyncManager {
             }
 
             let peer_idx = rand::random::<usize>() % valid_peers.len();
-            let peer = valid_peers[peer_idx].clone();
+            let peer = valid_peers[peer_idx];
 
             // Create sync info
             let info = BlockSyncInfo {
@@ -873,7 +885,7 @@ impl SyncManager {
                 height,
                 download_attempts: 1,
                 last_attempt: None,
-                peer_id: Some(peer.clone()),
+                peer_id: Some(peer),
             };
 
             downloading.insert(hash, info);
@@ -888,7 +900,7 @@ impl SyncManager {
             };
 
             if let Err(e) = self.network_sender.send(message).await {
-                warn!("Failed to send block request: {}", e);
+                warn!("Failed to send block request: {e}");
             }
         }
 
@@ -957,7 +969,7 @@ impl SyncManager {
             let message = NetworkMessage::TransactionGossip(tx.clone());
 
             if let Err(e) = self.network_sender.send(message).await {
-                warn!("Failed to rebroadcast transaction: {}", e);
+                warn!("Failed to rebroadcast transaction: {e}");
             }
         }
 

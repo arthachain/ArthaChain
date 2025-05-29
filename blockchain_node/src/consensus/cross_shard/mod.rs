@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 
 use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use sysinfo::System;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -30,7 +31,7 @@ pub mod integration;
 pub mod tests;
 
 // Re-export the coordinator
-pub use coordinator::{CrossShardCoordinator, ParticipantHandler, CoordinatorMessage, TxPhase};
+pub use coordinator::{CoordinatorMessage, CrossShardCoordinator, ParticipantHandler, TxPhase};
 // Re-export the enhanced manager
 pub use integration::EnhancedCrossShardManager;
 
@@ -49,7 +50,7 @@ pub enum MessageType {
 }
 
 // Simplified transaction structure to use in our implementation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossShardTransaction {
     /// Transaction hash
     pub tx_hash: String,
@@ -60,7 +61,7 @@ pub struct CrossShardTransaction {
     /// Status of the transaction
     pub status: CrossShardStatus,
     /// Timestamp when the transaction was created
-    pub created_at: std::time::Instant,
+    pub created_at: SystemTime,
 
     // Additional fields for compatibility with tests
     /// Legacy ID field (same as tx_hash)
@@ -78,8 +79,7 @@ pub struct CrossShardTransaction {
 impl CrossShardTransaction {
     /// Create a new cross-shard transaction
     pub fn new(tx_hash: String, from_shard: u32, to_shard: u32) -> Self {
-        let now = std::time::Instant::now();
-        let system_now = SystemTime::now();
+        let now = SystemTime::now();
 
         Self {
             tx_hash: tx_hash.clone(),
@@ -92,7 +92,7 @@ impl CrossShardTransaction {
             source_shard: from_shard as u64,
             target_shard: to_shard as u64,
             data: Vec::new(),
-            timestamp: system_now,
+            timestamp: now,
         }
     }
 }

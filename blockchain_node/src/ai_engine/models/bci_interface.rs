@@ -178,11 +178,8 @@ impl BCIModel {
             }
 
             // Extract window
-            let window: Vec<Vec<f32>> = self.signal_buffer
-                [window_start..(window_start + window_size)]
-                .iter()
-                .cloned()
-                .collect();
+            let window: Vec<Vec<f32>> =
+                self.signal_buffer[window_start..(window_start + window_size)].to_vec();
 
             // Apply filtering
             let filtered = self.apply_filter(&window)?;
@@ -212,7 +209,7 @@ impl BCIModel {
 
     /// Detect spikes in filtered signal
     fn detect_spikes(&mut self, filtered: &[Vec<f32>], start_time: u64) {
-        for (_i, channel) in filtered.iter().enumerate() {
+        for channel in filtered.iter() {
             for (j, &sample) in channel.iter().enumerate() {
                 if sample.abs() > self.signal_params.borrow().spike_threshold {
                     let timestamp = start_time + j as u64;
@@ -286,7 +283,7 @@ impl BCIModel {
         // Save neural base
         {
             let neural_base = self.neural_base.read().await;
-            neural_base.save(&format!("{}/neural_base.pt", path))?;
+            neural_base.save(&format!("{path}/neural_base.pt"))?;
         }
 
         // Save signal params and current state
@@ -296,7 +293,7 @@ impl BCIModel {
         };
 
         let serialized = serde_json::to_string_pretty(&state)?;
-        std::fs::write(&format!("{}/state.json", path), serialized)?;
+        std::fs::write(format!("{path}/state.json"), serialized)?;
 
         Ok(())
     }
@@ -306,11 +303,11 @@ impl BCIModel {
         // Load neural base
         {
             let mut neural_base = self.neural_base.write().await;
-            neural_base.load(&format!("{}/neural_base.pt", path))?;
+            neural_base.load(&format!("{path}/neural_base.pt"))?;
         }
 
         // Load signal params and current state
-        let state_path = format!("{}/state.json", path);
+        let state_path = format!("{path}/state.json");
         if std::path::Path::new(&state_path).exists() {
             let serialized = std::fs::read_to_string(&state_path)?;
             let state: BCIModelState = serde_json::from_str(&serialized)?;

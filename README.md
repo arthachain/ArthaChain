@@ -64,6 +64,12 @@ Artha Chain implements cutting-edge optimizations to achieve up to 500,000 trans
    - Reliable UDP with congestion control and selective acknowledgment
    - Message fragmentation and reassembly for large payloads
 
+6. **Quantum-Resistant Performance Optimizations**
+   - Adaptive gossip protocol with peer count monitoring
+   - Enhanced mempool with TTL, prioritization, and efficient transaction management
+   - Quantum-resistant Merkle proof generator and verifier for light clients
+   - Advanced caching strategies for frequently accessed state
+
 ### Benchmark Results
 
 Our benchmarks demonstrate impressive performance:
@@ -174,6 +180,13 @@ arthachain/
 └── sdk/                     # Development SDKs
 ```
 
+### Documentation
+
+- [Quantum-Resistant Performance Optimizations](docs/performance_optimizations.md)
+- [SVCP Consensus Protocol](docs/consensus.md)
+- [Network Protocol](docs/network.md)
+- [API Reference](docs/api.md)
+
 ### Building for Development
 
 ```bash
@@ -220,7 +233,12 @@ The project has a well-structured architecture with many components in place, bu
 #### Medium Priority Components
 
 1. **Storage Systems**
-   - Complete MemMapStorage backend implementation
+   - ✅ MemMapStorage backend implementation (completed)
+     - Memory-mapped file storage with key-value support
+     - Hash-based content addressing
+     - Concurrent read/write operations
+     - Adaptive compression (LZ4, Zstd, Brotli)
+     - Secondary indexing for fast key lookups
    - Implement storage verification mechanisms
    - Enhance hybrid storage for cross-shard operations
 
@@ -451,3 +469,15 @@ These models are used within the Rust codebase via PyO3 bindings. The `NeuralBas
 ## Mock Implementation
 
 For environments where PyTorch cannot be installed, a mock implementation is provided in `mock_torch.py`. This allows the codebase to compile and run basic tests without requiring the full PyTorch installation.
+
+## WebAssembly Smart Contract Engine
+
+The blockchain includes a secure and efficient WebAssembly (WASM) VM for executing smart contracts. Key features include:
+
+- Full WASM runtime integration for secure contract execution
+- Host functions for blockchain interaction (storage, context, crypto)
+- Detailed gas metering for resource accounting
+- Error isolation with automatic state rollback
+- Support for contracts written in multiple languages (Rust, AssemblyScript, etc.)
+
+See [WASM Smart Contracts](docs/wasm_smart_contracts.md) for detailed documentation.

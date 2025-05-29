@@ -5,7 +5,8 @@ use crate::ledger::transaction::Transaction;
 use crate::ledger::transaction::TransactionType;
 use anyhow::{anyhow, Result};
 use log::{debug, info, warn};
-use ort::Environment;
+use ort::environment::{get_environment, Environment};
+use ort::session::Session;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -210,8 +211,7 @@ impl NodeScore {
                 }
 
                 debug!(
-                    "Applied score decay: +{:.4} recovery after {} days for node",
-                    applied_recovery, days
+                    "Applied score decay: +{applied_recovery:.4} recovery after {days} days for node"
                 );
             }
 
@@ -302,7 +302,7 @@ pub struct ScoringWeights {
 
 impl ScoringWeights {
     /// Create default scoring weights
-    pub fn default() -> Self {
+    pub fn create_default() -> Self {
         ScoringWeights {
             device_health_weight: 0.2,
             network_weight: 0.2,
@@ -342,7 +342,7 @@ impl ScoringWeights {
             + engagement_weight
             + ai_behavior_weight;
         if (sum - 1.0).abs() > 0.001 {
-            return Err(anyhow!("Weights must sum to 1.0, got {}", sum));
+            return Err(anyhow!("Weights must sum to 1.0, got {sum}"));
         }
 
         Ok(Self {
@@ -371,19 +371,19 @@ pub struct SecurityAI {
     ort_environment: Arc<Environment>,
     /// Device health model
     #[allow(dead_code)]
-    device_health_model: Option<Arc<ort::Session>>,
+    device_health_model: Option<Arc<Session>>,
     /// Network model
     #[allow(dead_code)]
-    network_model: Option<Arc<ort::Session>>,
+    network_model: Option<Arc<Session>>,
     /// Storage model
     #[allow(dead_code)]
-    storage_model: Option<Arc<ort::Session>>,
+    storage_model: Option<Arc<Session>>,
     /// Engagement model
     #[allow(dead_code)]
-    engagement_model: Option<Arc<ort::Session>>,
+    engagement_model: Option<Arc<Session>>,
     /// AI behavior model
     #[allow(dead_code)]
-    ai_behavior_model: Option<Arc<ort::Session>>,
+    ai_behavior_model: Option<Arc<Session>>,
     /// Scoring weights
     scoring_weights: Arc<tokio::sync::RwLock<ScoringWeights>>,
     /// Running flag
@@ -399,11 +399,7 @@ impl SecurityAI {
     /// Create a new SecurityAI instance
     pub fn new(config: Config, state: Arc<RwLock<State>>) -> Result<Self> {
         // Initialize ONNX Runtime
-        let ort_environment = Environment::builder()
-            .with_name("security_ai")
-            .with_log_level(ort::LoggingLevel::Warning)
-            .build()?
-            .into_arc();
+        let ort_environment = get_environment()?;
 
         // Get remote API endpoint from config or environment
         let remote_api_endpoint = std::env::var("SECURITY_AI_REMOTE_ENDPOINT").ok();
@@ -423,7 +419,7 @@ impl SecurityAI {
             storage_model: None,
             engagement_model: None,
             ai_behavior_model: None,
-            scoring_weights: Arc::new(tokio::sync::RwLock::new(ScoringWeights::default())),
+            scoring_weights: Arc::new(tokio::sync::RwLock::new(ScoringWeights::create_default())),
             running: AtomicBool::new(false),
             execution_mode,
             remote_api_endpoint,
@@ -506,7 +502,7 @@ impl SecurityAI {
                 // For distilled models, we use a specific subfolder
                 let distilled_dir = model_dir.join("distilled");
                 if !distilled_dir.exists() {
-                    warn!("Distilled models directory not found: {:?}", distilled_dir);
+                    warn!("Distilled models directory not found: {distilled_dir:?}");
                     std::fs::create_dir_all(&distilled_dir)?;
                 }
 
@@ -546,7 +542,7 @@ impl SecurityAI {
             if !versions.is_empty() {
                 versions.sort();
                 let latest_version = versions.last().unwrap().clone();
-                info!("Using latest model version: {}", latest_version);
+                info!("Using latest model version: {latest_version}");
                 model_dir.join(latest_version)
             } else {
                 // No versioned directories found, use base directory
@@ -558,12 +554,11 @@ impl SecurityAI {
             let version_dir = model_dir.join(&requested_version);
             if !version_dir.exists() {
                 warn!(
-                    "Requested model version {} not found, falling back to base directory",
-                    requested_version
+                    "Requested model version {requested_version} not found, falling back to base directory"
                 );
                 model_dir.clone()
             } else {
-                info!("Using requested model version: {}", requested_version);
+                info!("Using requested model version: {requested_version}");
                 version_dir
             }
         };
@@ -573,16 +568,13 @@ impl SecurityAI {
             std::fs::create_dir_all(&model_base_dir)?;
 
             // Log a warning that we're creating the model directory
-            warn!(
-                "Model directory does not exist, creating: {:?}",
-                model_base_dir
-            );
+            warn!("Model directory does not exist, creating: {model_base_dir:?}");
 
             // No models to load yet, so return early
             return Ok(());
         }
 
-        info!("Loading AI models from {:?}", model_base_dir);
+        info!("Loading AI models from {model_base_dir:?}");
 
         // Call helper to load models from the selected directory
         self.load_models_from_dir(&model_base_dir).await
@@ -591,7 +583,7 @@ impl SecurityAI {
     /// Helper to load models from a specific directory
     async fn load_models_from_dir(&mut self, dir_path: &std::path::Path) -> Result<()> {
         // Log that we're loading models
-        info!("Loading AI models from {:?}", dir_path);
+        info!("Loading AI models from {dir_path:?}");
 
         // For now, we'll set the models to None and use fallback calculations
         // In a real implementation, we would load ONNX models here
@@ -611,7 +603,7 @@ impl SecurityAI {
     /// Evaluate a transaction for security risks
     pub async fn evaluate_transaction(&self, transaction: &Transaction) -> Result<f64> {
         // Check if we already have a score for this transaction
-        let tx_hash = transaction.hash();
+        let tx_hash = transaction.hash().to_string();
 
         let mut scores = self.transaction_scores.lock().await;
 
@@ -795,7 +787,7 @@ impl SecurityAI {
         }
 
         // Ensure score is between 0 and 1
-        score.max(0.0f32).min(1.0f32)
+        score.clamp(0.0f32, 1.0f32)
     }
 
     /// Calculate score based on storage metrics
@@ -809,7 +801,7 @@ impl SecurityAI {
         } else if metrics.storage_provided > 10 * 1024 * 1024 * 1024 {
             // More than 10GB
             score += 0.2;
-        } else if metrics.storage_provided > 1 * 1024 * 1024 * 1024 {
+        } else if metrics.storage_provided > 1024 * 1024 * 1024 {
             // More than 1GB
             score += 0.1;
         }
@@ -825,7 +817,7 @@ impl SecurityAI {
         }
 
         // Ensure score is between 0 and 1
-        score.max(0.0f32).min(1.0f32)
+        score.clamp(0.0f32, 1.0f32)
     }
 
     /// Calculate score based on engagement metrics
@@ -849,7 +841,7 @@ impl SecurityAI {
         score += 0.2;
 
         // Ensure score is between 0 and 1
-        score.max(0.0f32).min(1.0f32)
+        score.clamp(0.0f32, 1.0f32)
     }
 
     /// Calculate score based on AI behavior metrics
@@ -866,7 +858,7 @@ impl SecurityAI {
         score -= metrics.pattern_consistency * 0.3;
 
         // Ensure score is between 0 and 1
-        score.max(0.0f32).min(1.0f32)
+        score.clamp(0.0f32, 1.0f32)
     }
 
     /// Remove a node's scoring data
@@ -902,8 +894,7 @@ impl SecurityAI {
         // Choose execution mode based on device capabilities
         self.execution_mode = if available_memory < 512 || cpu_cores < 2 {
             info!(
-                "Low-resource device detected: {}MB RAM, {} cores. Using remote inference mode.",
-                available_memory, cpu_cores
+                "Low-resource device detected: {available_memory}MB RAM, {cpu_cores} cores. Using remote inference mode."
             );
 
             // Check if remote endpoint is configured
@@ -915,14 +906,12 @@ impl SecurityAI {
             }
         } else if available_memory < 2048 || cpu_cores < 4 {
             info!(
-                "Medium-resource device detected: {}MB RAM, {} cores. Using distilled model mode.",
-                available_memory, cpu_cores
+                "Medium-resource device detected: {available_memory}MB RAM, {cpu_cores} cores. Using distilled model mode."
             );
             AIExecutionMode::Distilled
         } else {
             info!(
-                "High-resource device detected: {}MB RAM, {} cores. Using full local inference.",
-                available_memory, cpu_cores
+                "High-resource device detected: {available_memory}MB RAM, {cpu_cores} cores. Using full local inference."
             );
             AIExecutionMode::Local
         };
@@ -954,10 +943,7 @@ impl SecurityAI {
             .as_ref()
             .ok_or_else(|| anyhow!("Remote inference requested but no endpoint configured"))?;
 
-        info!(
-            "Performing remote inference for {} model using endpoint {}",
-            model_type, endpoint
-        );
+        info!("Performing remote inference for {model_type} model using endpoint {endpoint}");
 
         // In a real implementation, this would call an API
         // For now, just return some reasonable defaults
@@ -968,8 +954,7 @@ impl SecurityAI {
             "engagement" => Ok(vec![0.7, 0.65, 0.75]),
             "ai_behavior" => Ok(vec![0.9, 0.85, 0.8]),
             _ => Err(anyhow!(
-                "Unknown model type for remote inference: {}",
-                model_type
+                "Unknown model type for remote inference: {model_type}"
             )),
         }
     }
@@ -988,7 +973,7 @@ impl SecurityAI {
                 if let Err(e) =
                     update_security_scores(&state, &node_scores, &transaction_scores).await
                 {
-                    warn!("Failed to update security scores: {}", e);
+                    warn!("Failed to update security scores: {e}");
                 }
             }
         });
@@ -1019,7 +1004,7 @@ async fn update_security_scores(
             // Add a small random adjustment
             let mut rng = thread_rng();
             let adjustment = (rng.gen::<f32>() - 0.5) * 0.05;
-            score.overall_score = (score.overall_score + adjustment).max(0.0).min(1.0);
+            score.overall_score = (score.overall_score + adjustment).clamp(0.0, 1.0);
         }
     }
 
@@ -1138,7 +1123,6 @@ mod tests {
             10,     // gas_price
             100,    // gas_limit
             vec![], // data
-            vec![], // signature
         );
 
         let result = security.evaluate_transaction(&transaction).await.unwrap();
@@ -1182,7 +1166,7 @@ mod tests {
                 redundancy_level: 3.0,
                 integrity_violations: 0,
                 storage_uptime: 0.99,
-                storage_growth_rate: 1 * 1024 * 1024, // 1 MB/day
+                storage_growth_rate: 1024 * 1024, // 1 MB/day
             },
             engagement: EngagementMetrics {
                 validation_participation: 0.98,

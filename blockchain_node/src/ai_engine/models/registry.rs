@@ -12,10 +12,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
 
+/// Type alias for neural network model storage
+type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>;
+
 /// Central registry for all AI models
 pub struct ModelRegistry {
     /// Neural network models
-    neural_models: Arc<RwLock<HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>>>,
+    neural_models: Arc<RwLock<NeuralModelMap>>,
     /// Self-learning systems
     learning_systems: Arc<RwLock<HashMap<String, Arc<RwLock<SelfLearningSystem>>>>>,
     /// BCI models
@@ -215,29 +218,29 @@ impl ModelRegistry {
         // Save neural models
         for (name, model) in self.neural_models.read().await.iter() {
             let model = model.read().await;
-            let path = format!("{}/neural_{}", base_path, name);
+            let path = format!("{base_path}/neural_{name}");
             model.save(&path)?;
         }
 
         // Save learning systems
         for (name, system) in self.learning_systems.read().await.iter() {
             // For SelfLearningSystem, we need a different approach
-            let path = format!("{}/learning_{}", base_path, name);
+            let path = format!("{base_path}/learning_{name}");
             let guard = system.read().await;
             if let Err(e) = self.save_learning_system(&guard, &path).await {
-                log::warn!("Failed to save learning system {}: {}", name, e);
+                log::warn!("Failed to save learning system {name}: {e}");
             }
         }
 
         // Save BCI models
         for (name, model) in self.bci_models.read().await.iter() {
             let model = model.read().await;
-            let path = format!("{}/bci_{}", base_path, name);
+            let path = format!("{base_path}/bci_{name}");
             model.save(&path).await?;
         }
 
         // Save metadata - clone the HashMap from the guard to avoid serializing the guard itself
-        let metadata_path = format!("{}/metadata.json", base_path);
+        let metadata_path = format!("{base_path}/metadata.json");
         let metadata_clone = {
             let guard = self.metadata.read().await;
             guard.clone()
@@ -266,7 +269,7 @@ impl ModelRegistry {
         let base_path = &self.config.storage.base_path;
 
         // Load metadata first
-        let metadata_path = format!("{}/metadata.json", base_path);
+        let metadata_path = format!("{base_path}/metadata.json");
         if std::path::Path::new(&metadata_path).exists() {
             let metadata_str = std::fs::read_to_string(&metadata_path)?;
             let loaded_metadata: HashMap<String, ModelMetadata> =
@@ -286,13 +289,13 @@ impl ModelRegistry {
                     ModelType::NeuralNetwork => {
                         if let Ok(model) = self.get_neural_model(name).await {
                             let mut model = model.write().await;
-                            let path = format!("{}/neural_{}", base_path, name);
+                            let path = format!("{base_path}/neural_{name}");
                             model.load(&path)?;
                         }
                     }
                     ModelType::Custom(ref custom_name) => {
                         if let Ok(system) = self.get_learning_system(custom_name).await {
-                            let path = format!("{}/learning_{}", base_path, name);
+                            let path = format!("{base_path}/learning_{name}");
                             // Use a helper method to load the system
                             self.load_learning_system(&system, &path).await?;
                         }
@@ -300,10 +303,10 @@ impl ModelRegistry {
                     ModelType::BCI => {
                         if let Ok(model) = self.get_bci_model(name).await {
                             let model = model.write().await;
-                            let path = format!("{}/bci_{}", base_path, name);
+                            let path = format!("{base_path}/bci_{name}");
                             // Call the load method if available or implement an alternative
                             if let Err(e) = self.load_bci_model(&model, &path).await {
-                                log::warn!("Failed to load BCI model {}: {}", name, e);
+                                log::warn!("Failed to load BCI model {name}: {e}");
                             }
                         }
                     }
@@ -380,7 +383,7 @@ impl ModelRegistry {
     pub async fn get_models_snapshot(&self) -> Vec<ModelMetadata> {
         let mut models: Vec<_> = {
             let metadata_guard = self.metadata.read().await;
-            metadata_guard.iter().map(|(_, v)| v.clone()).collect()
+            metadata_guard.values().cloned().collect()
         };
         models.sort_by_key(|m| m.updated_at);
         models

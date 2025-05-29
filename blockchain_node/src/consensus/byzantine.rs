@@ -677,7 +677,7 @@ impl ByzantineManager {
         // Generate a placeholder block hash
         let mut rng = rand::thread_rng();
         let mut block_hash = Vec::with_capacity(32);
-        
+
         // Fill with 32 random bytes using u8 range instead of gen::<u8>()
         for _ in 0..32 {
             // Generate a random u8 (0-255)

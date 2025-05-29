@@ -1,15 +1,12 @@
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use anyhow::Result;
 use numpy::PyArray2;
-use serde::{Serialize, Deserialize};
-use anyhow::{Result, anyhow};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use log::{info, warn, debug};
 
 /// Graph-based identity model using PyTorch
 pub struct GraphIdentityModel {
-    /// Python interpreter
-    py_interpreter: Python<'static>,
     /// PyTorch model
     model: PyObject,
     /// Model parameters
@@ -53,22 +50,21 @@ struct Normalizer {
 impl GraphIdentityModel {
     /// Create a new graph-based identity model
     pub fn new(params: ModelParams) -> Result<Self> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let model = Python::with_gil(|py| -> PyResult<PyObject> {
+            // Import required Python modules
+            let _torch = py.import_bound("torch")?;
+            let torch_geometric = py.import_bound("torch_geometric")?;
+            let _nn = py.import_bound("torch.nn")?;
+            let _gat = torch_geometric.getattr("nn")?.getattr("GATConv")?;
 
-        // Import required Python modules
-        let torch = py.import("torch")?;
-        let torch_geometric = py.import("torch_geometric")?;
-        let nn = py.import("torch.nn")?;
-        let gat = torch_geometric.getattr("nn")?.getattr("GATConv")?;
+            // Define model architecture in Python
+            let model_code = PyDict::new_bound(py);
+            model_code.set_item("hidden_dims", params.hidden_dims.clone())?;
+            model_code.set_item("num_heads", params.num_heads)?;
+            model_code.set_item("dropout", params.dropout)?;
 
-        // Define model architecture in Python
-        let model_code = PyDict::new(py);
-        model_code.set_item("hidden_dims", params.hidden_dims.clone())?;
-        model_code.set_item("num_heads", params.num_heads)?;
-        model_code.set_item("dropout", params.dropout)?;
-
-        let model = py.eval(r#"
+            let model = py.eval_bound(
+                r#"
 class GraphIdentityNet(torch.nn.Module):
     def __init__(self, in_channels, hidden_dims, num_heads, dropout):
         super().__init__()
@@ -100,7 +96,13 @@ model = GraphIdentityNet(
     num_heads=num_heads,
     dropout=dropout
 )
-"#, Some(model_code), None)?;
+"#,
+                Some(&model_code),
+                None,
+            )?;
+
+            Ok(model.into())
+        })?;
 
         // Initialize feature processor
         let feature_processor = FeatureProcessor {
@@ -120,8 +122,7 @@ model = GraphIdentityNet(
         };
 
         Ok(Self {
-            py_interpreter: py,
-            model: model.into(),
+            model,
             params,
             feature_processor,
         })
@@ -135,79 +136,90 @@ model = GraphIdentityNet(
         edge_features: &[Vec<f32>],
         labels: &[bool],
     ) -> Result<TrainingMetrics> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let (total_loss, correct, n_samples) =
+            Python::with_gil(|py| -> PyResult<(f32, usize, usize)> {
+                // Convert data to PyTorch tensors
+                let _torch = py.import_bound("torch")?;
 
-        // Convert data to PyTorch tensors
-        let torch = py.import("torch")?;
-        
-        let node_tensor = PyArray2::from_vec2(py, node_features)?
-            .call_method0("to_torch")?;
-        
-        let edge_index_tensor = PyArray2::from_vec2(
-            py,
-            &edge_index.iter()
-                .map(|&(i, j)| vec![i as i64, j as i64])
-                .collect::<Vec<_>>()
-        )?.call_method0("to_torch")?;
-        
-        let edge_attr_tensor = PyArray2::from_vec2(py, edge_features)?
-            .call_method0("to_torch")?;
-        
-        let labels_tensor = PyArray2::from_vec2(
-            py,
-            &labels.iter()
-                .map(|&b| vec![if b { 1.0 } else { 0.0 }])
-                .collect::<Vec<_>>()
-        )?.call_method0("to_torch")?;
+                let node_tensor =
+                    PyArray2::from_vec2_bound(py, node_features)?.call_method0("to_torch")?;
 
-        // Train model
-        let optimizer = py.eval(
-            &format!(
-                "torch.optim.Adam(model.parameters(), lr={})",
-                self.params.learning_rate
-            ),
-            None,
-            None
-        )?;
+                let edge_index_tensor = PyArray2::from_vec2_bound(
+                    py,
+                    &edge_index
+                        .iter()
+                        .map(|&(i, j)| vec![i as i64, j as i64])
+                        .collect::<Vec<_>>(),
+                )?
+                .call_method0("to_torch")?;
 
-        let mut total_loss = 0.0;
-        let mut correct = 0;
-        let n_samples = labels.len();
+                let edge_attr_tensor =
+                    PyArray2::from_vec2_bound(py, edge_features)?.call_method0("to_torch")?;
 
-        for _ in 0..100 { // Number of epochs
-            // Forward pass
-            let output = self.model.call_method1(
-                py,
-                "forward",
-                (node_tensor, edge_index_tensor, edge_attr_tensor)
-            )?;
+                let labels_tensor = PyArray2::from_vec2_bound(
+                    py,
+                    &labels
+                        .iter()
+                        .map(|&b| vec![if b { 1.0 } else { 0.0 }])
+                        .collect::<Vec<_>>(),
+                )?
+                .call_method0("to_torch")?;
 
-            // Calculate loss
-            let loss = py.eval(
-                "F.binary_cross_entropy(output, labels)",
-                Some([("output", output), ("labels", labels_tensor)].into_py_dict(py)),
-                None
-            )?.extract::<f32>()?;
+                // Train model
+                let optimizer = py.eval_bound(
+                    &format!(
+                        "torch.optim.Adam(model.parameters(), lr={})",
+                        self.params.learning_rate
+                    ),
+                    None,
+                    None,
+                )?;
 
-            // Backward pass and optimize
-            optimizer.call_method0("zero_grad")?;
-            loss.call_method0("backward")?;
-            optimizer.call_method0("step")?;
+                let mut total_loss = 0.0;
+                let mut correct = 0;
+                let n_samples = labels.len();
 
-            total_loss += loss;
+                for _ in 0..100 {
+                    // Number of epochs
+                    // Forward pass
+                    let output = self.model.call_method1(
+                        py,
+                        "forward",
+                        (&node_tensor, &edge_index_tensor, &edge_attr_tensor),
+                    )?;
 
-            // Calculate accuracy
-            let predictions = output.call_method1(
-                "gt",
-                (self.params.verification_threshold,)
-            )?.extract::<Vec<bool>>()?;
-            
-            correct += predictions.iter()
-                .zip(labels.iter())
-                .filter(|&(p, l)| p == l)
-                .count();
-        }
+                    // Calculate loss
+                    let loss_dict = PyDict::new_bound(py);
+                    loss_dict.set_item("output", &output)?;
+                    loss_dict.set_item("labels", &labels_tensor)?;
+
+                    let loss = py.eval_bound(
+                        "F.binary_cross_entropy(output, labels)",
+                        Some(&loss_dict),
+                        None,
+                    )?;
+
+                    // Backward pass and optimize
+                    optimizer.call_method0("zero_grad")?;
+                    loss.call_method0("backward")?;
+                    optimizer.call_method0("step")?;
+
+                    total_loss += loss.extract::<f32>()?;
+
+                    // Calculate accuracy
+                    let predictions = output
+                        .call_method1(py, "gt", (self.params.verification_threshold,))?
+                        .extract::<Vec<bool>>(py)?;
+
+                    correct += predictions
+                        .iter()
+                        .zip(labels.iter())
+                        .filter(|&(p, l)| p == l)
+                        .count();
+                }
+
+                Ok((total_loss, correct, n_samples))
+            })?;
 
         Ok(TrainingMetrics {
             average_loss: total_loss / 100.0,
@@ -222,46 +234,55 @@ model = GraphIdentityNet(
         neighbors: &[(usize, Vec<f32>)],
         edge_features: &[Vec<f32>],
     ) -> Result<IdentityVerification> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
         // Prepare input data
-        let node_data = self.feature_processor.process_node_features(node_features)?;
-        let edge_data = self.feature_processor.process_edge_features(edge_features)?;
+        let node_data = self
+            .feature_processor
+            .process_node_features(node_features)?;
+        let edge_data = self
+            .feature_processor
+            .process_edge_features(edge_features)?;
 
-        // Convert to PyTorch tensors
-        let torch = py.import("torch")?;
-        
-        let node_tensor = PyArray2::from_vec2(py, &[node_data])?
-            .call_method0("to_torch")?;
-        
-        let neighbor_tensor = PyArray2::from_vec2(
-            py,
-            &neighbors.iter()
-                .map(|(idx, _)| vec![0, *idx as i64])
-                .collect::<Vec<_>>()
-        )?.call_method0("to_torch")?;
-        
-        let edge_tensor = PyArray2::from_vec2(py, &edge_data)?
-            .call_method0("to_torch")?;
+        let (confidence, importance) =
+            Python::with_gil(|py| -> PyResult<(f32, HashMap<String, f32>)> {
+                // Convert to PyTorch tensors
+                let _torch = py.import_bound("torch")?;
 
-        // Get model prediction
-        let output = self.model.call_method1(
-            py,
-            "forward",
-            (node_tensor, neighbor_tensor, edge_tensor)
-        )?;
+                let node_tensor = PyArray2::from_vec2_bound(py, &[node_data.clone()])?
+                    .call_method0("to_torch")?;
 
-        let confidence = output.extract::<f32>()?;
+                let neighbor_tensor = PyArray2::from_vec2_bound(
+                    py,
+                    &neighbors
+                        .iter()
+                        .map(|(idx, _)| vec![0, *idx as i64])
+                        .collect::<Vec<_>>(),
+                )?
+                .call_method0("to_torch")?;
+
+                let edge_tensor =
+                    PyArray2::from_vec2_bound(py, &edge_data)?.call_method0("to_torch")?;
+
+                // Get model prediction
+                let output = self.model.call_method1(
+                    py,
+                    "forward",
+                    (&node_tensor, &neighbor_tensor, &edge_tensor),
+                )?;
+
+                let confidence = output.extract::<f32>(py)?;
+
+                // Calculate feature importance
+                let importance = self.calculate_feature_importance(
+                    py,
+                    node_tensor.into(),
+                    neighbor_tensor.into(),
+                    edge_tensor.into(),
+                )?;
+
+                Ok((confidence, importance))
+            })?;
+
         let is_verified = confidence >= self.params.verification_threshold;
-
-        // Calculate feature importance
-        let importance = self.calculate_feature_importance(
-            py,
-            node_tensor,
-            neighbor_tensor,
-            edge_tensor
-        )?;
 
         Ok(IdentityVerification {
             is_verified,
@@ -278,18 +299,17 @@ model = GraphIdentityNet(
         node_features: PyObject,
         edge_index: PyObject,
         edge_attr: PyObject,
-    ) -> Result<HashMap<String, f32>> {
-        let captum = py.import("captum.attr")?;
+    ) -> PyResult<HashMap<String, f32>> {
+        let captum = py.import_bound("captum.attr")?;
         let integrated_gradients = captum.getattr("IntegratedGradients")?;
 
         // Initialize integrated gradients
-        let ig = integrated_gradients.call1((self.model,))?;
+        let ig = integrated_gradients.call1((&self.model.clone_ref(py),))?;
 
         // Calculate attributions
-        let attributions = ig.call_method1(
-            "attribute",
-            (node_features, edge_index, edge_attr)
-        )?.extract::<Vec<f32>>()?;
+        let attributions = ig
+            .call_method1("attribute", (&node_features, &edge_index, &edge_attr))?
+            .extract::<Vec<f32>>()?;
 
         // Map attributions to features
         let mut importance = HashMap::new();
@@ -353,4 +373,4 @@ impl FeatureProcessor {
         }
         Ok(processed)
     }
-} 
+}

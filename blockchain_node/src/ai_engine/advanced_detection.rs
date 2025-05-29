@@ -288,7 +288,7 @@ impl AdvancedDetectionEngine {
         }
         
         // Normalize risk score
-        risk_score = risk_score.max(0.0).min(1.0);
+        risk_score = risk_score.clamp(0.0, 1.0);
         
         if risk_score > settings.min_confidence {
             Ok(Some(BehavioralPattern {

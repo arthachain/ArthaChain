@@ -1,13 +1,22 @@
 // Network modules will be implemented here
+pub mod adaptive_gossip;
 pub mod cross_shard;
 pub mod custom_udp;
+pub mod custom_udp_test;
 pub mod dos_protection;
+pub mod error;
+pub mod handler;
 pub mod handlers;
+pub mod message;
+pub mod nat;
+pub mod optimizer;
 pub mod p2p;
+pub mod peer;
 pub mod peer_reputation;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;
+pub mod transport;
 pub mod types;
 
 use anyhow::{anyhow, Result};
@@ -178,12 +187,12 @@ impl NetworkService {
                 if let Ok(socket_addr) = addr.parse::<SocketAddr>() {
                     match udp.connect(socket_addr).await {
                         Ok(_) => {
-                            info!("Connected to bootstrap node: {}", socket_addr);
+                            info!("Connected to bootstrap node: {socket_addr}");
                             let mut peers = self.peers.write().await;
                             peers.insert(socket_addr);
                         }
                         Err(e) => {
-                            warn!("Failed to connect to bootstrap node {}: {}", socket_addr, e);
+                            warn!("Failed to connect to bootstrap node {socket_addr}: {e}");
                         }
                     }
                 }

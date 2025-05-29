@@ -139,7 +139,7 @@ impl ParallelProcessor {
     pub fn update_miner_count(&self, count: usize) {
         let old_count = self.miner_count.swap(count, Ordering::SeqCst);
         if old_count != count {
-            info!("Miner count updated from {} to {}", old_count, count);
+            info!("Miner count updated from {old_count} to {count}");
         }
     }
 
@@ -156,8 +156,7 @@ impl ParallelProcessor {
         let new_batch_size = new_batch_size.min(self.max_batch_size);
 
         info!(
-            "Dynamic parameters: block_time={:.2}s, batch_size={} with {} miners",
-            new_block_time, new_batch_size, miner_count
+            "Dynamic parameters: block_time={new_block_time:.2}s, batch_size={new_batch_size} with {miner_count} miners"
         );
 
         BlockParameters {
@@ -188,10 +187,7 @@ impl ParallelProcessor {
         let base_batch_size = self.base_batch_size;
 
         let handle = tokio::spawn(async move {
-            info!(
-                "Parallel processor started with multiplier {}",
-                throughput_multiplier
-            );
+            info!("Parallel processor started with multiplier {throughput_multiplier}");
 
             let mut interval = tokio::time::interval(Duration::from_millis(100));
 
@@ -214,9 +210,7 @@ impl ParallelProcessor {
                     let state_guard = state.read().await;
                     state_guard.get_pending_transactions(batch_size)
                 };
-                // Convert to ledger::transaction::Transaction
-                let pending_txs: Vec<crate::ledger::transaction::Transaction> =
-                    pending_txs.into_iter().map(Into::into).collect();
+                // pending_txs is already Vec<crate::ledger::transaction::Transaction>
 
                 // Skip if no transactions
                 if pending_txs.is_empty() {
@@ -241,17 +235,17 @@ impl ParallelProcessor {
                                 Ok(merged_block) => {
                                     // Send block
                                     if let Err(e) = block_sender.send(merged_block).await {
-                                        warn!("Failed to send merged block: {}", e);
+                                        warn!("Failed to send merged block: {e}");
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Failed to merge blocks: {}", e);
+                                    warn!("Failed to merge blocks: {e}");
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to mine concurrent blocks: {}", e);
+                        warn!("Failed to mine concurrent blocks: {e}");
                     }
                 }
             }
@@ -286,16 +280,10 @@ impl ParallelProcessor {
         let use_work_stealing = self.config.use_work_stealing;
         let prefetch_enabled = self.config.prefetch_enabled;
 
-        info!(
-            "Starting optimized parallel processor with {} worker threads",
-            worker_threads
-        );
+        info!("Starting optimized parallel processor with {worker_threads} worker threads");
 
         let handle = tokio::spawn(async move {
-            info!(
-                "Optimized parallel processor started with multiplier {}",
-                throughput_multiplier
-            );
+            info!("Optimized parallel processor started with multiplier {throughput_multiplier}");
 
             let mut interval = tokio::time::interval(Duration::from_millis(50)); // Faster polling interval
 
@@ -324,9 +312,7 @@ impl ParallelProcessor {
                     state_guard.get_pending_transactions(batch_size)
                 };
 
-                // Convert to ledger::transaction::Transaction
-                let pending_txs: Vec<crate::ledger::transaction::Transaction> =
-                    pending_txs.into_iter().map(Into::into).collect();
+                // pending_txs is already Vec<crate::ledger::transaction::Transaction>
 
                 // Skip if no transactions
                 if pending_txs.is_empty() {
@@ -356,17 +342,17 @@ impl ParallelProcessor {
                                 Ok(merged_block) => {
                                     // Send block with higher priority
                                     if let Err(e) = block_sender.send(merged_block).await {
-                                        warn!("Failed to send merged block: {}", e);
+                                        warn!("Failed to send merged block: {e}");
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Failed to merge blocks: {}", e);
+                                    warn!("Failed to merge blocks: {e}");
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to mine concurrent blocks: {}", e);
+                        warn!("Failed to mine concurrent blocks: {e}");
                     }
                 }
             }
@@ -435,8 +421,8 @@ impl ParallelProcessor {
         for handle in handles {
             match handle.await {
                 Ok(Ok(block)) => blocks.push(block),
-                Ok(Err(e)) => warn!("Segment mining failed: {}", e),
-                Err(e) => warn!("Segment task failed: {}", e),
+                Ok(Err(e)) => warn!("Segment mining failed: {e}"),
+                Err(e) => warn!("Segment task failed: {e}"),
             }
         }
 
@@ -450,7 +436,7 @@ impl ParallelProcessor {
         state: Arc<RwLock<State>>,
     ) -> Result<Block> {
         if transactions.is_empty() {
-            return Err(anyhow!("No transactions to mine in segment {}", segment_id));
+            return Err(anyhow!("No transactions to mine in segment {segment_id}"));
         }
 
         // Get previous block hash and height
@@ -460,7 +446,7 @@ impl ParallelProcessor {
             let prev_hash = Hash::from_hex(&prev_hash)?;
             let height = state_guard.get_height()? + 1;
             let difficulty = 1; // Simple difficulty for parallel blocks
-            let node_id = format!("node_{}", segment_id); // Use segment ID in node ID
+            let node_id = format!("node_{segment_id}"); // Use segment ID in node ID
             let shard_id = 0; // Assuming main shard
             (prev_hash, height, difficulty, node_id, shard_id)
         };
@@ -481,8 +467,7 @@ impl ParallelProcessor {
         block.set_nonce(nonce);
 
         debug!(
-            "Mined segment {} block with {} transactions",
-            segment_id,
+            "Mined segment {segment_id} block with {} transactions",
             block.body.transactions.len()
         );
 
@@ -596,13 +581,12 @@ mod tests {
             .map(|i| {
                 Transaction::new(
                     crate::ledger::transaction::TransactionType::Transfer,
-                    format!("sender{}", i),
-                    format!("receiver{}", i),
+                    format!("sender{i}"),
+                    format!("receiver{i}"),
                     100,
                     i as u64,
                     10,
                     1000,
-                    Vec::new(),
                     Vec::new(),
                 )
             })

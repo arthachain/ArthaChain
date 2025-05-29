@@ -13,12 +13,14 @@ npm install svdb-sdk
 ### Basic Setup
 
 ```javascript
+const crypto = require('crypto');
 const SvdbClient = require('svdb-sdk');
 
 const client = new SvdbClient({
     baseUrl: 'http://your-svdb-server:8080',
     timeout: 30000, // optional, defaults to 30000ms
-    encryptionKey: 'your-32-byte-encryption-key' // optional, for encrypted storage
+    // optional, for encrypted storage; must be a 32-byte Buffer
+    encryptionKey: crypto.randomBytes(32)
 });
 ```
 

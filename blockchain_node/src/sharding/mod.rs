@@ -266,7 +266,7 @@ pub enum CrossShardMessageType {
 mod tests {
     use super::*;
     use crate::ledger::transaction::{Transaction, TransactionType};
-    
+
     // This is a placeholder for the Transaction struct if it doesn't exist yet
     #[cfg(test)]
     impl Transaction {
@@ -278,7 +278,7 @@ mod tests {
                 2 => TransactionType::Call,
                 _ => TransactionType::Transfer,
             };
-            
+
             Transaction::new(
                 transaction_type,
                 sender.to_string(),
@@ -288,11 +288,10 @@ mod tests {
                 10,     // gas_price
                 1000,   // gas_limit
                 vec![], // data
-                vec![], // signature
             )
         }
     }
-    
+
     #[test]
     fn test_shard_assignment() {
         let config = ShardingConfig {
@@ -302,34 +301,34 @@ mod tests {
             max_pending_cross_shard_refs: 100,
             num_shards: 4,
         };
-        
+
         let shard_manager = ShardManager::new(config, 0, Arc::new(MockStorage {}));
-        
+
         let tx1 = Transaction::new_test("user1", Some("user2"), 100, 0);
         let tx2 = Transaction::new_test("user3", Some("user4"), 200, 1);
-        
+
         let shard1 = shard_manager.assign_transaction_to_shard(&tx1);
         let shard2 = shard_manager.assign_transaction_to_shard(&tx2);
-        
+
         assert!(shard1 < 4, "Shard ID should be less than shard count");
         assert!(shard2 < 4, "Shard ID should be less than shard count");
     }
-    
+
     #[test]
     fn test_cross_shard_detection() {
         // This is a simplified test that would need to be adjusted based on actual implementation
         // It assumes that certain addresses will hash to different shards
         let config = ShardingConfig::default();
         let shard_manager = ShardManager::new(config, 0, Arc::new(MockStorage {}));
-        
+
         // These addresses are chosen to likely hash to different shards
         let tx = Transaction::new_test(
-            "0x1111111111111111111111111111111111111111", 
-            Some("0x9999999999999999999999999999999999999999"), 
-            100, 
+            "0x1111111111111111111111111111111111111111",
+            Some("0x9999999999999999999999999999999999999999"),
+            100,
             0,
         );
-        
+
         let involved_shards = shard_manager.get_involved_shards(&tx);
         assert!(
             involved_shards.len() > 0,

@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use crate::types::{BlockHash, TransactionHash, ShardId, NodeId};
+
 use super::types::SerializableInstant;
+
+// Define NodeId locally as a string type alias
+pub type NodeId = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkMessage {
@@ -41,16 +44,16 @@ pub enum MessagePayload {
         features: Vec<String>,
         timestamp: SystemTime,
     },
-    
+
     Ping {
         nonce: u64,
     },
-    
+
     Pong {
         nonce: u64,
         latency: u64,
     },
-    
+
     BlockProposal {
         block_hash: String,
         height: u64,
@@ -58,7 +61,7 @@ pub enum MessagePayload {
         timestamp: SystemTime,
         proposer: String,
     },
-    
+
     BlockVote {
         block_hash: String,
         height: u64,
@@ -66,7 +69,7 @@ pub enum MessagePayload {
         voter: String,
         signature: Vec<u8>,
     },
-    
+
     Transaction {
         tx_hash: String,
         from: String,
@@ -75,52 +78,52 @@ pub enum MessagePayload {
         nonce: u64,
         signature: Vec<u8>,
     },
-    
+
     TransactionBatch {
         transactions: Vec<String>,
         batch_id: String,
         shard_id: u64,
     },
-    
+
     StateSync {
         start_block: u64,
         end_block: u64,
         shard_id: u64,
         sync_type: SyncType,
     },
-    
+
     ViewChange {
         new_view: u64,
         reason: ViewChangeReason,
         proposer: String,
         signature: Vec<u8>,
     },
-    
+
     PeerDiscovery {
         node_id: String,
         address: String,
         port: u16,
         features: Vec<String>,
     },
-    
+
     PeerList {
         peers: Vec<PeerInfo>,
         timestamp: SystemTime,
     },
-    
+
     CrossShard {
         source_shard: u64,
         target_shard: u64,
         message_type: CrossShardMessageType,
         payload: Vec<u8>,
     },
-    
+
     Diagnostic {
         node_id: String,
         metrics: DiagnosticMetrics,
         timestamp: SystemTime,
     },
-    
+
     Error {
         code: u32,
         message: String,
@@ -192,11 +195,20 @@ pub struct LatencyStats {
     pub p99_latency: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub node_id: NodeId,
+    pub address: String,
+    pub port: u16,
+    pub version: String,
+    pub features: Vec<String>,
+}
+
 impl NetworkMessage {
     pub fn new(source: NodeId, target: Option<NodeId>, payload: MessagePayload) -> Self {
         let timestamp = SystemTime::now();
         let id = Self::generate_message_id(&source, &timestamp, &payload);
-        
+
         Self {
             id,
             timestamp,
@@ -209,10 +221,14 @@ impl NetworkMessage {
         }
     }
 
-    pub fn generate_message_id(source: &NodeId, timestamp: &SystemTime, payload: &MessagePayload) -> String {
-        use sha2::{Sha256, Digest};
+    pub fn generate_message_id(
+        source: &NodeId,
+        timestamp: &SystemTime,
+        payload: &MessagePayload,
+    ) -> String {
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        
+
         // Hash source + timestamp + serialized payload
         hasher.update(source.as_bytes());
         if let Ok(duration) = timestamp.duration_since(SystemTime::UNIX_EPOCH) {
@@ -222,18 +238,18 @@ impl NetworkMessage {
         if let Ok(payload_bytes) = bincode::serialize(payload) {
             hasher.update(payload_bytes);
         }
-        
+
         format!("{:x}", hasher.finalize())
     }
 
-    pub fn sign(&mut self, private_key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn sign(&mut self, _private_key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         // TODO: Implement actual signature generation
         self.signature = Some(vec![]);
         Ok(())
     }
 
-    pub fn verify(&self, public_key: &[u8]) -> Result<bool, Box<dyn std::error::Error>> {
+    pub fn verify(&self, _public_key: &[u8]) -> Result<bool, Box<dyn std::error::Error>> {
         // TODO: Implement actual signature verification
         Ok(true)
     }
-} 
+}

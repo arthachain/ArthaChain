@@ -4,7 +4,7 @@ use blockchain_node::execution::parallel::{
     ConflictStrategy, ParallelConfig, ParallelExecutionManager,
 };
 use blockchain_node::ledger::state::storage::StateStorage;
-use blockchain_node::ledger::state::tree::StateTree;
+use blockchain_node::ledger::state::State;
 use blockchain_node::transaction::Transaction;
 use criterion::{criterion_group, criterion_main, Criterion};
 use log::info;
@@ -17,7 +17,7 @@ pub struct PerformanceBenchmark {
     parallel: Arc<Mutex<ParallelExecutionManager>>,
     /// State tree
     #[allow(dead_code)]
-    state_tree: Arc<StateTree>,
+    state_tree: Arc<State>,
     /// State storage
     #[allow(dead_code)]
     storage: Arc<StateStorage>,
@@ -38,7 +38,7 @@ impl PerformanceBenchmark {
             decay_interval_secs: 3600,
         };
         let reputation = Arc::new(ReputationManager::new(reputation_config));
-        let state_tree = Arc::new(StateTree::new());
+        let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
         let storage = Arc::new(StateStorage::new());
 
         // Configure parallel execution
@@ -58,7 +58,14 @@ impl PerformanceBenchmark {
         let parallel = Arc::new(Mutex::new(ParallelExecutionManager::new(
             parallel_config,
             state_tree.clone(),
-            Arc::new(blockchain_node::execution::executor::TransactionExecutor::new()),
+            Arc::new(
+                blockchain_node::execution::executor::TransactionExecutor::new(
+                    None,      // wasm_executor: no WASM for benchmarks
+                    1.0,       // gas_price_adjustment
+                    1_000_000, // max_gas_limit
+                    1,         // min_gas_price
+                ),
+            ),
         )));
 
         Ok(Self {

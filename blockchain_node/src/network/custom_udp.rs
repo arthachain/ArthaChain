@@ -372,12 +372,8 @@ impl UdpNetwork {
         stats: &Arc<RwLock<NetworkStats>>,
     ) -> std::io::Result<()> {
         // Serialize message
-        let data = bincode::serialize(message).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!("Serialization error: {}", e),
-            )
-        })?;
+        let data = bincode::serialize(message)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, format!("Serialization error: {e}")))?;
 
         // Send data
         socket.send_to(&data, addr).await?;
@@ -479,7 +475,7 @@ impl UdpNetwork {
                                 break;
                             },
                             Err(e) => {
-                                log::error!("Error receiving shutdown signal: {}", e);
+                                log::error!("Error receiving shutdown signal: {e}");
                                 break;
                             }
                         }
@@ -496,11 +492,11 @@ impl UdpNetwork {
                                     &handlers_clone,
                                     &stats_clone
                                 ).await {
-                                    error!("Error handling incoming packet: {}", e);
+                                    error!("Error handling incoming packet: {e}");
                                 }
                             },
                             Err(e) => {
-                                error!("Error receiving data: {}", e);
+                                error!("Error receiving data: {e}");
                             }
                         }
                     }
@@ -524,7 +520,7 @@ impl UdpNetwork {
                                 break;
                             },
                             Err(e) => {
-                                log::error!("Error receiving shutdown signal: {}", e);
+                                log::error!("Error receiving shutdown signal: {e}");
                                 break;
                             }
                         }
@@ -541,7 +537,7 @@ impl UdpNetwork {
 
                         if let Some((message, addr)) = to_send {
                             if let Err(e) = Self::send_packet(&socket_clone, &message, addr, &peers_clone, &stats_clone).await {
-                                log::error!("Error sending packet: {}", e);
+                                log::error!("Error sending packet: {e}");
                             }
                         } else {
                             // No messages, sleep a bit longer
@@ -566,7 +562,7 @@ impl UdpNetwork {
                                 break;
                             },
                             Err(e) => {
-                                log::error!("Error in ping task shutdown: {}", e);
+                                log::error!("Error in ping task shutdown: {e}");
                                 break;
                             }
                         }
@@ -592,7 +588,7 @@ impl UdpNetwork {
                                 break;
                             },
                             Err(e) => {
-                                log::error!("Error in cleanup task shutdown: {}", e);
+                                log::error!("Error in cleanup task shutdown: {e}");
                                 break;
                             }
                         }
@@ -631,7 +627,7 @@ impl UdpNetwork {
                 stats_guard.invalid_packets += 1;
                 return Err(Error::new(
                     ErrorKind::InvalidData,
-                    format!("Error deserializing packet: {}", e),
+                    format!("Error deserializing packet: {e}"),
                 ));
             }
         };
@@ -643,7 +639,7 @@ impl UdpNetwork {
 
             // Get or create peer state
             let state = peers_guard.entry(addr).or_insert_with(|| {
-                debug!("New peer connected: {}", addr);
+                debug!("New peer connected: {addr}");
                 PeerState {
                     last_seen: now,
                     metrics: ConnectionMetrics::default(),
@@ -719,7 +715,7 @@ impl UdpNetwork {
 
             // Send ACK - in actual implementation we'd use self.send_message
             // For this example, we'll just log it
-            debug!("Would send ACK for message {}", msg_id);
+            debug!("Would send ACK for message {msg_id}");
         }
 
         // Process the message based on type
@@ -729,7 +725,7 @@ impl UdpNetwork {
         if let Some(handler) = handlers_guard.get(&msg_type) {
             // Send to appropriate handler
             if let Err(e) = handler.send(message.clone()).await {
-                error!("Error sending message to handler: {}", e);
+                error!("Error sending message to handler: {e}");
             }
         }
 
@@ -998,7 +994,7 @@ impl UdpNetwork {
         if !to_remove.is_empty() {
             let mut peers_guard = self.peers.write().await;
             for addr in to_remove {
-                debug!("Removing inactive peer: {}", addr);
+                debug!("Removing inactive peer: {addr}");
                 peers_guard.remove(&addr);
             }
         }

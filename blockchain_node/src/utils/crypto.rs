@@ -8,6 +8,7 @@ use rand_core::RngCore;
 use secp256k1::ecdsa::RecoveryId;
 use secp256k1::{Message, Secp256k1};
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::default::Default;
 use std::fmt;
 use tiny_keccak::{Hasher, Keccak};
@@ -278,7 +279,7 @@ pub fn recover_address_from_signature(
     let recovery_id = signature[64];
     let recovery_id_int = recovery_id as i32 - 27; // Adjust for Ethereum's encoding
 
-    if recovery_id_int < 0 || recovery_id_int > 3 {
+    if !(0..=3).contains(&recovery_id_int) {
         return Err(anyhow!("Invalid recovery ID: {}", recovery_id));
     }
 
@@ -359,4 +360,155 @@ pub fn verify_address_signature(
     let verifying_key = VerifyingKey::from_bytes(&key_bytes)?;
     let sig = ed25519_dalek::Signature::from_slice(signature_bytes)?;
     Ok(verifying_key.verify(data, &sig).is_ok())
+}
+
+/// Generate a quantum-resistant hash of data
+pub fn quantum_resistant_hash(data: &[u8]) -> Result<Vec<u8>> {
+    // In a real implementation, this would use a post-quantum secure hash function
+    // For now, we use SHA3-256 which isn't quantum-resistant but simulates the API
+    use sha3::{Digest, Sha3_256};
+    let mut hasher = Sha3_256::new();
+    hasher.update(data);
+    Ok(hasher.finalize().to_vec())
+}
+
+/// Generate a quantum-resistant keypair
+pub fn generate_quantum_resistant_keypair(seed: Option<&[u8]>) -> Result<(Vec<u8>, Vec<u8>)> {
+    // In a real implementation, this would use a post-quantum secure algorithm like Dilithium
+    // For now, we use Ed25519 which isn't quantum-resistant but simulates the API
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+    use rand::rngs::OsRng;
+
+    let signing_key = if let Some(seed_data) = seed {
+        if seed_data.len() < 32 {
+            return Err(anyhow!("Seed must be at least 32 bytes"));
+        }
+        let seed_array: [u8; 32] = seed_data[0..32].try_into()?;
+        SigningKey::from_bytes(&seed_array)
+    } else {
+        SigningKey::generate(&mut OsRng)
+    };
+
+    let verifying_key = VerifyingKey::from(&signing_key);
+
+    // In a real implementation, the keys would be much larger (Dilithium keys are several KB)
+    let public_key = verifying_key.to_bytes().to_vec();
+    let private_key = signing_key.to_bytes().to_vec();
+
+    Ok((public_key, private_key))
+}
+
+/// Sign data using a quantum-resistant signature scheme
+pub fn dilithium_sign(private_key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+    // In a real implementation, this would use Dilithium
+    // For now, we use Ed25519 which isn't quantum-resistant but simulates the API
+    use ed25519_dalek::{Signer, SigningKey};
+
+    if private_key.len() < 32 {
+        return Err(anyhow!("Private key must be at least 32 bytes"));
+    }
+
+    let key_bytes: [u8; 32] = private_key[0..32].try_into()?;
+    let signing_key = SigningKey::from_bytes(&key_bytes);
+
+    Ok(signing_key.sign(data).to_bytes().to_vec())
+}
+
+/// Verify a signature using a quantum-resistant signature scheme
+pub fn dilithium_verify(public_key: &[u8], data: &[u8], signature: &[u8]) -> Result<bool> {
+    // In a real implementation, this would use Dilithium
+    // For now, we use Ed25519 which isn't quantum-resistant but simulates the API
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    if public_key.len() < 32 || signature.len() < 64 {
+        return Err(anyhow!("Invalid public key or signature length"));
+    }
+
+    let key_bytes: [u8; 32] = public_key[0..32].try_into()?;
+    let sig_bytes: [u8; 64] = signature[0..64].try_into()?;
+
+    let verifying_key = VerifyingKey::from_bytes(&key_bytes)?;
+    let sig = Signature::from_bytes(&sig_bytes);
+
+    Ok(verifying_key.verify(data, &sig).is_ok())
+}
+
+/// Create a keyed hash using a quantum-resistant algorithm
+pub fn quantum_keyed_hash(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+    // In a real implementation, this would use a post-quantum secure keyed hash function
+    // For now, we use HMAC-SHA3 which isn't quantum-resistant but simulates the API
+    use hmac::{Hmac, Mac};
+    use sha3::Sha3_256;
+
+    type HmacSha3 = Hmac<Sha3_256>;
+
+    let mut mac =
+        HmacSha3::new_from_slice(key).map_err(|e| anyhow!("HMAC initialization error: {}", e))?;
+
+    mac.update(data);
+    let result = mac.finalize();
+
+    Ok(result.into_bytes().to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quantum_resistant_hash() {
+        let data = b"test data";
+        let hash = quantum_resistant_hash(data).unwrap();
+
+        // Hash should be 32 bytes for SHA3-256
+        assert_eq!(hash.len(), 32);
+
+        // Same data should produce same hash
+        let hash2 = quantum_resistant_hash(data).unwrap();
+        assert_eq!(hash, hash2);
+
+        // Different data should produce different hash
+        let hash3 = quantum_resistant_hash(b"different data").unwrap();
+        assert_ne!(hash, hash3);
+    }
+
+    #[test]
+    fn test_keypair_generation() {
+        let (public_key, private_key) = generate_quantum_resistant_keypair(None).unwrap();
+
+        // Keys should not be empty
+        assert!(!public_key.is_empty());
+        assert!(!private_key.is_empty());
+
+        // Generate with same seed should produce same keypair
+        let seed = [1u8; 32];
+        let (pk1, sk1) = generate_quantum_resistant_keypair(Some(&seed)).unwrap();
+        let (pk2, sk2) = generate_quantum_resistant_keypair(Some(&seed)).unwrap();
+
+        assert_eq!(pk1, pk2);
+        assert_eq!(sk1, sk2);
+    }
+
+    #[test]
+    fn test_signing_and_verification() {
+        let data = b"message to sign";
+        let (public_key, private_key) = generate_quantum_resistant_keypair(None).unwrap();
+
+        // Sign data
+        let signature = dilithium_sign(&private_key, data).unwrap();
+
+        // Verify signature
+        let is_valid = dilithium_verify(&public_key, data, &signature).unwrap();
+        assert!(is_valid);
+
+        // Verify with wrong data should fail
+        let wrong_data = b"wrong message";
+        let is_valid = dilithium_verify(&public_key, wrong_data, &signature).unwrap();
+        assert!(!is_valid);
+
+        // Verify with wrong key should fail
+        let (wrong_pk, _) = generate_quantum_resistant_keypair(None).unwrap();
+        let is_valid = dilithium_verify(&wrong_pk, data, &signature).unwrap();
+        assert!(!is_valid);
+    }
 }

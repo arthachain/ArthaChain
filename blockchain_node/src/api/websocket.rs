@@ -108,6 +108,12 @@ pub struct EventManager {
     pub consensus_tx: broadcast::Sender<ConsensusEvent>,
 }
 
+impl Default for EventManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventManager {
     /// Create a new event manager
     pub fn new() -> Self {
@@ -287,7 +293,7 @@ async fn handle_socket(socket: axum::extract::ws::WebSocket, _state: Arc<RwLock<
     });
 
     // Wait for either task to finish
-    let _ = tokio::select! {
+    tokio::select! {
         _ = &mut send_task => {
             recv_task.abort();
         },

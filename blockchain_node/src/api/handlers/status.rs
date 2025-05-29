@@ -67,29 +67,32 @@ pub async fn get_status(
 
     let height = state.get_height().map_err(|e| ApiError {
         status: 500,
-        message: format!("Failed to get height: {}", e),
+        message: format!("Failed to get height: {e}"),
     })?;
+
+    // Use placeholder values for now since we don't have monitoring service
+    let peer_count = 0;
+    let mempool_size = 0;
+    let uptime = 0;
 
     Ok(Json(StatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         network: "testnet".to_string(),
         height,
-        peers: 0,        // TODO: Implement peer count
-        mempool_size: 0, // TODO: Implement mempool size
-        uptime: 0,       // TODO: Implement uptime
+        peers: peer_count,
+        mempool_size,
+        uptime,
         sync_status: 100.0,
         mining_enabled: false,
         node_address: "0.0.0.0:8545".to_string(),
     }))
 }
 
-/// Get list of connected peers
-pub async fn get_peers(
-    Extension(_state): Extension<Arc<RwLock<State>>>,
-) -> Result<Json<PeerListResponse>, ApiError> {
-    // TODO: Get actual peers from the p2p network
-    // This is a placeholder that would be populated with real peer info
-    let peers = Vec::new();
-
-    Ok(Json(PeerListResponse { peers, total: 0 }))
+/// Get list of connected peers (deprecated - use network_monitoring::get_peers instead)
+pub async fn get_peers() -> Result<Json<PeerListResponse>, ApiError> {
+    // Return empty peer list for now
+    Ok(Json(PeerListResponse {
+        peers: Vec::new(),
+        total: 0,
+    }))
 }

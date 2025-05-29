@@ -23,7 +23,7 @@ use blockchain_node::execution::executor::TransactionExecutor;
 use blockchain_node::execution::parallel::{
     ConflictStrategy, ParallelConfig, ParallelExecutionManager,
 };
-use blockchain_node::ledger::state::StateTree;
+use blockchain_node::ledger::state::State;
 use blockchain_node::ledger::transaction::{Transaction, TransactionStatus, TransactionType};
 
 // Network benchmark configuration
@@ -41,11 +41,11 @@ struct NetworkBenchmarkConfig {
 // Network topology types
 #[derive(Debug, Clone)]
 enum NetworkTopology {
-    FullMesh,   // Every node connected to every other node
+    FullMesh, // Every node connected to every other node
     #[allow(dead_code)]
-    Ring,       // Each node connected to two neighbors
+    Ring, // Each node connected to two neighbors
     #[allow(dead_code)]
-    Star,       // All nodes connected to a central node
+    Star, // All nodes connected to a central node
     SmallWorld, // Realistic internet-like topology
 }
 
@@ -78,7 +78,7 @@ struct NetworkNode {
     blocks: Vec<Vec<String>>,             // Simplified blocks (just tx hashes)
     metrics: NodeMetrics,
     #[allow(dead_code)]
-    state_tree: Arc<StateTree>,
+    state_tree: Arc<State>,
 }
 
 // Metrics for each node
@@ -94,8 +94,13 @@ struct NodeMetrics {
 
 impl NetworkNode {
     fn new(id: usize, max_parallel: usize) -> Self {
-        let state_tree = Arc::new(StateTree::new());
-        let executor = Arc::new(TransactionExecutor::new());
+        let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
+        let executor = Arc::new(TransactionExecutor::new(
+            None,      // wasm_executor: no WASM for examples
+            1.0,       // gas_price_adjustment
+            1_000_000, // max_gas_limit
+            1,         // min_gas_price
+        ));
 
         let parallel_config = ParallelConfig {
             max_parallel,

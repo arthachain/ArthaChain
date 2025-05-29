@@ -118,7 +118,7 @@ pub async fn get_block_by_height(
         .map(|block| Json(BlockResponse::from(block)))
         .ok_or_else(|| ApiError {
             status: 404,
-            message: format!("Block at height {} not found", height),
+            message: format!("Block at height {height} not found"),
         })
 }
 
@@ -133,7 +133,7 @@ pub async fn get_blocks(
         .get_blocks(params.start, params.limit)
         .map_err(|e| ApiError {
             status: 500,
-            message: format!("Failed to get blocks: {}", e),
+            message: format!("Failed to get blocks: {e}"),
         })
         .map(|blocks| {
             let responses: Vec<BlockResponse> = blocks.iter().map(BlockResponse::from).collect();

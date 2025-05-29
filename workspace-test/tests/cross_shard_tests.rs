@@ -10,9 +10,10 @@ use workspace_test::blockchain_node::network::cross_shard::{
 };
 use workspace_test::blockchain_node::sharding::CrossShardStatus;
 
-async fn setup_consensus_test_environment() -> (CrossShardManager, mpsc::Sender<CrossShardMessage>) {
+async fn setup_consensus_test_environment() -> (CrossShardManager, mpsc::Sender<CrossShardMessage>)
+{
     let (tx, _rx) = mpsc::channel(100);
-    
+
     // Create config for ReputationManager
     let rep_config = ReputationConfig {
         min_reputation: 0.3,
@@ -21,7 +22,7 @@ async fn setup_consensus_test_environment() -> (CrossShardManager, mpsc::Sender<
         decay_factor: 0.95,
         decay_interval_secs: 3600,
     };
-    
+
     let _reputation_manager = Arc::new(ReputationManager::new(rep_config));
 
     let config = CrossShardConfig {
@@ -48,7 +49,7 @@ fn create_test_transaction(source: u64, target: u64) -> CrossShardTransaction {
         from_shard: source as u32,
         to_shard: target as u32,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         // Compatibility fields
         id: tx_id,
         source_shard: source,
@@ -107,7 +108,7 @@ async fn test_acknowledgment() -> Result<()> {
     // Create and send a test message
     let message = create_test_message(0, 1);
     let message_id = message.id.clone(); // Clone the ID before moving the message
-    
+
     manager.send_message(message).await?;
 
     // Process the queue
@@ -155,7 +156,7 @@ fn test_cross_shard_transaction_basic() {
         from_shard: 0,
         to_shard: 1,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         // Compatibility fields
         id: "test_tx_1234".to_string(),
         source_shard: 0,

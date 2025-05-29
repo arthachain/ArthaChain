@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Hash type representing a 32-byte cryptographic hash
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Hash([u8; 32]);
 
 impl Hash {
@@ -47,12 +47,6 @@ impl Hash {
     /// Convert to hexadecimal string
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
-    }
-}
-
-impl Default for Hash {
-    fn default() -> Self {
-        Self([0u8; 32])
     }
 }
 
@@ -114,7 +108,7 @@ mod tests {
         let bytes = [0u8; 32];
         let hash = Hash::new(bytes);
         assert_eq!(
-            format!("{}", hash),
+            format!("{hash}"),
             "0000000000000000000000000000000000000000000000000000000000000000"
         );
     }

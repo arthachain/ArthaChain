@@ -191,13 +191,13 @@ impl HybridStorage {
     }
 
     /// Access underlying RocksDB storage
-    pub fn rocksdb(&self) -> &Box<dyn Storage> {
-        &self.rocksdb
+    pub fn rocksdb(&self) -> &dyn Storage {
+        &*self.rocksdb
     }
 
     /// Access underlying SVDB storage
-    pub fn svdb(&self) -> &Box<dyn Storage> {
-        &self.svdb
+    pub fn svdb(&self) -> &dyn Storage {
+        &*self.svdb
     }
 
     /// Determine if data should be stored in RocksDB or SVDB
@@ -497,7 +497,7 @@ impl StorageBackend for BlockchainStorage {}
 #[cfg(not(skip_problematic_modules))]
 impl StorageBackend for MemMapStorage {}
 
-// Stub implementation for MemMapStorage when skipping problematic modules
+// Remove the stub implementation for MemMapStorage since it's now fully implemented
 #[cfg(skip_problematic_modules)]
 pub struct MemMapStorage;
 

@@ -4,6 +4,8 @@ use crate::config::Config;
 use crate::types::Hash;
 use async_trait::async_trait;
 use blake3;
+use sha3;
+use sha3::Digest;
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
@@ -37,7 +39,7 @@ impl BlockchainStorage {
         let mut memory = self
             .memory
             .lock()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         memory.insert(key.to_vec(), value.to_vec());
         Ok(())
     }
@@ -60,7 +62,7 @@ impl BlockchainStorage {
         let mut memory = self
             .memory
             .lock()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         memory.remove(key);
         Ok(())
     }
@@ -70,44 +72,97 @@ impl BlockchainStorage {
         let memory = self
             .memory
             .lock()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         Ok(memory.contains_key(key))
     }
 
     /// Get all keys with a prefix
     pub fn get_keys_with_prefix(&self, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        if prefix.is_empty() {
+            return Err(StorageError::InvalidData(
+                "Empty prefix provided".to_string(),
+            ));
+        }
+
         let memory = self
             .memory
             .lock()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
-        let keys = memory
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect();
+            .map_err(|e| StorageError::Other(format!("Failed to acquire lock: {}", e)))?;
+
+        let mut keys = Vec::new();
+        for key in memory.keys() {
+            if key.starts_with(prefix) {
+                keys.push(key.clone());
+            }
+        }
+
+        // Sort keys for consistent ordering
+        keys.sort();
+
         Ok(keys)
+    }
+
+    pub fn get_block_hash(&self, hash: &[u8]) -> Result<Hash> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidData("Empty hash provided".to_string()));
+        }
+
+        let mut hasher = sha3::Sha3_256::new();
+        hasher.update(hash);
+        let result = hasher.finalize();
+
+        Ok(Hash::from(result.to_vec()))
+    }
+
+    pub fn get_value(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let db = self
+            .rocksdb
+            .as_any()
+            .downcast_ref::<RocksDbStorage>()
+            .ok_or_else(|| {
+                StorageError::Other("Failed to downcast to RocksDbStorage".to_string())
+            })?;
+
+        Ok(db.get(key).map(|v| v.to_vec()))
     }
 }
 
 #[async_trait]
 impl Storage for BlockchainStorage {
     async fn store(&self, data: &[u8]) -> Result<Hash> {
+        if data.is_empty() {
+            return Err(StorageError::InvalidData("Empty data provided".to_string()));
+        }
         self.rocksdb.store(data).await
     }
 
     async fn retrieve(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidData("Empty hash provided".to_string()));
+        }
         self.rocksdb.retrieve(hash).await
     }
 
     async fn exists(&self, hash: &Hash) -> Result<bool> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidData("Empty hash provided".to_string()));
+        }
         self.rocksdb.exists(hash).await
     }
 
     async fn delete(&self, hash: &Hash) -> Result<()> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidData("Empty hash provided".to_string()));
+        }
         self.rocksdb.delete(hash).await
     }
 
     async fn verify(&self, hash: &Hash, data: &[u8]) -> Result<bool> {
+        if hash.is_empty() || data.is_empty() {
+            return Err(StorageError::InvalidData(
+                "Empty hash or data provided".to_string(),
+            ));
+        }
         self.rocksdb.verify(hash, data).await
     }
 

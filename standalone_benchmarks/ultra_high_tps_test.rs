@@ -2,6 +2,9 @@ use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+
+// Type alias to reduce complexity
+type DataEntries = Vec<(Vec<u8>, Vec<u8>)>;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -101,9 +104,7 @@ fn test_parallel_processing(num_threads: usize, num_transactions: usize, tx_size
     let elapsed = start.elapsed();
     let tps = num_transactions as f64 / elapsed.as_secs_f64();
 
-    println!(
-        "Processed {num_transactions} transactions in {elapsed:.2?}"
-    );
+    println!("Processed {num_transactions} transactions in {elapsed:.2?}");
     println!("Throughput: {tps:.2} TPS");
 
     assert!(tps > 100_000.0, "Throughput too low: {tps:.2} TPS");
@@ -199,18 +200,13 @@ fn test_sharded_transactions(
     let cross_shard_tps = (cross_shard_count as f64) / elapsed.as_secs_f64();
     let intra_shard_tps = ((num_transactions - cross_shard_count) as f64) / elapsed.as_secs_f64();
 
-    println!(
-        "Processed {num_transactions} transactions in {elapsed:.2?}"
-    );
+    println!("Processed {num_transactions} transactions in {elapsed:.2?}");
     println!("Overall throughput: {tps:.2} TPS");
     println!("Intra-shard throughput: {intra_shard_tps:.2} TPS");
     println!("Cross-shard throughput: {cross_shard_tps:.2} TPS");
 
     // Verify minimum performance
-    assert!(
-        tps > 100_000.0,
-        "Overall throughput too low: {tps:.2} TPS"
-    );
+    assert!(tps > 100_000.0, "Overall throughput too low: {tps:.2} TPS");
 }
 
 // Test 3: Storage throughput
@@ -403,9 +399,7 @@ fn test_end_to_end_pipeline(
     let elapsed = start.elapsed();
     let tps = num_transactions as f64 / elapsed.as_secs_f64();
 
-    println!(
-        "Processed {num_transactions} transactions end-to-end in {elapsed:.2?}"
-    );
+    println!("Processed {num_transactions} transactions end-to-end in {elapsed:.2?}");
     println!("End-to-end throughput: {tps:.2} TPS");
 
     // Verify minimum throughput
@@ -417,7 +411,7 @@ fn test_end_to_end_pipeline(
 
 // Simple memory storage simulation
 struct MemoryStorage {
-    data: Arc<Mutex<Vec<(Vec<u8>, Vec<u8>)>>>,
+    data: Arc<Mutex<DataEntries>>,
 }
 
 impl MemoryStorage {

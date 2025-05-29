@@ -20,21 +20,19 @@ use crate::utils::security_audit::SecurityAuditRegistry;
 use crate::utils::security_logger::SecurityLogger;
 use anyhow::Context;
 use log::{debug, info};
-use parking_lot::RwLock as PLRwLock;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 #[cfg(feature = "evm")]
-use crate::evm::{EvmConfig, EvmExecutor, EvmRpcService};
-#[cfg(feature = "evm")]
-use std::net::SocketAddr;
+use crate::evm::{EvmExecutor, EvmRpcService};
 
 #[cfg(feature = "wasm")]
-use crate::wasm::{WasmExecutor, WasmRpcService};
+use crate::wasm::WasmExecutor;
 
 // Forward declaration for circular references
 mod metrics {
@@ -44,11 +42,11 @@ mod metrics {
 /// Node represents a running instance of a SocialChain blockchain node
 pub struct Node {
     pub config: Arc<RwLock<Config>>,
-    pub network: Arc<PLRwLock<Option<P2PNetwork>>>,
-    pub api_server: Arc<PLRwLock<Option<ApiServer>>>,
-    pub metrics: Arc<PLRwLock<Option<MetricsService>>>,
+    pub network: Arc<TokioRwLock<Option<P2PNetwork>>>,
+    pub api_server: Arc<TokioRwLock<Option<ApiServer>>>,
+    pub metrics: Arc<TokioRwLock<Option<MetricsService>>>,
     pub state: Arc<State>,
-    pub storage: Arc<PLRwLock<Box<dyn Storage + Send + Sync>>>,
+    pub storage: Arc<TokioRwLock<Box<dyn Storage + Send + Sync>>>,
     pub p2p_network: Option<P2PNetwork>,
     pub rpc_server: Option<RPCServer>,
     pub svcp_miner: Option<SVCPMiner>,
@@ -105,11 +103,11 @@ impl Node {
 
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
-            network: Arc::new(PLRwLock::new(None)),
-            api_server: Arc::new(PLRwLock::new(None)),
-            metrics: Arc::new(PLRwLock::new(None)),
+            network: Arc::new(TokioRwLock::new(None)),
+            api_server: Arc::new(TokioRwLock::new(None)),
+            metrics: Arc::new(TokioRwLock::new(None)),
             state: Arc::new(state),
-            storage: Arc::new(PLRwLock::new(Box::new(storage))),
+            storage: Arc::new(TokioRwLock::new(Box::new(storage))),
             p2p_network: None,
             rpc_server: None,
             svcp_miner: None,
@@ -141,13 +139,13 @@ impl Node {
 
     /// Initialize storage
     pub async fn init_storage(&self, path: &str) -> Result<(), anyhow::Error> {
-        // We need to get a mutable reference to the storage inside the PL lock
-        let mut storage_guard = self.storage.write();
+        // We need to get a mutable reference to the storage inside the Tokio lock
+        let mut storage_guard = self.storage.write().await;
         let _storage_ref = &mut **storage_guard;
 
         // TODO: Add StorageInit trait implementation
         // For now we'll just log this
-        info!("Storage initialization requested for path: {}", path);
+        info!("Storage initialization requested for path: {path}");
 
         Ok(())
     }

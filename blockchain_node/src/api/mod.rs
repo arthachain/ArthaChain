@@ -25,6 +25,20 @@ pub mod metrics;
 pub mod models;
 pub mod routes;
 pub mod websocket;
+// pub mod blockchain;
+// pub mod consensus;
+// pub mod node;
+// pub mod rpc;
+pub mod transaction;
+// pub mod utils;
+pub mod fraud_monitoring;
+
+// pub use blockchain::BlockchainRoutes;
+// pub use consensus::ConsensusRoutes;
+// pub use metrics::MetricsRoutes;
+// pub use node::NodeRoutes;
+pub use fraud_monitoring::create_fraud_monitoring_router;
+pub use transaction::TransactionRoutes;
 
 /// Error response for the API
 #[derive(Debug, Serialize)]
@@ -96,20 +110,20 @@ impl ApiServer {
         let router = Router::new()
             .route("/health", get(health_check))
             .route("/metrics", get(metrics_handler))
-            .route("/blocks", get(get_blocks))
-            .route("/blocks/:hash", get(get_block))
-            .route("/transactions", get(get_transactions))
-            .route("/transactions/:hash", get(get_transaction))
-            .route("/peers", get(get_peers))
-            .route("/peers/:id", get(get_peer))
-            .route("/consensus", get(get_consensus))
-            .route("/consensus/status", get(get_consensus_status))
-            .route("/consensus/vote", post(vote))
-            .route("/consensus/propose", post(propose))
-            .route("/consensus/validate", post(validate))
-            .route("/consensus/finalize", post(finalize))
-            .route("/consensus/commit", post(commit))
-            .route("/consensus/revert", post(revert))
+            .route("/api/blocks", get(get_blocks))
+            .route("/api/blocks/:hash", get(get_block))
+            .route("/api/transactions", get(get_transactions))
+            .route("/api/transactions/:hash", get(get_transaction))
+            .route("/api/peers", get(get_peers))
+            .route("/api/peers/:id", get(get_peer))
+            .route("/api/consensus", get(get_consensus))
+            .route("/api/consensus/status", get(get_consensus_status))
+            .route("/api/consensus/vote", post(vote))
+            .route("/api/consensus/propose", post(propose))
+            .route("/api/consensus/validate", post(validate))
+            .route("/api/consensus/finalize", post(finalize))
+            .route("/api/consensus/commit", post(commit))
+            .route("/api/consensus/revert", post(revert))
             .layer(CorsLayer::permissive());
 
         Ok(Self {
@@ -130,7 +144,7 @@ impl ApiServer {
     pub async fn start(&self) -> Result<()> {
         let addr = format!("{}:{}", self.host, self.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
-        println!("Server listening on {}", addr);
+        println!("Server listening on {addr}");
 
         axum::serve(listener, self.router.clone()).await?;
 

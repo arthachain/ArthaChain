@@ -17,6 +17,12 @@ pub struct RocksDbStorage {
     db_path: Arc<RwLock<Option<std::path::PathBuf>>>,
 }
 
+impl Default for RocksDbStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RocksDbStorage {
     /// Create a new RocksDB storage instance
     pub fn new() -> Self {
@@ -31,14 +37,14 @@ impl RocksDbStorage {
         let db = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         if db.is_none() {
             // If DB is None, attempt to reopen from path
             let path_clone = {
                 let path_lock = self
                     .db_path
                     .read()
-                    .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+                    .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
                 if let Some(path) = &*path_lock {
                     path.clone()
                 } else {
@@ -50,12 +56,12 @@ impl RocksDbStorage {
             options.create_if_missing(true);
 
             let db_instance = DB::open(&options, &path_clone)
-                .map_err(|e| StorageError::Other(format!("Failed to reopen DB: {}", e)))?;
+                .map_err(|e| StorageError::Other(format!("Failed to reopen DB: {e}")))?;
 
             let mut db_write = self
                 .db
                 .write()
-                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+                .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
             *db_write = Some(db_instance);
         }
         Ok(())
@@ -81,7 +87,7 @@ impl Storage for RocksDbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         if let Some(db) = &*db_read {
             db.put(hash.as_bytes(), data)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
@@ -97,7 +103,7 @@ impl Storage for RocksDbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             match db.get(hash.as_bytes()) {
@@ -121,7 +127,7 @@ impl Storage for RocksDbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             match db.get(hash.as_bytes()) {
@@ -145,7 +151,7 @@ impl Storage for RocksDbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             db.delete(hash.as_bytes())
@@ -161,9 +167,8 @@ impl Storage for RocksDbStorage {
         let calculated_hash = blake3::hash(data).as_bytes().to_vec();
         let matches = calculated_hash == hash.as_bytes();
         debug!(
-            "Verified data hash {} matches: {}",
-            hex::encode(hash),
-            matches
+            "Verified data hash {} matches: {matches}",
+            hex::encode(hash)
         );
         Ok(matches)
     }
@@ -172,7 +177,7 @@ impl Storage for RocksDbStorage {
         let mut db = self
             .db
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *db = None;
         debug!("RocksDB storage closed successfully");
         Ok(())
@@ -195,22 +200,24 @@ impl StorageInit for RocksDbStorage {
 
         let path_ref = path.as_ref();
         let db = DB::open(&options, path_ref.as_ref())
-            .map_err(|e| StorageError::Other(format!("Failed to open RocksDB: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Failed to open RocksDB: {e}")))?;
 
         // Store the path for potential reopening
         let mut path_lock = self
             .db_path
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *path_lock = Some(path_ref.as_ref().to_path_buf());
 
         let mut db_lock = self
             .db
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *db_lock = Some(db);
 
         debug!("RocksDB storage initialized successfully");
         Ok(())
     }
 }
+
+impl crate::storage::StorageBackend for RocksDbStorage {}

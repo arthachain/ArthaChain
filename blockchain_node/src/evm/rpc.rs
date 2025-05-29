@@ -1,17 +1,15 @@
 use crate::evm::executor::EvmExecutor;
-use crate::evm::types::{EvmAddress, EvmConfig, EvmExecutionResult, EvmTransaction};
+use crate::evm::types::EvmTransaction;
 use anyhow::{anyhow, Result};
-use ethereum_types::{H160, H256, U256};
-use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::transaction::eip2930::AccessList;
+use ethereum_types::{H160, U256};
 use hex;
-use jsonrpc_core::{Error as RpcError, ErrorCode, IoHandler, Params, Value};
+use jsonrpc_core::{Error as RpcError, IoHandler, Params, Value};
 use jsonrpc_http_server::{Server as RpcServer, ServerBuilder};
-use log::{debug, error, info, warn};
-use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
+use log::info;
+
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// EVM RPC service for Ethereum-compatible JSON-RPC endpoints
 pub struct EvmRpcService {
@@ -54,7 +52,7 @@ impl EvmRpcService {
 
         // eth_chainId
         io.add_method("eth_chainId", move |_params: Params| {
-            let chain_id_hex = format!("0x{:x}", chain_id);
+            let chain_id_hex = format!("0x{chain_id:x}");
             Ok(Value::String(chain_id_hex))
         });
 
@@ -64,7 +62,7 @@ impl EvmRpcService {
             // In a real implementation, this would get the current block number
             // For now, return a placeholder
             let block_number = 0;
-            let block_number_hex = format!("0x{:x}", block_number);
+            let block_number_hex = format!("0x{block_number:x}");
             Ok(Value::String(block_number_hex))
         });
 
@@ -74,7 +72,7 @@ impl EvmRpcService {
             // Parse parameters
             let params: (String, String) = params
                 .parse()
-                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {:?}", e)))?;
+                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {e:?}")))?;
 
             let address_str = params.0;
             let block_identifier = params.1; // "latest", "earliest", "pending", or block number
@@ -82,7 +80,7 @@ impl EvmRpcService {
             // Parse address
             let address = if address_str.starts_with("0x") {
                 let address_bytes = hex::decode(&address_str[2..])
-                    .map_err(|e| RpcError::invalid_params(format!("Invalid address: {:?}", e)))?;
+                    .map_err(|e| RpcError::invalid_params(format!("Invalid address: {e:?}")))?;
 
                 if address_bytes.len() != 20 {
                     return Err(RpcError::invalid_params("Address must be 20 bytes"));
@@ -98,7 +96,7 @@ impl EvmRpcService {
             // Get balance (placeholder implementation)
             // In a real implementation, this would query the EVM backend
             let balance = U256::zero();
-            let balance_hex = format!("0x{:x}", balance);
+            let balance_hex = format!("0x{balance:x}");
 
             Ok(Value::String(balance_hex))
         });
@@ -119,7 +117,7 @@ impl EvmRpcService {
             // Parse parameters
             let call_request: CallRequest = params
                 .parse()
-                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {:?}", e)))?;
+                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {e:?}")))?;
 
             // Create a transaction with a high gas limit for estimation
             let tx = EvmTransaction {

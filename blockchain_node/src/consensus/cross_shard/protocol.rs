@@ -58,6 +58,12 @@ pub struct ProtocolHandler {
     version: u32,
 }
 
+impl Default for ProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtocolHandler {
     /// Create a new protocol handler
     pub fn new() -> Self {

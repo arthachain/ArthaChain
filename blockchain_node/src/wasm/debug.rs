@@ -1,20 +1,10 @@
-use log::{debug, error, warn};
-use serde::{Deserialize, Serialize};
+use crate::wasm::types::{CallFrame, ExecutionState, Instruction, Value, WasmContractAddress};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use thiserror::Error;
-use wasmer::AsStoreRef;
-use wasmer::{
-    Function, FunctionType, Imports, Instance, Memory, MemoryType, Module, Store, Type, Value,
-};
+use wasmer::{Instance, Module, Store};
 
-use crate::crypto::hash::Hash;
-use crate::storage::Storage;
-use crate::wasm::types::{WasmContractAddress, WasmError, WasmExecutionResult};
-
-/// Debug error
-#[derive(Debug, Error)]
+/// Debug error types
+#[derive(Error, Debug)]
 pub enum DebugError {
     #[error("Invalid breakpoint: {0}")]
     InvalidBreakpoint(String),
@@ -24,10 +14,14 @@ pub enum DebugError {
     StackTraceError(String),
     #[error("Debug session error: {0}")]
     DebugSessionError(String),
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
 }
 
-/// Breakpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Breakpoint definition
+#[derive(Debug, Clone)]
 pub struct Breakpoint {
     /// Function name
     pub function: String,
@@ -41,8 +35,21 @@ pub struct Breakpoint {
     pub enabled: bool,
 }
 
-/// Stack frame
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Breakpoint {
+    /// Create a new breakpoint
+    pub fn new(function: String, offset: u32) -> Self {
+        Self {
+            function,
+            offset,
+            condition: None,
+            hit_count: 0,
+            enabled: true,
+        }
+    }
+}
+
+/// Stack frame for debugging
+#[derive(Debug, Clone)]
 pub struct StackFrame {
     /// Function name
     pub function: String,
@@ -54,8 +61,8 @@ pub struct StackFrame {
     pub arguments: Vec<Value>,
 }
 
-/// Stack trace
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Stack trace for debugging
+#[derive(Debug, Clone)]
 pub struct StackTrace {
     /// Stack frames
     pub frames: Vec<StackFrame>,
@@ -65,7 +72,7 @@ pub struct StackTrace {
     pub memory_state: Vec<u8>,
 }
 
-/// Debug session
+/// Debug session for a WASM contract
 pub struct DebugSession {
     /// Contract address
     contract_address: WasmContractAddress,
@@ -85,6 +92,20 @@ pub struct DebugSession {
     step_mode: bool,
     /// Last instruction
     last_instruction: u32,
+    /// Execution state
+    execution_state: ExecutionState,
+    /// Instruction pointer
+    instruction_pointer: u32,
+    /// Call stack
+    call_stack: Vec<CallFrame>,
+    /// Current function
+    current_function: String,
+    /// Local variables
+    locals: HashMap<String, Value>,
+    /// Stack
+    stack: Vec<Value>,
+    /// Instructions
+    instructions: Vec<Instruction>,
 }
 
 impl DebugSession {
@@ -105,6 +126,13 @@ impl DebugSession {
             debug_mode: false,
             step_mode: false,
             last_instruction: 0,
+            execution_state: ExecutionState::Ready,
+            instruction_pointer: 0,
+            call_stack: Vec::new(),
+            current_function: "main".to_string(),
+            locals: HashMap::new(),
+            stack: Vec::new(),
+            instructions: Vec::new(),
         }
     }
 
@@ -128,12 +156,18 @@ impl DebugSession {
         self.step_mode = false;
     }
 
-    /// Add breakpoint
+    /// Add a breakpoint
     pub fn add_breakpoint(&mut self, breakpoint: Breakpoint) -> Result<(), DebugError> {
+        if breakpoint.function.is_empty() {
+            return Err(DebugError::InvalidBreakpoint(
+                "Function name cannot be empty".to_string(),
+            ));
+        }
+
         let function_breakpoints = self
             .breakpoints
             .entry(breakpoint.function.clone())
-            .or_insert_with(Vec::new);
+            .or_default();
 
         // Check if breakpoint already exists
         if function_breakpoints
@@ -141,8 +175,8 @@ impl DebugSession {
             .any(|bp| bp.offset == breakpoint.offset)
         {
             return Err(DebugError::InvalidBreakpoint(format!(
-                "Breakpoint already exists at offset {}",
-                breakpoint.offset
+                "Breakpoint already exists at {}:{}",
+                breakpoint.function, breakpoint.offset
             )));
         }
 
@@ -150,58 +184,58 @@ impl DebugSession {
         Ok(())
     }
 
-    /// Remove breakpoint
+    /// Remove a breakpoint
     pub fn remove_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self
-            .breakpoints
-            .get_mut(function)
-            .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
+        if let Some(function_breakpoints) = self.breakpoints.get_mut(function) {
+            if let Some(pos) = function_breakpoints
+                .iter()
+                .position(|bp| bp.offset == offset)
+            {
+                function_breakpoints.remove(pos);
+                return Ok(());
+            }
+        }
 
-        function_breakpoints.retain(|bp| bp.offset != offset);
-        Ok(())
+        Err(DebugError::BreakpointNotFound(format!(
+            "Breakpoint not found at {function}:{offset}"
+        )))
     }
 
-    /// Enable breakpoint
+    /// Enable a breakpoint
     pub fn enable_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self
-            .breakpoints
-            .get_mut(function)
-            .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
-
-        for bp in function_breakpoints {
-            if bp.offset == offset {
-                bp.enabled = true;
+        if let Some(function_breakpoints) = self.breakpoints.get_mut(function) {
+            if let Some(breakpoint) = function_breakpoints
+                .iter_mut()
+                .find(|bp| bp.offset == offset)
+            {
+                breakpoint.enabled = true;
                 return Ok(());
             }
         }
 
         Err(DebugError::BreakpointNotFound(format!(
-            "Breakpoint not found at offset {}",
-            offset
+            "Breakpoint not found at {function}:{offset}"
         )))
     }
 
-    /// Disable breakpoint
+    /// Disable a breakpoint
     pub fn disable_breakpoint(&mut self, function: &str, offset: u32) -> Result<(), DebugError> {
-        let function_breakpoints = self
-            .breakpoints
-            .get_mut(function)
-            .ok_or_else(|| DebugError::BreakpointNotFound(function.to_string()))?;
-
-        for bp in function_breakpoints {
-            if bp.offset == offset {
-                bp.enabled = false;
+        if let Some(function_breakpoints) = self.breakpoints.get_mut(function) {
+            if let Some(breakpoint) = function_breakpoints
+                .iter_mut()
+                .find(|bp| bp.offset == offset)
+            {
+                breakpoint.enabled = false;
                 return Ok(());
             }
         }
 
         Err(DebugError::BreakpointNotFound(format!(
-            "Breakpoint not found at offset {}",
-            offset
+            "Breakpoint not found at {function}:{offset}"
         )))
     }
 
-    /// Get breakpoints
+    /// Get all breakpoints
     pub fn get_breakpoints(&self) -> &HashMap<String, Vec<Breakpoint>> {
         &self.breakpoints
     }
@@ -212,23 +246,36 @@ impl DebugSession {
     }
 
     /// Update stack trace
-    pub fn update_stack_trace(&mut self, frame: StackFrame) {
-        let mut stack_trace = self.stack_trace.take().unwrap_or_else(|| StackTrace {
-            frames: Vec::new(),
-            current_instruction: 0,
-            memory_state: Vec::new(),
-        });
+    pub fn update_stack_trace(&mut self) -> Result<(), DebugError> {
+        let mut frames = Vec::new();
 
-        stack_trace.frames.push(frame);
-        stack_trace.current_instruction = self.last_instruction;
+        // Create frame for current function
+        let current_frame = StackFrame {
+            function: self.current_function.clone(),
+            offset: self.instruction_pointer,
+            locals: self.locals.clone(),
+            arguments: Vec::new(), // Would be populated from actual execution context
+        };
+        frames.push(current_frame);
 
-        // Get memory state
-        if let Ok(memory) = self.instance.exports.get_memory("memory") {
-            let view = memory.view(&self.store);
-            stack_trace.memory_state = view.data().to_vec();
+        // Add frames from call stack
+        for call_frame in &self.call_stack {
+            let frame = StackFrame {
+                function: format!("function_{}", call_frame.function_idx),
+                offset: call_frame.instruction_ptr,
+                locals: call_frame.locals.clone(),
+                arguments: Vec::new(),
+            };
+            frames.push(frame);
         }
 
-        self.stack_trace = Some(stack_trace);
+        self.stack_trace = Some(StackTrace {
+            frames,
+            current_instruction: self.instruction_pointer,
+            memory_state: Vec::new(), // Would be populated from actual memory
+        });
+
+        Ok(())
     }
 
     /// Clear stack trace
@@ -237,15 +284,27 @@ impl DebugSession {
     }
 
     /// Step execution
-    pub fn step(&mut self) -> Result<(), DebugError> {
-        if !self.step_mode {
-            return Err(DebugError::DebugSessionError(
-                "Step mode not enabled".to_string(),
+    pub fn step_execution(&mut self) -> Result<(), DebugError> {
+        if !self.debug_mode {
+            return Err(DebugError::InvalidState(
+                "Debug mode not enabled".to_string(),
             ));
         }
 
-        // TODO: Implement step execution
-        // This should execute one instruction and update the stack trace
+        if self.execution_state == ExecutionState::Completed {
+            return Err(DebugError::InvalidState(
+                "Execution already completed".to_string(),
+            ));
+        }
+
+        // Execute one instruction
+        if let Some(instruction) = self.get_current_instruction() {
+            self.execute_instruction(&instruction)?;
+            self.instruction_pointer += 1;
+            self.update_stack_trace()?;
+        } else {
+            self.execution_state = ExecutionState::Completed;
+        }
 
         Ok(())
     }
@@ -253,27 +312,128 @@ impl DebugSession {
     /// Continue execution
     pub fn continue_execution(&mut self) -> Result<(), DebugError> {
         if !self.debug_mode {
-            return Err(DebugError::DebugSessionError(
+            return Err(DebugError::InvalidState(
                 "Debug mode not enabled".to_string(),
             ));
         }
 
-        // TODO: Implement continue execution
-        // This should continue execution until a breakpoint is hit
+        while self.execution_state != ExecutionState::Completed {
+            // Check for breakpoint
+            if self.check_breakpoint() {
+                break;
+            }
 
+            // Execute instruction
+            if let Some(instruction) = self.get_current_instruction() {
+                self.execute_instruction(&instruction)?;
+                self.instruction_pointer += 1;
+            } else {
+                self.execution_state = ExecutionState::Completed;
+                break;
+            }
+        }
+
+        self.update_stack_trace()?;
         Ok(())
     }
 
-    /// Check breakpoint
-    pub fn check_breakpoint(&mut self, function: &str, offset: u32) -> bool {
+    /// Execute a single instruction
+    fn execute_instruction(&mut self, instruction: &Instruction) -> Result<(), DebugError> {
+        match instruction {
+            Instruction::LocalGet(idx) => {
+                if (*idx as usize) < self.locals.len() {
+                    // In a real implementation, we'd get the actual local value
+                    self.stack.push(Value::I32(0)); // Placeholder
+                    Ok(())
+                } else {
+                    Err(DebugError::ExecutionError(format!(
+                        "Invalid local index: {idx}"
+                    )))
+                }
+            }
+            Instruction::LocalSet(idx) => {
+                if let Some(_value) = self.stack.pop() {
+                    if (*idx as usize) < self.locals.len() {
+                        // In a real implementation, we'd set the actual local value
+                        Ok(())
+                    } else {
+                        Err(DebugError::ExecutionError(format!(
+                            "Invalid local index: {idx}"
+                        )))
+                    }
+                } else {
+                    Err(DebugError::ExecutionError("Stack underflow".to_string()))
+                }
+            }
+            Instruction::I32Const(value) => {
+                self.stack.push(Value::I32(*value));
+                Ok(())
+            }
+            Instruction::I32Add => {
+                if self.stack.len() < 2 {
+                    return Err(DebugError::ExecutionError("Stack underflow".to_string()));
+                }
+
+                let b = self.stack.pop().unwrap();
+                let a = self.stack.pop().unwrap();
+
+                match (a, b) {
+                    (Value::I32(a_val), Value::I32(b_val)) => {
+                        self.stack.push(Value::I32(a_val.wrapping_add(b_val)));
+                        Ok(())
+                    }
+                    _ => Err(DebugError::ExecutionError(
+                        "Type mismatch in I32Add".to_string(),
+                    )),
+                }
+            }
+            Instruction::Call(func_idx) => {
+                log::debug!("Call to function {func_idx}");
+
+                // Simulate a call by adding to the call stack
+                self.call_stack.push(CallFrame {
+                    function_idx: *func_idx,
+                    instruction_ptr: self.instruction_pointer,
+                    locals: HashMap::new(),
+                });
+
+                Ok(())
+            }
+            Instruction::Return => {
+                if let Some(frame) = self.call_stack.pop() {
+                    log::debug!("Return from function {}", frame.function_idx);
+                    Ok(())
+                } else {
+                    // Top-level return
+                    self.execution_state = ExecutionState::Completed;
+                    Ok(())
+                }
+            }
+            _ => {
+                log::warn!("Unsupported instruction: {instruction:?}");
+                Ok(()) // Allow continuing for unsupported instructions in the debugger
+            }
+        }
+    }
+
+    /// Get the current instruction
+    fn get_current_instruction(&self) -> Option<Instruction> {
+        if self.instruction_pointer < self.instructions.len() {
+            Some(self.instructions[self.instruction_pointer].clone())
+        } else {
+            None
+        }
+    }
+
+    /// Check if we hit a breakpoint
+    pub fn check_breakpoint(&self) -> bool {
         if !self.debug_mode {
             return false;
         }
 
-        if let Some(function_breakpoints) = self.breakpoints.get(function) {
-            for bp in function_breakpoints.iter_mut() {
-                if bp.enabled && bp.offset == offset {
-                    bp.hit_count += 1;
+        if let Some(function_breakpoints) = self.breakpoints.get(&self.current_function) {
+            for bp in function_breakpoints.iter() {
+                if bp.enabled && bp.offset == self.instruction_pointer {
                     return true;
                 }
             }
@@ -282,7 +442,7 @@ impl DebugSession {
         false
     }
 
-    /// Get local variables
+    /// Get local variables for a frame
     pub fn get_local_variables(
         &self,
         frame_index: usize,
@@ -296,7 +456,7 @@ impl DebugSession {
         Err(DebugError::StackTraceError("Frame not found".to_string()))
     }
 
-    /// Get arguments
+    /// Get arguments for a frame
     pub fn get_arguments(&self, frame_index: usize) -> Result<Vec<Value>, DebugError> {
         if let Some(stack_trace) = &self.stack_trace {
             if let Some(frame) = stack_trace.frames.get(frame_index) {
@@ -318,21 +478,27 @@ impl DebugSession {
         ))
     }
 
-    /// Get current instruction
-    pub fn get_current_instruction(&self) -> u32 {
-        self.last_instruction
+    /// Get current instruction pointer
+    pub fn get_current_instruction_pointer(&self) -> u32 {
+        self.instruction_pointer
     }
 
-    /// Set current instruction
-    pub fn set_current_instruction(&mut self, instruction: u32) {
-        self.last_instruction = instruction;
+    /// Set current instruction pointer
+    pub fn set_current_instruction_pointer(&mut self, instruction: u32) {
+        self.instruction_pointer = instruction;
     }
 }
 
-/// Debug manager
+/// Debug manager for managing multiple debug sessions
 pub struct DebugManager {
     /// Debug sessions
     sessions: HashMap<WasmContractAddress, DebugSession>,
+}
+
+impl Default for DebugManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DebugManager {
@@ -343,7 +509,7 @@ impl DebugManager {
         }
     }
 
-    /// Create debug session
+    /// Create a debug session
     pub fn create_session(
         &mut self,
         contract_address: WasmContractAddress,
@@ -352,10 +518,9 @@ impl DebugManager {
         instance: Instance,
     ) -> Result<(), DebugError> {
         if self.sessions.contains_key(&contract_address) {
-            return Err(DebugError::DebugSessionError(format!(
-                "Debug session already exists for contract {}",
-                contract_address
-            )));
+            return Err(DebugError::DebugSessionError(
+                "Debug session already exists".to_string(),
+            ));
         }
 
         let session = DebugSession::new(contract_address.clone(), store, module, instance);
@@ -364,12 +529,12 @@ impl DebugManager {
         Ok(())
     }
 
-    /// Get debug session
+    /// Get a debug session
     pub fn get_session(&self, contract_address: &WasmContractAddress) -> Option<&DebugSession> {
         self.sessions.get(contract_address)
     }
 
-    /// Get debug session mutably
+    /// Get a mutable debug session
     pub fn get_session_mut(
         &mut self,
         contract_address: &WasmContractAddress,
@@ -377,20 +542,18 @@ impl DebugManager {
         self.sessions.get_mut(contract_address)
     }
 
-    /// Remove debug session
+    /// Remove a debug session
     pub fn remove_session(
         &mut self,
         contract_address: &WasmContractAddress,
     ) -> Result<(), DebugError> {
-        if !self.sessions.contains_key(contract_address) {
-            return Err(DebugError::DebugSessionError(format!(
-                "Debug session not found for contract {}",
-                contract_address
-            )));
+        if self.sessions.remove(contract_address).is_some() {
+            Ok(())
+        } else {
+            Err(DebugError::DebugSessionError(
+                "Debug session not found".to_string(),
+            ))
         }
-
-        self.sessions.remove(contract_address);
-        Ok(())
     }
 
     /// Get all debug sessions

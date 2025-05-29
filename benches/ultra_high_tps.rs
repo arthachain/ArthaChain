@@ -1,6 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;
-use std::sync::Arc;
 /**
  * Ultra-High TPS Benchmark for the Blockchain Node
  *
@@ -18,6 +17,7 @@ use std::sync::Arc;
  * the peak TPS the system can achieve.
  */
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
@@ -25,7 +25,6 @@ use tokio::sync::mpsc;
 // Import blockchain node components
 use blockchain_node::consensus::svcp::{SVCPConfig, SVCPMiner};
 use blockchain_node::execution::parallel::{ParallelConfig, ParallelExecutionManager};
-use blockchain_node::ledger::state::StateTree;
 use blockchain_node::ledger::transaction::{Transaction, TransactionType};
 use blockchain_node::ledger::BlockchainState;
 use blockchain_node::sharding::{ShardAssignmentStrategy, ShardManager, ShardingConfig};
@@ -33,7 +32,7 @@ use blockchain_node::storage::{Storage, StorageError};
 use blockchain_node::types::Hash;
 
 // SimpleZKP - Mock implementation for benchmarking
-// Simplified zero-knowledge proof implementation for benchmarking 
+// Simplified zero-knowledge proof implementation for benchmarking
 struct ZKProof {
     #[allow(dead_code)]
     pub data: Vec<u8>,
@@ -77,15 +76,15 @@ impl ZKProofManager {
     pub async fn process_batch_queue(&self) -> anyhow::Result<Vec<bool>> {
         let mut proofs = self.pending_proofs.write().await;
         let count = std::cmp::min(proofs.len(), self.max_batch_size);
-        
+
         let mut results = Vec::with_capacity(count);
-        
+
         for _ in 0..count {
             if let Some(proof) = proofs.pop_front() {
                 results.push(proof.verify());
             }
         }
-        
+
         Ok(results)
     }
 }
@@ -125,7 +124,7 @@ fn generate_transactions(
         rng.fill(&mut data[..]);
 
         // Create transaction
-        let tx = Transaction::new(
+        let mut tx = Transaction::new(
             TransactionType::Transfer,
             format!("sender{}", i % 1000),
             format!("receiver{}", (i + 500) % 1000),
@@ -134,8 +133,10 @@ fn generate_transactions(
             10,       // gas_price
             100000,   // gas_limit
             data,     // data
-            vec![],   // signature (empty for benchmark)
         );
+
+        // Set empty signature for benchmark
+        tx.signature = vec![];
 
         transactions.push(tx);
     }
@@ -248,8 +249,7 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
     for &tx_size in &TX_SIZES {
         for &cross_shard_ratio in &CROSS_SHARD_RATIOS {
             // Configure the benchmark
-            let benchmark_name =
-                format!("tx_size_{}_cross_shard_{:.2}", tx_size, cross_shard_ratio);
+            let benchmark_name = format!("tx_size_{tx_size}_cross_shard_{cross_shard_ratio:.2}");
 
             group.bench_function(&benchmark_name, |b| {
                 b.iter(|| {
@@ -267,10 +267,10 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
                             max_pending_cross_shard_refs: 1000,
                             num_shards: NUM_SHARDS as u64,
                         };
-                        
+
                         // Create a mock storage for benchmarking
                         let storage = Arc::new(MockStorage);
-                        
+
                         let _shard_manager = ShardManager::new(shard_config, 0, storage.clone());
 
                         // 2. Initialize consensus
@@ -281,7 +281,7 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
 
                         // Create a null config to satisfy SVCPMiner constructor
                         let config = blockchain_node::config::Config::default();
-                        
+
                         // Create BlockchainState with RwLock from tokio
                         let state = Arc::new(tokio::sync::RwLock::new(
                             BlockchainState::new(&config).unwrap(),
@@ -292,7 +292,7 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
                             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
                         let _consensus = SVCPMiner::new(
-                            config,
+                            config.clone(),
                             state.clone(),
                             tx,
                             shutdown_rx,
@@ -310,12 +310,18 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
                             ..Default::default()
                         };
 
-                        // Use proper constructor for StateTree
-                        let state_tree = Arc::new(StateTree::new());
-                        
+                        // Use proper constructor for BlockchainState
+                        let state_tree: Arc<BlockchainState> =
+                            Arc::new(BlockchainState::new(&config).unwrap());
+
                         // Use proper constructor for TransactionExecutor
                         let executor = Arc::new(
-                            blockchain_node::execution::executor::TransactionExecutor::new(),
+                            blockchain_node::execution::executor::TransactionExecutor::new(
+                                None,      // wasm_executor: no WASM for benchmarks
+                                1.0,       // gas_price_adjustment
+                                1_000_000, // max_gas_limit
+                                1,         // min_gas_price
+                            ),
                         );
 
                         let mut execution_manager =
@@ -369,7 +375,7 @@ fn ultra_high_tps_benchmark(c: &mut Criterion) {
                         let tps = (total_txs as f64) / (total_time_micros as f64 / 1_000_000.0);
 
                         println!("Benchmark {}: {:?} TPS", benchmark_name, tps as u64);
-                        println!("Total transactions: {}", total_txs);
+                        println!("Total transactions: {total_txs}");
                         println!("Total time: {} ms", total_time_micros / 1000);
 
                         // Return TPS for Criterion

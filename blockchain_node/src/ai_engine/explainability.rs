@@ -30,6 +30,25 @@ pub struct ScoreChangeEvent {
     pub factors: HashMap<String, f32>,
 }
 
+/// Parameters for recording score changes
+#[derive(Debug, Clone)]
+pub struct ScoreChangeParams {
+    /// Node ID
+    pub node_id: String,
+    /// Previous score
+    pub previous_score: f32,
+    /// New score
+    pub new_score: f32,
+    /// Metric that changed
+    pub metric_type: String,
+    /// Reason for the change
+    pub reason: String,
+    /// Evidence for the change
+    pub evidence: Option<String>,
+    /// Contributing factors (with weights)
+    pub factors: HashMap<String, f32>,
+}
+
 /// Score decision explanation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoreExplanation {
@@ -389,34 +408,23 @@ impl AIExplainer {
     }
 
     /// Record a score change event
-    pub async fn record_score_change(
-        &self,
-        node_id: &str,
-        previous_score: f32,
-        new_score: f32,
-        metric_type: &str,
-        reason: &str,
-        evidence: Option<&str>,
-        factors: HashMap<String, f32>,
-    ) -> Result<()> {
+    pub async fn record_score_change(&self, params: ScoreChangeParams) -> Result<()> {
         let event = ScoreChangeEvent {
-            node_id: node_id.to_string(),
+            node_id: params.node_id.clone(),
             timestamp: SystemTime::now(),
-            previous_score,
-            new_score,
-            score_delta: new_score - previous_score,
-            metric_type: metric_type.to_string(),
-            reason: reason.to_string(),
-            evidence: evidence.map(String::from),
-            factors,
+            previous_score: params.previous_score,
+            new_score: params.new_score,
+            score_delta: params.new_score - params.previous_score,
+            metric_type: params.metric_type.clone(),
+            reason: params.reason.clone(),
+            evidence: params.evidence.clone(),
+            factors: params.factors.clone(),
         };
 
         // Add to recent changes
         {
             let mut changes_map = self.recent_changes.lock().await;
-            let node_changes = changes_map
-                .entry(node_id.to_string())
-                .or_insert_with(Vec::new);
+            let node_changes = changes_map.entry(params.node_id.clone()).or_default();
 
             node_changes.push(event.clone());
 
@@ -428,8 +436,8 @@ impl AIExplainer {
         }
 
         // Log significant changes
-        let security_level = if (new_score - previous_score).abs() > 0.1 {
-            if new_score < previous_score {
+        let security_level = if (params.new_score - params.previous_score).abs() > 0.1 {
+            if params.new_score < params.previous_score {
                 SecurityLevel::Medium
             } else {
                 SecurityLevel::Low
@@ -438,7 +446,7 @@ impl AIExplainer {
             SecurityLevel::Info
         };
 
-        let category = match metric_type {
+        let category = match params.metric_type.as_str() {
             "device_health" => SecurityCategory::NodeBehavior,
             "network" => SecurityCategory::Network,
             "ai_behavior" => SecurityCategory::NodeBehavior,
@@ -450,12 +458,12 @@ impl AIExplainer {
             .log_event(
                 security_level,
                 category,
-                Some(node_id),
+                Some(&params.node_id),
                 &format!(
                     "{} score changed by {:.4}: {}",
-                    metric_type,
-                    new_score - previous_score,
-                    reason
+                    params.metric_type,
+                    params.new_score - params.previous_score,
+                    params.reason
                 ),
                 serde_json::to_value(&event)?,
             )
@@ -478,7 +486,7 @@ impl AIExplainer {
         };
 
         // Adjust based on score extremes
-        let score_confidence = if score < 0.2 || score > 0.8 {
+        let score_confidence = if !(0.2..=0.8).contains(&score) {
             // More confident about very high or very low scores
             0.9
         } else {
@@ -638,7 +646,7 @@ impl AIExplainer {
             }
             // Default normalization for unknown features
             _ => {
-                if feature_value >= 0.0 && feature_value <= 1.0 {
+                if (0.0..=1.0).contains(&feature_value) {
                     // Already normalized
                     feature_value
                 } else if feature_value >= 0.0 {
@@ -685,8 +693,8 @@ impl AIExplainer {
         };
 
         let mut summary = format!(
-            "Node has an overall trust score of {:.2} ({}). ",
-            score.overall_score, trust_tier
+            "Node has an overall trust score of {:.2} ({trust_tier}). ",
+            score.overall_score
         );
 
         // Check for critical issues
@@ -760,11 +768,10 @@ pub async fn generate_explainability_report(
     let explanation = explainer.explain_score(node_id, score).await?;
 
     let mut report = String::new();
-    report.push_str(&format!("# AI Score Explanation for Node: {}\n\n", node_id));
-    report.push_str(&format!(
-        "**Generated:** {}\n\n",
-        chrono::DateTime::<chrono::Local>::from(explanation.timestamp).format("%Y-%m-%d %H:%M:%S")
-    ));
+    report.push_str(&format!("# AI Score Explanation for Node: {node_id}\n\n"));
+    let timestamp =
+        chrono::DateTime::<chrono::Local>::from(explanation.timestamp).format("%Y-%m-%d %H:%M:%S");
+    report.push_str(&format!("**Generated:** {timestamp}\n\n"));
 
     report.push_str("## Summary\n\n");
     report.push_str(&explanation.summary);
@@ -803,12 +810,12 @@ pub async fn generate_explainability_report(
         explanation.ai_behavior_score,
         AIExplainer::get_score_level(explanation.ai_behavior_score)
     ));
-    report.push_str("\n");
+    report.push('\n');
 
     report.push_str("## Component Explanations\n\n");
     for (component, explanation_text) in &explanation.component_explanations {
-        report.push_str(&format!("### {}\n\n", component));
-        report.push_str(&format!("{}\n\n", explanation_text));
+        report.push_str(&format!("### {component}\n\n"));
+        report.push_str(&format!("{explanation_text}\n\n"));
     }
 
     report.push_str("## Top Positive Factors\n\n");
@@ -818,9 +825,9 @@ pub async fn generate_explainability_report(
         report.push_str("| Factor | Impact |\n");
         report.push_str("|--------|--------|\n");
         for (factor, impact) in &explanation.positive_factors {
-            report.push_str(&format!("| {} | +{:.4} |\n", factor, impact));
+            report.push_str(&format!("| {factor} | +{impact:.4} |\n"));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     report.push_str("## Top Negative Factors\n\n");
@@ -830,9 +837,9 @@ pub async fn generate_explainability_report(
         report.push_str("| Factor | Impact |\n");
         report.push_str("|--------|--------|\n");
         for (factor, impact) in &explanation.negative_factors {
-            report.push_str(&format!("| {} | {:.4} |\n", factor, impact));
+            report.push_str(&format!("| {factor} | {impact:.4} |\n"));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     report.push_str("## Recent Score Changes\n\n");
@@ -856,7 +863,7 @@ pub async fn generate_explainability_report(
                 change.reason
             ));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     Ok(report)
@@ -896,18 +903,17 @@ mod tests {
         factors.insert("cpu_usage".to_string(), 0.2);
         factors.insert("memory_usage".to_string(), -0.1);
 
-        explainer
-            .record_score_change(
-                "test-node",
-                0.7,
-                0.75,
-                "device_health",
-                "Improved CPU performance",
-                Some("CPU usage decreased from 85% to 45%"),
-                factors,
-            )
-            .await
-            .unwrap();
+        let params = ScoreChangeParams {
+            node_id: "test-node".to_string(),
+            previous_score: 0.7,
+            new_score: 0.75,
+            metric_type: "device_health".to_string(),
+            reason: "Improved CPU performance".to_string(),
+            evidence: Some("CPU usage decreased from 85% to 45%".to_string()),
+            factors,
+        };
+
+        explainer.record_score_change(params).await.unwrap();
 
         // Get explanation
         let explanation = explainer.explain_score("test-node", &score).await.unwrap();

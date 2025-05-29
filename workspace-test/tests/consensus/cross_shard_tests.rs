@@ -12,7 +12,7 @@ use workspace_test::blockchain_node::sharding::CrossShardStatus;
 
 async fn setup_test_environment() -> (CrossShardManager, mpsc::Sender<CrossShardMessage>) {
     let (tx, _rx) = mpsc::channel::<CrossShardMessage>(100);
-    
+
     // Create config for ReputationManager
     let rep_config = ReputationConfig {
         min_reputation: 0.3,
@@ -21,7 +21,7 @@ async fn setup_test_environment() -> (CrossShardManager, mpsc::Sender<CrossShard
         decay_factor: 0.95,
         decay_interval_secs: 3600,
     };
-    
+
     let _reputation_manager = Arc::new(ReputationManager::new(rep_config));
 
     // Create config for CrossShardManager
@@ -49,7 +49,7 @@ fn create_test_transaction(source: u64, target: u64) -> CrossShardTransaction {
         from_shard: source as u32,
         to_shard: target as u32,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         // Compatibility fields
         id: tx_id,
         source_shard: source,
@@ -153,7 +153,7 @@ async fn test_message_acknowledgment() -> Result<()> {
     assert!(status.is_some(), "No message status found");
 
     if let Some(status) = status {
-        assert_eq!(status, MessageStatus::Delivered);  // Changed from Acknowledged to Delivered
+        assert_eq!(status, MessageStatus::Delivered); // Changed from Acknowledged to Delivered
     }
 
     Ok(())
@@ -166,7 +166,7 @@ fn test_cross_shard_transaction_creation() {
         from_shard: 0,
         to_shard: 1,
         status: CrossShardStatus::Pending,
-        created_at: std::time::Instant::now(),
+        created_at: SystemTime::now(),
         // Compatibility fields
         id: "test_tx_1234".to_string(),
         source_shard: 0,

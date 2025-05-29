@@ -134,7 +134,7 @@ impl BlockMetrics {
         
         // Update congestion based on target time
         self.congestion_level = (avg_time - TARGET_BLOCK_TIME as f64) / TARGET_BLOCK_TIME as f64;
-        self.congestion_level = self.congestion_level.max(-1.0).min(1.0);
+        self.congestion_level = self.congestion_level.clamp(-1.0, 1.0);
     }
 
     fn calculate_optimal_size(&self) -> usize {
@@ -150,7 +150,7 @@ impl BlockMetrics {
         let new_size = (avg_size * adjustment) as usize;
         
         // Ensure within bounds
-        new_size.max(MIN_BLOCK_SIZE).min(MAX_BLOCK_SIZE)
+        new_size.clamp(MIN_BLOCK_SIZE, MAX_BLOCK_SIZE)
     }
 }
 

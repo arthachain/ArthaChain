@@ -241,7 +241,7 @@ impl UserIdentificationAI {
 
         // Store the account
         accounts.insert(user_id.to_string(), account);
-        info!("Registered new user with face biometrics: {}", user_id);
+        info!("Registered new user with face biometrics: {user_id}");
 
         Ok(())
     }
@@ -267,7 +267,7 @@ impl UserIdentificationAI {
 
         // Store the account
         accounts.insert(user_id.to_string(), account);
-        info!("Registered new user with password: {}", user_id);
+        info!("Registered new user with password: {user_id}");
 
         Ok(())
     }
@@ -472,7 +472,7 @@ impl UserIdentificationAI {
             }
 
             account.add_device(device);
-            info!("Device registered for user {}", user_id);
+            info!("Device registered for user {user_id}");
             Ok(())
         } else {
             Err(anyhow!("User not found"))
@@ -489,7 +489,7 @@ impl UserIdentificationAI {
         }
 
         // Placeholder for mnemonic verification
-        debug!("Verifying mnemonic for user {}", user_id);
+        debug!("Verifying mnemonic for user {user_id}");
 
         // Simulate successful verification
         Ok(true)
@@ -503,7 +503,7 @@ impl UserIdentificationAI {
             if account.is_locked {
                 account.is_locked = false;
                 account.failed_attempts = 0;
-                info!("Account unlocked for user {}", user_id);
+                info!("Account unlocked for user {user_id}");
                 Ok(())
             } else {
                 Err(anyhow!("Account is not locked"))
@@ -519,7 +519,7 @@ impl UserIdentificationAI {
 
         if let Some(account) = accounts.get_mut(user_id) {
             account.kyc_verified = true;
-            info!("KYC verification completed for user {}", user_id);
+            info!("KYC verification completed for user {user_id}");
             Ok(())
         } else {
             Err(anyhow!("User not found"))
@@ -534,7 +534,7 @@ impl UserIdentificationAI {
     /// Update the AI model with new version
     pub async fn update_model(&mut self, model_path: &str) -> Result<()> {
         // In a real implementation, this would load a new model from storage
-        info!("Updating User Identification AI model from: {}", model_path);
+        info!("Updating User Identification AI model from: {model_path}");
 
         // Simulate model update
         self.model_version = "1.1.0".to_string();

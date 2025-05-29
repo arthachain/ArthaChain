@@ -18,7 +18,7 @@ use blockchain_node::execution::executor::TransactionExecutor;
 use blockchain_node::execution::parallel::{
     ConflictStrategy, ParallelConfig, ParallelExecutionManager,
 };
-use blockchain_node::ledger::state::StateTree;
+use blockchain_node::ledger::state::State;
 use blockchain_node::transaction::Transaction;
 
 // Test configuration
@@ -38,7 +38,7 @@ enum FailureType {
     NetworkPartition,   // Node gets isolated
     ResourceExhaustion, // Node runs out of resources (CPU/memory)
     #[allow(dead_code)]
-    NetworkDelay,       // Network becomes slow
+    NetworkDelay, // Network becomes slow
 }
 
 // Simulate a node in the system
@@ -52,13 +52,18 @@ struct Node {
     failures_recovered: usize,
     processing_time: Duration,
     #[allow(dead_code)]
-    state_tree: Arc<StateTree>,
+    state_tree: Arc<State>,
 }
 
 impl Node {
     fn new(id: usize, max_parallel: usize) -> Self {
-        let state_tree = Arc::new(StateTree::new());
-        let executor = Arc::new(TransactionExecutor::new());
+        let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
+        let executor = Arc::new(TransactionExecutor::new(
+            None,      // wasm_executor: no WASM for examples
+            1.0,       // gas_price_adjustment
+            1_000_000, // max_gas_limit
+            1,         // min_gas_price
+        ));
 
         let parallel_config = ParallelConfig {
             max_parallel,

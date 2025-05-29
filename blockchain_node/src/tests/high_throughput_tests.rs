@@ -9,10 +9,30 @@ mod tests {
     use tokio::task;
 
     #[test]
+    fn test_high_throughput() {
+        let num_transactions = 10_000;
+
+        // Generate test transactions
+        let _transactions: Vec<Vec<u8>> = (0..num_transactions)
+            .map(|i: u32| {
+                // Create transaction data with a specific size
+                let mut data = Vec::with_capacity(1024);
+                let bytes = i.to_le_bytes();
+                data.extend_from_slice(&bytes);
+                // Fill rest with random data
+                data.resize(1024, 0);
+                data
+            })
+            .collect();
+
+        // Rest of the test implementation...
+    }
+
+    #[test]
     fn test_parallel_processing_capacity() {
         // Set up a test measuring raw parallel processing speed
         let num_threads = num_cpus::get();
-        let num_transactions = 1_000_000;
+        let num_transactions: usize = 1_000_000;
         let tx_size = 1024; // 1KB transactions
 
         println!(

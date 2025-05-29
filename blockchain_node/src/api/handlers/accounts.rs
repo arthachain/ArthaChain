@@ -133,7 +133,7 @@ pub async fn get_account_transactions(
             .iter()
             .map(|tx| {
                 // Convert types::Transaction to ledger::transaction::Transaction
-                let ledger_tx: crate::ledger::transaction::Transaction = tx.clone().into();
+                let ledger_tx: crate::ledger::transaction::Transaction = tx.clone();
                 // For now, transactions are not yet in blocks, so no confirmations
                 TransactionResponse::from_tx(&ledger_tx, None, None, 0)
             })

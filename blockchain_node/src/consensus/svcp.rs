@@ -297,14 +297,14 @@ impl SVCPMiner {
         let parallel_processor = self.parallel_processor.clone();
 
         let handle = tokio::spawn(async move {
-            info!("SVCP miner started with difficulty: {}", current_difficulty);
+            info!("SVCP miner started with difficulty: {current_difficulty}");
 
             // Update proposers at startup
             if let Err(e) =
                 Self::update_proposer_candidates(&node_scores, &current_proposers, &svcp_config)
                     .await
             {
-                warn!("Failed to update proposer candidates: {}", e);
+                warn!("Failed to update proposer candidates: {e}");
             }
 
             let mut mining_interval = tokio::time::interval(Duration::from_secs(1));
@@ -332,7 +332,7 @@ impl SVCPMiner {
 
                                 // Log estimated TPS
                                 let estimated_tps = processor.get_estimated_tps();
-                                debug!("Estimated TPS with {} validators: {:.2}", validators, estimated_tps);
+                                debug!("Estimated TPS with {validators} validators: {estimated_tps:.2}");
                             }
 
                             // Skip regular mining as parallel processor handles it
@@ -360,7 +360,7 @@ impl SVCPMiner {
 
                         if should_update {
                             if let Err(e) = Self::update_proposer_candidates(&node_scores, &current_proposers, &svcp_config).await {
-                                warn!("Failed to update proposer candidates: {}", e);
+                                warn!("Failed to update proposer candidates: {e}");
                             }
 
                             let mut last_update = last_proposer_update.lock().await;
@@ -399,12 +399,11 @@ impl SVCPMiner {
                                             &node_scores
                                         ).await;
 
-                                        info!("Applied block reward of {} tokens to miner {}",
-                                              reward, proposer_id);
+                                        info!("Applied block reward of {reward} tokens to miner {proposer_id}");
 
                                         // Send mined block
                                         if let Err(e) = block_sender.send(mined_block).await {
-                                            warn!("Failed to send mined block: {}", e);
+                                            warn!("Failed to send mined block: {e}");
                                         }
 
                                         // Adjust difficulty (static method without 'self' access)
@@ -418,12 +417,12 @@ impl SVCPMiner {
                                         debug!("Mining interrupted");
                                     },
                                     MiningResult::Error(err) => {
-                                        warn!("Mining error: {}", err);
+                                        warn!("Mining error: {err}");
                                     }
                                 }
                             },
                             Err(e) => {
-                                warn!("Failed to create candidate block: {}", e);
+                                warn!("Failed to create candidate block: {e}");
                             }
                         }
                     },
@@ -437,7 +436,7 @@ impl SVCPMiner {
             // If we have a parallel processor handle, wait for it
             if let Some(handle) = parallel_handle {
                 if let Err(e) = handle.await {
-                    warn!("Parallel processor task failed: {:?}", e);
+                    warn!("Parallel processor task failed: {e:?}");
                 }
             }
 
@@ -522,8 +521,7 @@ impl SVCPMiner {
         // Get pending transactions from the mempool
         // In a real implementation, this would fetch pending transactions from a mempool
         let transactions = state_guard.get_pending_transactions(10); // Limit to 10 transactions for now
-        let transactions: Vec<crate::ledger::transaction::Transaction> =
-            transactions.into_iter().map(Into::into).collect();
+                                                                     // transactions is already Vec<crate::ledger::transaction::Transaction>
 
         // Get the shard ID from state or config
         let shard_id = state_guard.get_shard_id()?; // Use ? operator to propagate the Result
@@ -551,10 +549,7 @@ impl SVCPMiner {
         let target = 1u64 << (64 - difficulty);
         let start_time = Instant::now();
 
-        debug!(
-            "Starting mining with difficulty {}, target: {}",
-            difficulty, target
-        );
+        debug!("Starting mining with difficulty {difficulty}, target: {target}");
 
         // Try different nonces until we find one that satisfies the difficulty
         for nonce in 0..u64::MAX {
@@ -562,7 +557,7 @@ impl SVCPMiner {
             if nonce % 100 == 0 {
                 let is_running = *running.lock().await;
                 if !is_running {
-                    debug!("Mining interrupted after checking {} nonces", nonce);
+                    debug!("Mining interrupted after checking {nonce} nonces");
                     return MiningResult::Interrupted;
                 }
             }
@@ -595,9 +590,7 @@ impl SVCPMiner {
                 // Found a valid nonce!
                 let duration = start_time.elapsed();
                 debug!(
-                    "Successfully mined block with nonce {} in {:?}, hash: {}",
-                    nonce,
-                    duration,
+                    "Successfully mined block with nonce {nonce} in {duration:?}, hash: {}",
                     block.hash()
                 );
                 return MiningResult::Success(block);
@@ -797,10 +790,10 @@ impl SVCPMiner {
 
         if ratio > 1.2 {
             // Blocks are too slow, reduce difficulty (max 50% decrease)
-            new_difficulty = new_difficulty * (2.0 - ratio.min(1.5));
+            new_difficulty *= 2.0 - ratio.min(1.5);
         } else if ratio < 0.8 {
             // Blocks are too fast, increase difficulty (max 50% increase)
-            new_difficulty = new_difficulty * (2.0 - ratio.max(0.5));
+            new_difficulty *= 2.0 - ratio.max(0.5);
         }
 
         // Ensure difficulty never goes below 1
@@ -854,10 +847,10 @@ impl SVCPMiner {
 
         if ratio > 1.2 {
             // Blocks are too slow, reduce difficulty (max 50% decrease)
-            new_difficulty = new_difficulty * (2.0 - ratio.min(1.5));
+            new_difficulty *= 2.0 - ratio.min(1.5);
         } else if ratio < 0.8 {
             // Blocks are too fast, increase difficulty (max 50% increase)
-            new_difficulty = new_difficulty * (2.0 - ratio.max(0.5));
+            new_difficulty *= 2.0 - ratio.max(0.5);
         }
 
         // Ensure difficulty never goes below 1
@@ -922,10 +915,7 @@ impl SVCPMiner {
                     // Update score based on validator power
                     node_score.overall_score = node_score.overall_score.max(score);
 
-                    info!(
-                        "Loaded genesis validator: {} with power: {}",
-                        node_id, power
-                    );
+                    info!("Loaded genesis validator: {node_id} with power: {power}");
                 }
             }
 
@@ -1227,7 +1217,7 @@ impl BlockTimeMonitor {
         let newest = &self.block_times[newest_idx];
         let oldest = &self.block_times[oldest_idx];
 
-        let time_diff = newest.0.duration_since(oldest.0.clone()).as_secs_f64();
+        let time_diff = newest.0.duration_since(oldest.0).as_secs_f64();
         if time_diff <= 0.0 {
             return 0.0;
         }
@@ -1343,7 +1333,7 @@ impl SVCPConsensus {
 
         // In a real implementation, this would verify and process the block
         // For now, just log and return success
-        info!("SVCP processed block: {}", _block_hash);
+        info!("SVCP processed block: {_block_hash}");
 
         // Update blockchain state (in a real implementation)
 
@@ -1381,7 +1371,7 @@ impl CrossShardConsensus {
     ) -> Result<()> {
         // In a real implementation, this would coordinate with other shards
         // For now, just log and return success
-        info!("Processing cross-shard transaction: {}", _tx_hash);
+        info!("Processing cross-shard transaction: {_tx_hash}");
         Ok(())
     }
 

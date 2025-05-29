@@ -151,6 +151,12 @@ pub struct DeviceMonitor {
     sys: System,
 }
 
+impl Default for DeviceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeviceMonitor {
     /// Create a new device monitor
     pub fn new() -> Self {
@@ -187,21 +193,19 @@ impl DeviceMonitor {
         self.sys.refresh_all();
 
         // Create dummy data since disks API might have compatibility issues
-        let mut results = Vec::new();
-
         // Provide dummy data for disk usage
-        results.push((
-            "root".to_string(),
-            500 * 1024 * 1024 * 1024, // 500 GB total
-            400 * 1024 * 1024 * 1024, // 400 GB available
-        ));
-        results.push((
-            "data".to_string(),
-            1000 * 1024 * 1024 * 1024, // 1 TB total
-            750 * 1024 * 1024 * 1024,  // 750 GB available
-        ));
-
-        results
+        vec![
+            (
+                "root".to_string(),
+                500 * 1024 * 1024 * 1024, // 500 GB total
+                400 * 1024 * 1024 * 1024, // 400 GB available
+            ),
+            (
+                "data".to_string(),
+                1000 * 1024 * 1024 * 1024, // 1 TB total
+                750 * 1024 * 1024 * 1024,  // 750 GB available
+            ),
+        ]
     }
 
     /// Update all system info
@@ -412,7 +416,7 @@ impl DeviceHealthAI {
     pub async fn update_model(&mut self, model_path: &str) -> Result<()> {
         // Load model from path (placeholder implementation)
         // In a real implementation, we'd load ML models here
-        info!("Updating device health model from {}", model_path);
+        info!("Updating device health model from {model_path}");
         self.model_version = "1.1.0".to_string();
         self.model_last_updated = Instant::now();
         Ok(())

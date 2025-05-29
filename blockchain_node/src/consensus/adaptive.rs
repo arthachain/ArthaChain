@@ -671,7 +671,7 @@ impl AdaptiveConsensusManager {
         let final_score = base_scores + historical_adjustment;
 
         // Clamp to reasonable range
-        Ok(final_score.max(0.1).min(1.0))
+        Ok(final_score.clamp(0.1, 1.0))
     }
 
     /// Get the current consensus algorithm

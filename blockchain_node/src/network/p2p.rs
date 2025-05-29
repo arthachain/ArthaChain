@@ -333,7 +333,7 @@ impl P2PNetwork {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
 
-        info!("Local peer id: {}", peer_id);
+        info!("Local peer id: {peer_id}");
 
         // Get shard ID from config
         let shard_id = config.sharding.shard_id;
@@ -357,7 +357,7 @@ impl P2PNetwork {
             _block_propagation_queue: Arc::new(RwLock::new(BlockPropagationQueue::new(1000))),
             block_topic: Topic::new("blocks"),
             tx_topic: Topic::new("transactions"),
-            vote_topic: Topic::new(format!("votes-shard-{}", shard_id)),
+            vote_topic: Topic::new(format!("votes-shard-{shard_id}")),
             cross_shard_topic: Topic::new("cross-shard"),
             dos_protection: Arc::new(dos_protection),
             swarm: None,
@@ -391,7 +391,7 @@ impl P2PNetwork {
             .boxed();
 
         // Create behavior
-        let behaviour = Self::create_behaviour(peer_id.clone())?;
+        let behaviour = Self::create_behaviour(peer_id)?;
 
         // Build swarm
         let mut swarm = Swarm::new(
@@ -427,10 +427,10 @@ impl P2PNetwork {
             match addr.parse::<libp2p::Multiaddr>() {
                 Ok(peer_addr) => {
                     if let Err(e) = swarm.dial(peer_addr) {
-                        warn!("Failed to dial bootstrap peer {}: {}", addr, e);
+                        warn!("Failed to dial bootstrap peer {addr}: {e}");
                     }
                 }
-                Err(e) => warn!("Failed to parse bootstrap peer address {}: {}", addr, e),
+                Err(e) => warn!("Failed to parse bootstrap peer address {addr}: {e}"),
             }
         }
 
@@ -456,12 +456,12 @@ impl P2PNetwork {
                                 }
 
                                 if let Err(e) = Self::handle_pubsub_message(&message, &message_tx, &state, &dos_protection).await {
-                                    warn!("Error handling pubsub message: {}", e);
+                                    warn!("Error handling pubsub message: {e}");
                                 }
                             },
                             SwarmEvent::Behaviour(ComposedEvent::Ping(ping_evt)) => {
                                 // Use a simpler string representation for ping events
-                                debug!("Received ping event: {:?}", ping_evt);
+                                debug!("Received ping event: {ping_evt:?}");
                             },
                             SwarmEvent::Behaviour(ComposedEvent::Kademlia(kad::Event::OutboundQueryProgressed { result, .. })) => {
                                 match result {
@@ -470,16 +470,16 @@ impl P2PNetwork {
                                         debug!("GetProviders query completed successfully");
                                     },
                                     QueryResult::GetProviders(Err(err)) => {
-                                        warn!("Failed to get providers: {}", err);
+                                        warn!("Failed to get providers: {err}");
                                     },
                                     _ => {}
                                 }
                             },
                             SwarmEvent::NewListenAddr { address, .. } => {
-                                info!("Listening on {}", address);
+                                info!("Listening on {address}");
                             },
                             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                                info!("Connected to {}", peer_id);
+                                info!("Connected to {peer_id}");
 
                                 {
                                     let mut stats_guard = stats.write().await;
@@ -488,7 +488,7 @@ impl P2PNetwork {
                                 }
                             },
                             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                                info!("Disconnected from {}: {:?}", peer_id, cause);
+                                info!("Disconnected from {peer_id}: {cause:?}");
 
                                 {
                                     let mut stats_guard = stats.write().await;
@@ -502,7 +502,7 @@ impl P2PNetwork {
                     // Process outgoing messages from other components
                     Some(message) = message_rx.recv() => {
                         if let Err(e) = Self::publish_message(&mut swarm_for_task, message, &block_topic, &tx_topic, &vote_topic, &cross_shard_topic, shard_id, &stats, &dos_protection).await {
-                            warn!("Error publishing message: {}", e);
+                            warn!("Error publishing message: {e}");
                         }
                     },
 
@@ -510,7 +510,7 @@ impl P2PNetwork {
                     _ = discovery_timer.tick() => {
                         debug!("Running Kademlia bootstrap");
                         if let Err(e) = swarm_for_task.behaviour_mut().kademlia.bootstrap() {
-                            warn!("Failed to bootstrap Kademlia: {}", e);
+                            warn!("Failed to bootstrap Kademlia: {e}");
                         }
                     },
                 }
@@ -523,11 +523,11 @@ impl P2PNetwork {
     /// Create network behavior
     fn create_behaviour(local_peer_id: PeerId) -> Result<ComposedBehaviour> {
         // Set up Floodsub for publish/subscribe
-        let floodsub = Floodsub::new(local_peer_id.clone());
+        let floodsub = Floodsub::new(local_peer_id);
 
         // Set up Kademlia for peer discovery and DHT
-        let store = MemoryStore::new(local_peer_id.clone());
-        let kademlia = kad::Behaviour::new(local_peer_id.clone(), store);
+        let store = MemoryStore::new(local_peer_id);
+        let kademlia = kad::Behaviour::new(local_peer_id, store);
 
         // Set up ping for liveness checking
         let ping = ping::Behaviour::new(ping::Config::new());
@@ -592,7 +592,7 @@ impl P2PNetwork {
                 // Add to mempool
                 let mut _state_guard = state.write().await;
                 if let Err(e) = _state_guard.add_pending_transaction(tx.clone()) {
-                    warn!("Failed to add transaction to mempool: {}", e);
+                    warn!("Failed to add transaction to mempool: {e}");
                 }
             }
             NetworkMessage::BlockRequest {
@@ -639,8 +639,7 @@ impl P2PNetwork {
                 timestamp,
             } => {
                 info!(
-                    "Received shard assignment: node {} assigned to shard {} at timestamp {}",
-                    node_id, shard_id, timestamp
+                    "Received shard assignment: node {node_id} assigned to shard {shard_id} at timestamp {timestamp}"
                 );
 
                 // Forward to sharding layer
@@ -656,8 +655,7 @@ impl P2PNetwork {
                 ..
             } => {
                 debug!(
-                    "Received cross-shard message from shard {} to {}: {:?}",
-                    from_shard, to_shard, message_type
+                    "Received cross-shard message from shard {from_shard} to {to_shard}: {message_type:?}"
                 );
 
                 // Forward to sharding layer
@@ -688,7 +686,7 @@ impl P2PNetwork {
 
         // Check DoS protection for outgoing message
         if !dos_protection
-            .check_message_rate(&swarm.local_peer_id(), data.len())
+            .check_message_rate(swarm.local_peer_id(), data.len())
             .await?
         {
             warn!("Outgoing message blocked by DoS protection");
@@ -727,7 +725,7 @@ impl P2PNetwork {
 
     /// Get the local peer ID
     pub fn get_peer_id(&self) -> PeerId {
-        self.peer_id.clone()
+        self.peer_id
     }
 
     /// Get network statistics
@@ -908,6 +906,11 @@ impl P2PNetwork {
         arr[..len].copy_from_slice(&bytes[..len]);
         crate::utils::crypto::Hash::new(arr)
     }
+
+    pub async fn get_block_by_hash(&self, hash: &Hash) -> Option<Block> {
+        let state = self.state.read().await;
+        state.get_block_by_hash(hash).map(|block| block.clone())
+    }
 }
 
 #[cfg(test)]
@@ -918,7 +921,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_message_serialization() {
         // Create a test transaction
-        let tx = Transaction::new(
+        let mut tx = Transaction::new(
             TransactionType::Transfer,
             "sender".to_string(),
             "recipient".to_string(),
@@ -927,8 +930,8 @@ mod tests {
             10,
             1000,
             vec![],
-            vec![1, 2, 3],
         );
+        tx.signature = vec![1, 2, 3];
 
         // Create network message
         let message = NetworkMessage::TransactionGossip(tx);

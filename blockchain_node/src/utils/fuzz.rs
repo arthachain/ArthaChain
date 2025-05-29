@@ -349,8 +349,8 @@ impl ContractFuzzer {
                     result.error_message.as_ref().unwrap_or(&"".to_string())
                 );
 
-                if !seen_errors.contains_key(&error_key) {
-                    seen_errors.insert(error_key, true);
+                if let std::collections::hash_map::Entry::Vacant(e) = seen_errors.entry(error_key) {
+                    e.insert(true);
                     result.unique_error = true;
 
                     if result.unique_error {
@@ -440,7 +440,7 @@ impl ContractFuzzer {
                 ));
             }
 
-            result.push_str("\n");
+            result.push('\n');
         }
 
         // Error type breakdown
@@ -463,7 +463,7 @@ impl ContractFuzzer {
                 ));
             }
 
-            result.push_str("\n");
+            result.push('\n');
         }
 
         result

@@ -8,6 +8,12 @@ use std::result::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// Type alias for neural network model storage
+type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>;
+
+/// Type alias for training data
+type TrainingDataVec = Vec<(Vec<f32>, Vec<f32>)>;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SelfLearningConfig {
     /// Base neural network configuration
@@ -27,7 +33,7 @@ pub struct SelfLearningConfig {
 /// Self-learning system that coordinates multiple neural models
 pub struct SelfLearningSystem {
     /// Neural models for different tasks
-    models: HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>,
+    models: NeuralModelMap,
     /// Model configurations
     configs: HashMap<String, NeuralConfig>,
     /// Learning coordinator
@@ -198,7 +204,7 @@ impl SelfLearningSystem {
     }
 
     /// Prepare training data from experiences
-    fn prepare_training_data(&self) -> Result<Vec<(Vec<f32>, Vec<f32>)>, anyhow::Error> {
+    fn prepare_training_data(&self) -> Result<TrainingDataVec, anyhow::Error> {
         // Convert experiences to input-output pairs
         let mut training_data = Vec::new();
 
@@ -257,7 +263,7 @@ impl SelfLearningSystem {
     async fn adapt_models(&self) -> Result<(), anyhow::Error> {
         let metrics = self.metrics.read().await;
 
-        for (name, _) in &self.models {
+        for name in self.models.keys() {
             if let Some(&loss) = metrics.losses.get(name) {
                 if loss > self.coordinator.adaptation_threshold {
                     // Increase model capacity
@@ -301,7 +307,8 @@ impl SelfLearningSystem {
             let mut sys = System::new();
             sys.refresh_cpu();
             _metrics.resource_usage.cpu_usage = sys.global_cpu_info().cpu_usage();
-            _metrics.resource_usage.memory_usage = (sys.used_memory() * 100 / sys.total_memory()) as u64;
+            _metrics.resource_usage.memory_usage =
+                (sys.used_memory() * 100 / sys.total_memory()) as u64;
         }
 
         Ok(())
@@ -313,8 +320,8 @@ impl SelfLearningSystem {
 
         // Save individual models to temporary files to capture their state
         let mut model_paths = HashMap::new();
-        for (name, _) in &self.models {
-            let path = format!("temp_model_{}.pt", name);
+        for name in self.models.keys() {
+            let path = format!("temp_model_{name}.pt");
             model_paths.insert(name.clone(), path);
         }
 
@@ -369,10 +376,10 @@ impl SelfLearningSystem {
         std::fs::write(path, serialized)?;
 
         // Save each model
-        for (name, _model_path) in &state.model_paths {
+        for name in state.model_paths.keys() {
             if let Some(model) = self.models.get(name) {
                 let model = model.blocking_read();
-                let full_path = format!("{}/model_{}.pt", path, name);
+                let full_path = format!("{path}/model_{name}.pt");
                 model.save(&full_path)?;
             }
         }
@@ -390,10 +397,10 @@ impl SelfLearningSystem {
         self.restore_from_state(state)?;
 
         // Load each model
-        for (name, _) in &self.configs {
+        for name in self.configs.keys() {
             if let Some(model) = self.models.get(name) {
                 let mut model = model.blocking_write();
-                let full_path = format!("{}/model_{}.pt", path, name);
+                let full_path = format!("{path}/model_{name}.pt");
                 if std::path::Path::new(&full_path).exists() {
                     model.load(&full_path)?;
                 }
@@ -487,12 +494,12 @@ impl SelfLearningSystem {
 
         // Generate placeholder models
         for i in 0..import.model_count {
-            let _model_path = format!("model_{}", i);
+            let _model_path = format!("model_{i}");
             let config = self.configs["base"].clone();
             let model = NeuralBase::new(config).await?;
             let boxed_model: Box<dyn NeuralNetwork> = Box::new(model);
             self.models
-                .insert(format!("model_{}", i), Arc::new(RwLock::new(boxed_model)));
+                .insert(format!("model_{i}"), Arc::new(RwLock::new(boxed_model)));
         }
 
         Ok(())

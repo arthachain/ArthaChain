@@ -1,23 +1,28 @@
+use libp2p::PeerId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
 use anyhow::Result;
-use libp2p::PeerId;
 use log::warn;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+
+type Timestamp = SystemTime;
+type ReputationScore = f64;
+type ReputationHistory = Vec<(Timestamp, ReputationScore)>;
+type PeerHistoryMap = HashMap<PeerId, ReputationHistory>;
 
 // Custom timestamp type that can be serialized/deserialized
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Timestamp(pub u64);
+pub struct TimestampStruct(pub u64);
 
-impl Timestamp {
+impl TimestampStruct {
     pub fn now() -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
-        Timestamp(now.as_secs())
+        TimestampStruct(now.as_secs())
     }
 
     pub fn to_instant(&self) -> Instant {
@@ -30,34 +35,6 @@ impl Timestamp {
         // Since Instant doesn't expose its internal time, we use current time
         // In a real implementation, you'd track relative time from process start
         Self::now()
-    }
-}
-
-/// Reputation score components
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReputationScore {
-    pub overall: f64,
-    pub uptime: f64,
-    pub response_time: f64,
-    pub block_propagation: f64,
-    pub transaction_relay: f64,
-    pub validation: f64,
-    pub bandwidth: f64,
-    pub last_updated: Timestamp,
-}
-
-impl Default for ReputationScore {
-    fn default() -> Self {
-        Self {
-            overall: 1.0,
-            uptime: 1.0,
-            response_time: 1.0,
-            block_propagation: 1.0,
-            transaction_relay: 1.0,
-            validation: 1.0,
-            bandwidth: 1.0,
-            last_updated: Timestamp::now(),
-        }
     }
 }
 
@@ -128,7 +105,7 @@ pub struct PeerReputationManager {
     config: ReputationConfig,
     scores: Arc<RwLock<HashMap<PeerId, ReputationScore>>>,
     metrics: Arc<RwLock<HashMap<PeerId, PeerMetrics>>>,
-    history: Arc<RwLock<HashMap<PeerId, Vec<(Timestamp, f64)>>>>,
+    history: Arc<RwLock<PeerHistoryMap>>,
     trusted_peers: Arc<RwLock<HashSet<PeerId>>>,
     banned_peers: Arc<RwLock<HashSet<PeerId>>>,
 }
@@ -164,62 +141,54 @@ impl PeerReputationManager {
         let metrics = self.metrics.read().await;
         let peer_metrics = metrics.get(peer_id).cloned().unwrap_or_default();
 
-        let mut score = ReputationScore::default();
-
-        // Calculate uptime score
-        score.uptime = if peer_metrics.total_errors > 0 {
+        // Calculate individual scores
+        let uptime_score = if peer_metrics.total_errors > 0 {
             1.0 / (1.0 + peer_metrics.total_errors as f64)
         } else {
             1.0
         };
 
-        // Calculate response time score
-        score.response_time = if peer_metrics.average_response_time.as_millis() > 0 {
+        let response_time_score = if peer_metrics.average_response_time.as_millis() > 0 {
             1.0 / (1.0 + peer_metrics.average_response_time.as_millis() as f64 / 1000.0)
         } else {
             1.0
         };
 
-        // Calculate block propagation score
-        score.block_propagation = if peer_metrics.total_blocks_propagated > 0 {
+        let block_prop_score = if peer_metrics.total_blocks_propagated > 0 {
             peer_metrics.total_blocks_validated as f64 / peer_metrics.total_blocks_propagated as f64
         } else {
             0.0
         };
 
-        // Calculate transaction relay score
-        score.transaction_relay = if peer_metrics.total_transactions_relayed > 0 {
+        let tx_relay_score = if peer_metrics.total_transactions_relayed > 0 {
             1.0 - (peer_metrics.total_errors as f64
                 / peer_metrics.total_transactions_relayed as f64)
         } else {
             0.0
         };
 
-        // Calculate validation score
-        score.validation = if peer_metrics.total_blocks_validated > 0 {
+        let validation_score = if peer_metrics.total_blocks_validated > 0 {
             1.0 - (peer_metrics.total_blocks_invalid as f64
                 / peer_metrics.total_blocks_validated as f64)
         } else {
             0.0
         };
 
-        // Calculate bandwidth score
-        score.bandwidth = if peer_metrics.bandwidth_usage > 0 {
+        let bandwidth_score = if peer_metrics.bandwidth_usage > 0 {
             (peer_metrics.total_responses as f64 / peer_metrics.bandwidth_usage as f64).min(1.0)
         } else {
             0.0
         };
 
-        // Calculate overall score
-        score.overall = (score.uptime * 0.2
-            + score.response_time * 0.2
-            + score.block_propagation * 0.2
-            + score.transaction_relay * 0.15
-            + score.validation * 0.15
-            + score.bandwidth * 0.1)
+        // Calculate overall score with weights
+        let score = (uptime_score * 0.2
+            + response_time_score * 0.2
+            + block_prop_score * 0.2
+            + tx_relay_score * 0.15
+            + validation_score * 0.15
+            + bandwidth_score * 0.1)
             * self.config.max_score;
 
-        score.last_updated = Timestamp::now();
         Ok(score)
     }
 
@@ -229,12 +198,12 @@ impl PeerReputationManager {
 
         // Update score
         let mut scores = self.scores.write().await;
-        scores.insert(*peer_id, score.clone());
+        scores.insert(*peer_id, score);
 
         // Update history
         let mut history = self.history.write().await;
         let peer_history = history.entry(*peer_id).or_insert_with(Vec::new);
-        peer_history.push((Timestamp::now(), score.overall));
+        peer_history.push((Timestamp::now(), score));
 
         // Trim history if needed
         if peer_history.len() > self.config.history_size {
@@ -242,7 +211,7 @@ impl PeerReputationManager {
         }
 
         // Update trusted/banned status
-        if score.overall >= self.config.trust_threshold {
+        if score >= self.config.trust_threshold {
             let mut trusted = self.trusted_peers.write().await;
             trusted.insert(*peer_id);
         } else {
@@ -250,12 +219,12 @@ impl PeerReputationManager {
             trusted.remove(peer_id);
         }
 
-        if score.overall <= self.config.ban_threshold {
+        if score <= self.config.ban_threshold {
             let mut banned = self.banned_peers.write().await;
             banned.insert(*peer_id);
             warn!(
                 "Peer {} banned due to low reputation score: {}",
-                peer_id, score.overall
+                peer_id, score
             );
         }
 
@@ -295,11 +264,9 @@ impl PeerReputationManager {
     /// Decay reputation scores over time
     pub async fn decay_scores(&self) -> Result<()> {
         let mut scores = self.scores.write().await;
-        for (_, score) in scores.iter_mut() {
-            let decay = self.config.score_decay_rate
-                * (Timestamp::now().to_instant() - score.last_updated.to_instant()).as_secs_f64()
-                / self.config.update_interval.as_secs_f64();
-            score.overall = (score.overall - decay).max(self.config.min_score);
+        for score in scores.values_mut() {
+            let decay = self.config.score_decay_rate * self.config.update_interval.as_secs_f64();
+            *score = (*score - decay).max(self.config.min_score);
         }
         Ok(())
     }
@@ -382,12 +349,14 @@ mod tests {
         let peer_id = PeerId::random();
 
         // Update metrics
-        let mut metrics = PeerMetrics::default();
-        metrics.total_blocks_propagated = 10;
-        metrics.total_blocks_validated = 9;
-        metrics.total_transactions_relayed = 100;
-        metrics.total_errors = 1;
-        metrics.average_response_time = Duration::from_millis(50);
+        let metrics = PeerMetrics {
+            total_blocks_propagated: 10,
+            total_blocks_validated: 9,
+            total_transactions_relayed: 100,
+            total_errors: 1,
+            average_response_time: Duration::from_millis(50),
+            ..PeerMetrics::default()
+        };
 
         manager.update_metrics(&peer_id, metrics).await.unwrap();
 
@@ -396,18 +365,20 @@ mod tests {
 
         // Get score
         let score = manager.get_score(&peer_id).await.unwrap();
-        assert!(score.overall > 0.0);
+        assert!(score > 0.0);
 
         // Simulate some activity
         sleep(Duration::from_millis(100)).await;
 
         // Update metrics again with different values
-        let mut new_metrics = PeerMetrics::default();
-        new_metrics.total_blocks_propagated = 20;
-        new_metrics.total_blocks_validated = 18;
-        new_metrics.total_transactions_relayed = 200;
-        new_metrics.total_errors = 2;
-        new_metrics.average_response_time = Duration::from_millis(60);
+        let new_metrics = PeerMetrics {
+            total_blocks_propagated: 20,
+            total_blocks_validated: 18,
+            total_transactions_relayed: 200,
+            total_errors: 2,
+            average_response_time: Duration::from_millis(60),
+            ..PeerMetrics::default()
+        };
 
         manager.update_metrics(&peer_id, new_metrics).await.unwrap();
 
@@ -420,6 +391,6 @@ mod tests {
         // The score should change based on the new metrics
         // Due to implementation details, the score may increase or decrease
         // We just check that they're different
-        assert_ne!(new_score.overall, score.overall);
+        assert_ne!(new_score, score);
     }
 }

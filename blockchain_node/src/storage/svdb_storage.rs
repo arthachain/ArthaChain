@@ -29,13 +29,25 @@ pub struct SvdbStorage {
     _data: HashMap<String, Vec<u8>>,
 }
 
+impl Default for SvdbStorage {
+    fn default() -> Self {
+        Self::new("http://localhost:8080".to_string()).unwrap_or_else(|_| Self {
+            _client: Client::new(),
+            _base_url: "http://localhost:8080".to_string(),
+            db: Arc::new(RwLock::new(None)),
+            db_path: Arc::new(RwLock::new(None)),
+            _data: HashMap::new(),
+        })
+    }
+}
+
 impl SvdbStorage {
     /// Create a new SVDB storage instance
     pub fn new(base_url: String) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|e| StorageError::Other(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Failed to create HTTP client: {e}")))?;
 
         Ok(Self {
             _client: client,
@@ -51,14 +63,14 @@ impl SvdbStorage {
         let db = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         if db.is_none() {
             // If DB is None, attempt to reopen from path
             let path_clone = {
                 let path_lock = self
                     .db_path
                     .read()
-                    .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+                    .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
                 if let Some(path) = &*path_lock {
                     path.clone()
                 } else {
@@ -70,12 +82,12 @@ impl SvdbStorage {
             options.create_if_missing(true);
 
             let db_instance = DB::open(&options, &path_clone)
-                .map_err(|e| StorageError::Other(format!("Failed to reopen DB: {}", e)))?;
+                .map_err(|e| StorageError::Other(format!("Failed to reopen DB: {e}")))?;
 
             let mut db_write = self
                 .db
                 .write()
-                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+                .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
             *db_write = Some(db_instance);
         }
         Ok(())
@@ -101,7 +113,7 @@ impl Storage for SvdbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         if let Some(db) = &*db_read {
             db.put(hash.as_bytes(), data)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
@@ -117,7 +129,7 @@ impl Storage for SvdbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             match db.get(hash.as_bytes()) {
@@ -141,7 +153,7 @@ impl Storage for SvdbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             match db.get(hash.as_bytes()) {
@@ -165,7 +177,7 @@ impl Storage for SvdbStorage {
         let db_read = self
             .db
             .read()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
 
         if let Some(db) = &*db_read {
             db.delete(hash.as_bytes())
@@ -181,9 +193,8 @@ impl Storage for SvdbStorage {
         let calculated_hash = blake3::hash(data).as_bytes().to_vec();
         let matches = calculated_hash == hash.as_bytes();
         debug!(
-            "Verified data hash {} matches: {}",
-            hex::encode(hash),
-            matches
+            "Verified data hash {} matches: {matches}",
+            hex::encode(hash)
         );
         Ok(matches)
     }
@@ -192,7 +203,7 @@ impl Storage for SvdbStorage {
         let mut db = self
             .db
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *db = None;
         debug!("SVDB storage closed successfully");
         Ok(())
@@ -215,22 +226,24 @@ impl StorageInit for SvdbStorage {
 
         let path_ref = path.as_ref();
         let db = DB::open(&options, path_ref.as_ref())
-            .map_err(|e| StorageError::Other(format!("Failed to open RocksDB: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Failed to open SVDB: {e}")))?;
 
         // Store the path for potential reopening
         let mut path_lock = self
             .db_path
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *path_lock = Some(path_ref.as_ref().to_path_buf());
 
         let mut db_lock = self
             .db
             .write()
-            .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
+            .map_err(|e| StorageError::Other(format!("Lock error: {e}")))?;
         *db_lock = Some(db);
 
         debug!("SVDB storage initialized successfully");
         Ok(())
     }
 }
+
+impl crate::storage::StorageBackend for SvdbStorage {}

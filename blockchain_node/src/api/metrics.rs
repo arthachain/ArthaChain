@@ -49,6 +49,7 @@ pub struct MetricsData {
 }
 
 /// Metrics service for tracking blockchain performance
+#[derive(Default)]
 pub struct MetricsService {
     total_transactions: AtomicU64,
     total_blocks: AtomicU64,

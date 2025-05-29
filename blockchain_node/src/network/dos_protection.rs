@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 // Define our own SecurityMetrics since we can't import it
-#[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SecurityMetrics {
     // Fields and methods needed for our implementation
     #[allow(dead_code)]
@@ -22,36 +22,30 @@ pub struct SecurityMetrics {
     violation_count: Arc<RwLock<HashMap<PeerId, u64>>>,
     #[allow(dead_code)]
     reputation_updates: Arc<RwLock<HashMap<PeerId, f64>>>,
+    last_reset: Arc<RwLock<HashMap<PeerId, u64>>>,
 }
 
 impl SecurityMetrics {
     pub fn new() -> Self {
-        Self {
-            request_count: Arc::new(RwLock::new(HashMap::new())),
-            violation_count: Arc::new(RwLock::new(HashMap::new())),
-            reputation_updates: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self::default()
     }
 
     pub fn record_request_processed(&self, peer_id: PeerId) {
         // In a real implementation, this would update metrics
         // For now, we just log it
-        println!("Request processed from peer: {:?}", peer_id);
+        println!("Request processed from peer: {peer_id:?}");
     }
 
     pub fn record_violation(&self, peer_id: PeerId, violation_type: &str) {
         // In a real implementation, this would update metrics
         // For now, we just log it
-        println!("Violation {:?} from peer: {:?}", violation_type, peer_id);
+        println!("Violation {violation_type:?} from peer: {peer_id:?}");
     }
 
     pub fn record_reputation_update(&self, peer_id: PeerId, score_delta: f64) {
         // In a real implementation, this would update metrics
         // For now, we just log it
-        println!(
-            "Reputation update {:?} for peer: {:?}",
-            score_delta, peer_id
-        );
+        println!("Reputation update {score_delta:?} for peer: {peer_id:?}");
     }
 }
 
@@ -114,11 +108,7 @@ impl DosProtection {
         // For now, we'll just print a warning if the message is large
         if message_size > 1024 * 1024 {
             // If message is larger than 1MB
-            log::warn!(
-                "Large message ({} bytes) from peer {}",
-                message_size,
-                peer_id
-            );
+            log::warn!("Large message ({message_size} bytes) from peer {peer_id}");
         }
 
         Ok(self.check_request(ip).await)
@@ -582,9 +572,9 @@ impl RateLimiter {
         // First check if we have a rate limit for this peer
         if !self.peer_limits.contains_key(&peer_id) {
             // Create a new peer limit
-            self.peer_limits.insert(
-                peer_id,
-                RateLimit {
+            self.peer_limits
+                .entry(peer_id)
+                .or_insert_with(|| RateLimit {
                     requests_per_second: 10, // Allow 10 requests per second by default
                     requests_per_minute: 200,
                     data_per_second: 500, // Lower this from 1000 to 500 to match global limit
@@ -594,8 +584,7 @@ impl RateLimiter {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
                         .as_secs(),
-                },
-            );
+                });
         }
 
         // Check peer limit
@@ -935,7 +924,7 @@ impl ReputationSystem {
 
     fn update_score(&mut self, peer_id: PeerId, score_delta: f64) -> anyhow::Result<()> {
         let score = self.scores.entry(peer_id).or_insert(1.0);
-        *score = (*score + score_delta).max(0.0).min(1.0);
+        *score = (*score + score_delta).clamp(0.0, 1.0);
         Ok(())
     }
 

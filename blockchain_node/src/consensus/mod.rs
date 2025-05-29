@@ -12,8 +12,8 @@ pub mod byzantine;
 pub mod adaptive;
 
 // SVBFT modules
-pub mod svbft;
 pub mod quantum_svbft;
+pub mod svbft;
 pub mod view_change;
 
 #[cfg(not(skip_problematic_modules))]
@@ -44,7 +44,10 @@ pub use checkpoint::CheckpointManager;
 #[cfg(not(skip_problematic_modules))]
 pub use cross_shard::CrossShardManager;
 // Quantum-resistant enhanced cross-shard coordinator
-pub use cross_shard::{EnhancedCrossShardManager, CrossShardCoordinator, ParticipantHandler, CoordinatorMessage, TxPhase};
+pub use cross_shard::{
+    CoordinatorMessage, CrossShardCoordinator, EnhancedCrossShardManager, ParticipantHandler,
+    TxPhase,
+};
 #[cfg(not(skip_problematic_modules))]
 pub use dag::DagManager;
 #[cfg(not(skip_problematic_modules))]

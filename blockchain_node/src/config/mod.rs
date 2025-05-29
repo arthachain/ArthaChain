@@ -4,6 +4,17 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+// pub mod network;
+// pub mod node;
+pub mod performance_monitoring;
+// pub mod storage;
+
+// Re-exports
+// pub use self::network::NetworkConfig;
+// pub use self::node::NodeConfig;
+pub use self::performance_monitoring::PerformanceMonitoringConfig;
+// pub use self::storage::StorageConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub data_dir: PathBuf,

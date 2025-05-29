@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use criterion::{black_box, criterion_group, criterion_main, Criterion};
     use rand::{thread_rng, Rng};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tokio::runtime::Runtime;
     use tokio::sync::RwLock;
 
-    use crate::crypto::zkp::{BatchedProofResult, ProofSystem, ZkpProver, ZkpVerifier};
+    use blockchain_node::crypto::zkp::{BatchedProofResult, ProofSystem, ZkpProver, ZkpVerifier};
 
     #[test]
     fn test_batched_zkp_performance() {
@@ -136,7 +137,7 @@ mod tests {
             assert!(
                 max_throughput > 50_000.0,
                 "ZKP verification throughput below minimum requirement: {:.2} proofs/sec (target: 50K+)",
-                max_throughpu
+                max_throughput
             );
         });
     }
@@ -258,5 +259,43 @@ mod tests {
         valid_count: usize,
         total_count: usize,
         invalid_indices: Vec<usize>,
+    }
+
+    fn benchmark_zkp_throughput(c: &mut Criterion) {
+        let mut group = c.benchmark_group("ZKP Throughput");
+        let prover = ZkpProver::new(ProofSystem::Groth16);
+        let verifier = ZkpVerifier::new(ProofSystem::Groth16);
+
+        // Test parameters
+        let num_transactions = 1000;
+        let proof_size = 256;
+
+        group.bench_function("zkp_batch_verify", |b| {
+            b.iter(|| {
+                // Generate random transactions
+                let transactions: Vec<Vec<u8>> = (0..num_transactions)
+                    .map(|_| {
+                        let mut rng = thread_rng();
+                        (0..1024).map(|_| rng.gen::<u8>()).collect()
+                    })
+                    .collect();
+
+                // Generate and verify proofs
+                let proofs: Vec<Vec<u8>> = transactions
+                    .iter()
+                    .map(|tx| prover.generate_proof(tx))
+                    .collect();
+
+                let chunk_size = 100;
+                for chunk in transactions.chunks(chunk_size) {
+                    let chunk_proofs: Vec<&Vec<u8>> =
+                        chunk.iter().enumerate().map(|(i, _)| &proofs[i]).collect();
+
+                    black_box(verifier.verify_batch(chunk, &chunk_proofs));
+                }
+            });
+        });
+
+        group.finish();
     }
 }

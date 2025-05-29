@@ -5,6 +5,7 @@ pub mod device_health;
 pub mod explainability;
 pub mod fraud_detection;
 pub mod models;
+pub mod performance_monitor;
 pub mod security;
 pub mod user_identification;
 
@@ -106,9 +107,11 @@ impl AIEngine {
 
     /// Start the AI Engine with orchestrated scheduling
     pub async fn start(&mut self) -> Result<()> {
-        let mut running = self.running.lock().unwrap();
-        if *running {
-            return Ok(());
+        {
+            let running = self.running.lock().unwrap();
+            if *running {
+                return Ok(());
+            }
         }
 
         let orchestration = self.orchestration.read().await;
@@ -160,7 +163,10 @@ impl AIEngine {
             self.start_fraud_detection_training(interval).await?;
         }
 
-        *running = true;
+        {
+            let mut running = self.running.lock().unwrap();
+            *running = true;
+        }
         info!("AI Engine started with orchestrated scheduling");
         Ok(())
     }
@@ -183,7 +189,7 @@ impl AIEngine {
                 }
 
                 if let Err(e) = device_health.update_metrics().await {
-                    error!("Failed to update device health metrics: {}", e);
+                    error!("Failed to update device health metrics: {e}");
                 }
             }
         });
@@ -205,7 +211,7 @@ impl AIEngine {
                 }
 
                 if let Err(e) = user_identification.update_identities().await {
-                    error!("Failed to update user identities: {}", e);
+                    error!("Failed to update user identities: {e}");
                 }
             }
         });
@@ -227,7 +233,7 @@ impl AIEngine {
                 }
 
                 if let Err(e) = data_chunking.optimize_chunks().await {
-                    error!("Failed to optimize data chunks: {}", e);
+                    error!("Failed to optimize data chunks: {e}");
                 }
             }
         });
@@ -249,7 +255,7 @@ impl AIEngine {
                 }
 
                 if let Err(e) = fraud_detection.train_model().await {
-                    error!("Failed to train fraud detection model: {}", e);
+                    error!("Failed to train fraud detection model: {e}");
                 }
             }
         });
@@ -310,7 +316,7 @@ impl AIEngine {
             .update_model(device_health_model.to_str().unwrap())
             .await
         {
-            warn!("Failed to update Device Health AI model: {}", e);
+            warn!("Failed to update Device Health AI model: {e}");
         }
 
         let user_id_model = self.models_dir.join("user_identification_model.bin");
@@ -319,7 +325,7 @@ impl AIEngine {
             .update_model(user_id_model.to_str().unwrap())
             .await
         {
-            warn!("Failed to update User Identification AI model: {}", e);
+            warn!("Failed to update User Identification AI model: {e}");
         }
 
         let data_chunking_model = self.models_dir.join("data_chunking_model.bin");
@@ -328,7 +334,7 @@ impl AIEngine {
             .update_model(data_chunking_model.to_str().unwrap())
             .await
         {
-            warn!("Failed to update Data Chunking AI model: {}", e);
+            warn!("Failed to update Data Chunking AI model: {e}");
         }
 
         let fraud_detection_model = self.models_dir.join("fraud_detection_model.bin");
@@ -337,7 +343,7 @@ impl AIEngine {
             .update_model(fraud_detection_model.to_str().unwrap())
             .await
         {
-            warn!("Failed to update Fraud Detection AI model: {}", e);
+            warn!("Failed to update Fraud Detection AI model: {e}");
         }
 
         // Security AI has its own model reload mechanism
@@ -770,7 +776,7 @@ impl AIEngine {
             .register_neural_model("default", neural_config)
             .await
         {
-            error!("Failed to register neural model: {}", e);
+            error!("Failed to register neural model: {e}");
         }
 
         Ok(())
@@ -842,3 +848,12 @@ mod data_chunking_tests;
 
 // Re-export key components
 pub use data_chunking::ChunkingConfig;
+
+// Re-exports for convenient access
+pub use data_chunking::DataChunker;
+pub use device_health::DeviceMonitor;
+pub use explainability::AIExplainer;
+pub use fraud_detection::FraudDetectionAI;
+pub use performance_monitor::PerformanceMonitor;
+pub use security::SecurityAI;
+pub use user_identification::UserIdentificationAI;

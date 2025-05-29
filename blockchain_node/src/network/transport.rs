@@ -1,3 +1,5 @@
+use anyhow::Result;
+use futures::{SinkExt, StreamExt};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -9,8 +11,6 @@ use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     time,
 };
-use anyhow::Result;
-use futures::{SinkExt, StreamExt};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::network::{
@@ -18,14 +18,18 @@ use crate::network::{
     message::{NetworkMessage, NodeInfo},
 };
 
+#[allow(dead_code)]
 const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+#[allow(dead_code)]
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct Transport {
     local_addr: SocketAddr,
+    #[allow(dead_code)]
     node_info: NodeInfo,
     connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
+    #[allow(dead_code)]
     message_tx: Sender<(SocketAddr, NetworkMessage)>,
     message_rx: Receiver<(SocketAddr, NetworkMessage)>,
 }
@@ -38,7 +42,7 @@ struct Connection {
 impl Transport {
     pub fn new(local_addr: SocketAddr, node_info: NodeInfo) -> Self {
         let (message_tx, message_rx) = mpsc::channel(1000);
-        
+
         Self {
             local_addr,
             node_info,
@@ -58,9 +62,16 @@ impl Transport {
         // Handle incoming connections
         tokio::spawn(async move {
             while let Ok((stream, addr)) = listener.accept().await {
-                println!("New connection from {}", addr);
-                if let Err(e) = Self::handle_connection(stream, addr, broadcast_tx.clone(), Arc::clone(&connections)).await {
-                    eprintln!("Error handling connection from {}: {}", addr, e);
+                println!("New connection from {addr}");
+                if let Err(e) = Self::handle_connection(
+                    stream,
+                    addr,
+                    broadcast_tx.clone(),
+                    Arc::clone(&connections),
+                )
+                .await
+                {
+                    eprintln!("Error handling connection from {addr}: {e}");
                 }
             }
         });
@@ -70,12 +81,12 @@ impl Transport {
             tokio::select! {
                 Some((addr, msg)) = self.message_rx.recv() => {
                     if let Err(e) = self.send_message(addr, msg).await {
-                        eprintln!("Error sending message to {}: {}", addr, e);
+                        eprintln!("Error sending message to {addr}: {e}");
                     }
                 }
                 Some(msg) = broadcast_rx.recv() => {
                     if let Err(e) = self.broadcast_message(msg).await {
-                        eprintln!("Error broadcasting message: {}", e);
+                        eprintln!("Error broadcasting message: {e}");
                     }
                 }
             }
@@ -89,9 +100,15 @@ impl Transport {
         connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
     ) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(100);
-        
+
         // Store connection
-        connections.lock().unwrap().insert(addr, Connection { addr, tx: tx.clone() });
+        connections.lock().unwrap().insert(
+            addr,
+            Connection {
+                addr,
+                tx: tx.clone(),
+            },
+        );
 
         // Split stream into read/write parts
         let (mut write, mut read) = Framed::new(stream, LengthDelimitedCodec::new()).split();
@@ -105,18 +122,18 @@ impl Transport {
                             Ok(msg) => {
                                 // Forward message to broadcast channel
                                 if let Err(e) = broadcast_tx.send(msg).await {
-                                    eprintln!("Error forwarding message: {}", e);
+                                    eprintln!("Error forwarding message: {e}");
                                     break;
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Error deserializing message: {}", e);
+                                eprintln!("Error deserializing message: {e}");
                                 break;
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error reading from stream: {}", e);
+                        eprintln!("Error reading from stream: {e}");
                         break;
                     }
                 }
@@ -132,12 +149,12 @@ impl Transport {
                 match bincode::serialize(&msg) {
                     Ok(bytes) => {
                         if let Err(e) = write.send(bytes.into()).await {
-                            eprintln!("Error sending message: {}", e);
+                            eprintln!("Error sending message: {e}");
                             break;
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error serializing message: {}", e);
+                        eprintln!("Error serializing message: {e}");
                         break;
                     }
                 }
@@ -154,18 +171,13 @@ impl Transport {
         }
 
         // Connect with timeout
-        let stream = time::timeout(
-            CONNECTION_TIMEOUT,
-            TcpStream::connect(addr)
-        ).await??;
+        let stream = time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr)).await??;
+
+        // Create broadcast channel for this connection
+        let (broadcast_tx, _) = mpsc::channel(1000);
 
         // Handle connection
-        Self::handle_connection(
-            stream,
-            addr,
-            self.message_tx.clone(),
-            Arc::clone(&self.connections)
-        ).await?;
+        Self::handle_connection(stream, addr, broadcast_tx, Arc::clone(&self.connections)).await?;
 
         Ok(())
     }
@@ -176,19 +188,33 @@ impl Transport {
     }
 
     pub async fn send_message(&self, addr: SocketAddr, msg: NetworkMessage) -> Result<()> {
-        if let Some(conn) = self.connections.lock().unwrap().get(&addr) {
-            conn.tx.send(msg).await.map_err(|e| NetworkError::SendError(e.to_string()))?;
+        let tx = {
+            let connections = self.connections.lock().unwrap();
+            connections.get(&addr).map(|conn| conn.tx.clone())
+        };
+
+        if let Some(tx) = tx {
+            tx.send(msg)
+                .await
+                .map_err(|e| NetworkError::MessageError(e.to_string()))?;
             Ok(())
         } else {
-            Err(NetworkError::PeerNotFound(addr.to_string()).into())
+            Err(NetworkError::PeerError(format!("Peer not found: {addr}")).into())
         }
     }
 
     pub async fn broadcast_message(&self, msg: NetworkMessage) -> Result<()> {
-        let connections = self.connections.lock().unwrap();
-        for conn in connections.values() {
-            if let Err(e) = conn.tx.send(msg.clone()).await {
-                eprintln!("Error broadcasting to {}: {}", conn.addr, e);
+        let senders: Vec<_> = {
+            let connections = self.connections.lock().unwrap();
+            connections
+                .values()
+                .map(|conn| (conn.addr, conn.tx.clone()))
+                .collect()
+        };
+
+        for (addr, tx) in senders {
+            if let Err(e) = tx.send(msg.clone()).await {
+                eprintln!("Error broadcasting to {addr}: {e}");
             }
         }
         Ok(())
@@ -197,4 +223,4 @@ impl Transport {
     pub fn get_connected_peers(&self) -> Vec<SocketAddr> {
         self.connections.lock().unwrap().keys().cloned().collect()
     }
-} 
+}

@@ -2,8 +2,8 @@ use crate::evm::runtime::EvmRuntime;
 use crate::evm::types::{EvmConfig, EvmError, EvmExecutionResult, EvmTransaction};
 use crate::storage::HybridStorage;
 use anyhow::{anyhow, Result};
-use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use log::{error, info};
+
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;

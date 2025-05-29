@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// Type alias for experience tuples (state, action, reward, next_state, done)
+type Experience = (Vec<f32>, Vec<f32>, f32, Vec<f32>, bool);
+
 /// Neural architecture inspired by biological neural networks
 pub struct NeuralBase {
     /// Python model object
@@ -20,18 +23,13 @@ pub struct NeuralBase {
     memory_buffer: ExperienceBuffer,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub enum ActivationType {
+    #[default]
     GELU,
     ReLU,
     Sigmoid,
     Tanh,
-}
-
-impl Default for ActivationType {
-    fn default() -> Self {
-        ActivationType::GELU
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,25 +82,16 @@ impl Default for NeuralConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LearningState {
     iteration: usize,
     loss_history: Vec<f32>,
 }
 
-impl Default for LearningState {
-    fn default() -> Self {
-        LearningState {
-            iteration: 0,
-            loss_history: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExperienceBuffer {
     capacity: usize,
-    experiences: Vec<(Vec<f32>, Vec<f32>, f32, Vec<f32>, bool)>,
+    experiences: Vec<Experience>,
 }
 
 impl Default for ExperienceBuffer {
@@ -177,6 +166,22 @@ impl NeuralBase {
                 learning_state: LearningState::default(),
                 memory_buffer: ExperienceBuffer::default(),
             })
+        })
+    }
+
+    /// Create a minimal NeuralBase for blockchain operations (synchronous)
+    pub fn default_for_blockchain(config: NeuralConfig) -> Result<Self> {
+        // Create a dummy PyAny object for minimal functionality
+        let dummy_model = Python::with_gil(|py| {
+            let none = py.None();
+            Ok::<Py<PyAny>, PyErr>(none)
+        })?;
+
+        Ok(NeuralBase {
+            model: Arc::new(RwLock::new(dummy_model)),
+            config,
+            learning_state: LearningState::default(),
+            memory_buffer: ExperienceBuffer::default(),
         })
     }
 
@@ -367,10 +372,7 @@ impl ExperienceBuffer {
     }
 
     /// Sample a batch of experiences - note this is simplified from the original implementation
-    fn sample_batch(
-        &self,
-        batch_size: usize,
-    ) -> Result<Vec<(Vec<f32>, Vec<f32>, f32, Vec<f32>, bool)>> {
+    fn sample_batch(&self, batch_size: usize) -> Result<Vec<Experience>> {
         if self.experiences.is_empty() {
             return Err(anyhow!("Experience buffer is empty"));
         }

@@ -1,6 +1,11 @@
 // Re-export the Transaction type from the ledger
 pub use crate::ledger::transaction::Transaction;
 
+pub mod mempool;
+pub mod parallel_processor;
+
+pub use mempool::{EnhancedMempool, MempoolConfig, MempoolStats};
+
 // Extension for benchmarking
 impl Transaction {
     /// Create a new test transaction for benchmarking

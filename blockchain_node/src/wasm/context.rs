@@ -1,19 +1,19 @@
-use crate::wasm::types::{WasmContractAddress, WasmLog, WasmError};
 use crate::wasm::gas::GasMeter;
+use crate::wasm::types::{WasmContractAddress, WasmError, WasmLog};
+
 use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
 
 /// Interface for storage operations
 pub trait ContractStorage: Send + Sync {
     /// Read value from storage
     fn read(&self, key: &[u8]) -> Result<Option<Vec<u8>>, WasmError>;
-    
+
     /// Write value to storage
     fn write(&self, key: &[u8], value: &[u8]) -> Result<(), WasmError>;
-    
+
     /// Delete value from storage
     fn delete(&self, key: &[u8]) -> Result<(), WasmError>;
-    
+
     /// Check if key exists
     fn exists(&self, key: &[u8]) -> Result<bool, WasmError>;
 }
@@ -64,74 +64,75 @@ impl ExecutionContext {
             debug,
         }
     }
-    
+
     /// Read value from storage
     pub fn read_storage(&self, key: &[u8]) -> Result<Option<Vec<u8>>, WasmError> {
         // Consume gas for reading from storage
         self.gas_meter.consume_storage_read(key.len() as u64)?;
-        
+
         // Read from storage
         self.storage.read(key)
     }
-    
+
     /// Write value to storage
     pub fn write_storage(&self, key: &[u8], value: &[u8]) -> Result<(), WasmError> {
         // Consume gas for writing to storage
-        self.gas_meter.consume_storage_write(key.len() as u64, value.len() as u64)?;
-        
+        self.gas_meter
+            .consume_storage_write(key.len() as u64, value.len() as u64)?;
+
         // Write to storage
         self.storage.write(key, value)
     }
-    
+
     /// Delete value from storage
     pub fn delete_storage(&self, key: &[u8]) -> Result<(), WasmError> {
         // Consume gas for deleting from storage
         self.gas_meter.consume_storage_delete(key.len() as u64)?;
-        
+
         // Delete from storage
         self.storage.delete(key)
     }
-    
+
     /// Check if key exists in storage
     pub fn exists_in_storage(&self, key: &[u8]) -> Result<bool, WasmError> {
         // Consume gas for reading from storage
         self.gas_meter.consume_storage_read(key.len() as u64)?;
-        
+
         // Check if key exists
         self.storage.exists(key)
     }
-    
+
     /// Emit a log
     pub fn emit_log(&self, topics: Vec<Vec<u8>>, data: Vec<u8>) -> Result<(), WasmError> {
         // Consume gas for log emission
         let topic_size: u64 = topics.iter().map(|t| t.len() as u64).sum();
         let total_size = topic_size + data.len() as u64;
         self.gas_meter.consume_compute(total_size)?;
-        
+
         // Create log entry
         let log = WasmLog {
             address: self.contract_address.clone(),
             topics,
             data,
         };
-        
+
         // Add to logs
         let mut logs = self.logs.write().unwrap();
         logs.push(log);
-        
+
         Ok(())
     }
-    
+
     /// Log a debug message
     pub fn debug_log(&self, message: &str) -> Result<(), WasmError> {
         if self.debug {
             // Consume minimal gas for debug logging
             self.gas_meter.consume(1)?;
-            
+
             // Log the message
             log::debug!("[Contract {}] {}", self.contract_address, message);
         }
-        
+
         Ok(())
     }
-} 
+}

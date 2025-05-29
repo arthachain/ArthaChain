@@ -21,7 +21,7 @@ WORKDIR /build
 COPY . .
 
 # Build the blockchain node
-RUN cargo build --release --bin arthachain
+RUN cargo build --release --bin arthachain_node
 
 # Create a smaller runtime image
 FROM debian:bullseye-slim
@@ -38,10 +38,10 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy the built binary
-COPY --from=builder /build/target/release/arthachain /app/arthachain
+COPY --from=builder /build/target/release/arthachain_node /app/arthachain_node
 
 # Create data directory
 RUN mkdir -p /app/data
 
 # Default command
-ENTRYPOINT ["/app/arthachain"] 
+ENTRYPOINT ["/app/arthachain_node"] 

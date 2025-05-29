@@ -2,12 +2,12 @@
 //!
 //! Defines common types and structures used in the WASM runtime environment
 
-use crate::crypto::hash::{Hash, Hasher};
+use crate::crypto::hash::Hasher;
 use crate::types::Address;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+
 use std::fmt;
-use std::sync::Arc;
+
 use thiserror::Error;
 
 /// WASM Contract Address - Identifies a smart contract on the blockchain
@@ -216,6 +216,50 @@ pub enum WasmError {
     /// Memory error
     #[error("Memory error: {0}")]
     MemoryError(String),
+
+    /// Validation failed
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+
+    /// Authorization failed
+    #[error("Authorization failed: {0}")]
+    AuthorizationFailed(String),
+
+    /// Storage migration failed
+    #[error("Migration failed: {0}")]
+    MigrationFailed(String),
+
+    /// Storage layout incompatible
+    #[error("Incompatible storage: {0}")]
+    IncompatibleStorage(String),
+
+    /// Compilation error
+    #[error("Compilation error: {0}")]
+    CompilationError(String),
+
+    /// Invalid contract
+    #[error("Invalid contract: {0}")]
+    InvalidContract(String),
+
+    /// Invalid function
+    #[error("Invalid function: {0}")]
+    InvalidFunction(String),
+
+    /// Out of gas
+    #[error("Out of gas")]
+    OutOfGas,
+
+    /// Execution timeout
+    #[error("Execution timeout")]
+    ExecutionTimeout,
+
+    /// Host error
+    #[error("Host error: {0}")]
+    HostError(String),
+
+    /// Verification error
+    #[error("Verification error: {0}")]
+    VerificationError(String),
 }
 
 impl WasmError {
@@ -239,6 +283,17 @@ impl WasmError {
             WasmError::Internal(_) => 15,
             WasmError::BytecodeTooLarge => 16,
             WasmError::MemoryError(_) => 17,
+            WasmError::ValidationFailed(_) => 18,
+            WasmError::AuthorizationFailed(_) => 19,
+            WasmError::MigrationFailed(_) => 20,
+            WasmError::IncompatibleStorage(_) => 21,
+            WasmError::CompilationError(_) => 22,
+            WasmError::InvalidContract(_) => 23,
+            WasmError::InvalidFunction(_) => 24,
+            WasmError::OutOfGas => 25,
+            WasmError::ExecutionTimeout => 26,
+            WasmError::HostError(_) => 27,
+            WasmError::VerificationError(_) => 28,
         }
     }
 }
@@ -641,19 +696,6 @@ pub trait WasmStorage: Send + Sync {
 
     /// Delete a key from storage
     fn delete(&mut self, key: &[u8]) -> WasmResult<()>;
-}
-
-/// Result of contract execution
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ExecutionResult {
-    /// The return value from the contract execution (if any)
-    pub result: Option<Vec<u8>>,
-
-    /// Gas used during execution
-    pub gas_used: u64,
-
-    /// Logs generated during execution
-    pub logs: Vec<String>,
 }
 
 /// Contract code and metadata

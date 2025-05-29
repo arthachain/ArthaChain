@@ -1,15 +1,12 @@
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use anyhow::{anyhow, Result};
 use numpy::{PyArray1, PyArray2};
-use serde::{Serialize, Deserialize};
-use anyhow::{Result, anyhow};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use log::{info, warn, debug};
 
 /// ML-based fraud detection model using LightGBM
 pub struct FraudDetectionModel {
-    /// Python interpreter
-    py_interpreter: Python<'static>,
     /// LightGBM model
     model: PyObject,
     /// Feature processor
@@ -38,7 +35,7 @@ impl Default for ModelParams {
         lgb_params.insert("boosting_type".to_string(), "gbdt".to_string());
         lgb_params.insert("num_leaves".to_string(), "31".to_string());
         lgb_params.insert("learning_rate".to_string(), "0.05".to_string());
-        
+
         Self {
             lgb_params,
             importance_threshold: 0.05,
@@ -64,11 +61,19 @@ struct Normalizer {
 impl FraudDetectionModel {
     /// Create a new fraud detection model
     pub fn new(params: ModelParams) -> Result<Self> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let model = Python::with_gil(|py| -> PyResult<PyObject> {
+            // Import LightGBM
+            let lgb = py.import_bound("lightgbm")?;
 
-        // Import LightGBM
-        let lgb = py.import("lightgbm")?;
+            // Create model with parameters
+            let kwargs = PyDict::new_bound(py);
+            for (key, value) in &params.lgb_params {
+                kwargs.set_item(key, value)?;
+            }
+
+            let model = lgb.getattr("LGBMClassifier")?.call((), Some(&kwargs))?;
+            Ok(model.into())
+        })?;
 
         // Initialize feature processor
         let feature_processor = FeatureProcessor {
@@ -85,17 +90,8 @@ impl FraudDetectionModel {
             normalizers: HashMap::new(),
         };
 
-        // Create model with parameters
-        let kwargs = PyDict::new(py);
-        for (key, value) in &params.lgb_params {
-            kwargs.set_item(key, value)?;
-        }
-        
-        let model = lgb.getattr("LGBMClassifier")?.call((), Some(kwargs))?;
-
         Ok(Self {
-            py_interpreter: py,
-            model: model.into(),
+            model,
             feature_processor,
             params,
         })
@@ -103,31 +99,32 @@ impl FraudDetectionModel {
 
     /// Train the model with historical data
     pub fn train(&self, features: &[Vec<f32>], labels: &[bool]) -> Result<TrainingMetrics> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        let (train_score, importance) = Python::with_gil(|py| -> PyResult<(f32, Vec<f32>)> {
+            // Convert data to numpy arrays
+            let x_train = PyArray2::from_vec2_bound(py, features)?;
+            let y_train = PyArray1::from_slice_bound(py, labels);
 
-        // Convert data to numpy arrays
-        let x_train = PyArray2::from_vec2(py, features)?;
-        let y_train = PyArray1::from_slice(py, labels)?;
+            // Train model
+            self.model.call_method1(py, "fit", (&x_train, &y_train))?;
 
-        // Train model
-        self.model.call_method1(
-            py,
-            "fit",
-            (x_train, y_train),
-        )?;
+            // Get training metrics
+            let train_score = self.model.call_method0(py, "score")?.extract::<f32>(py)?;
 
-        // Get training metrics
-        let train_score = self.model.call_method0(py, "score")?.extract::<f32>()?;
-        
-        // Get feature importance
-        let importance = self.model
-            .getattr(py, "feature_importances_")?
-            .extract::<Vec<f32>>()?;
+            // Get feature importance
+            let importance = self
+                .model
+                .getattr(py, "feature_importances_")?
+                .extract::<Vec<f32>>(py)?;
+
+            Ok((train_score, importance))
+        })?;
 
         Ok(TrainingMetrics {
             accuracy: train_score,
-            feature_importance: self.feature_processor.feature_names.iter()
+            feature_importance: self
+                .feature_processor
+                .feature_names
+                .iter()
                 .zip(importance.iter())
                 .map(|(name, &imp)| (name.clone(), imp))
                 .collect(),
@@ -136,24 +133,27 @@ impl FraudDetectionModel {
 
     /// Predict fraud probability for new data
     pub fn predict(&self, features: &[f32]) -> Result<FraudPrediction> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
         // Process features
         let processed = self.feature_processor.process_features(features)?;
-        
-        // Convert to numpy array
-        let x = PyArray2::from_vec2(py, &[processed])?;
 
-        // Get prediction probability
-        let proba = self.model
-            .call_method1(py, "predict_proba", (x,))?
-            .extract::<Vec<Vec<f32>>>()?;
+        let (fraud_probability, contributions) =
+            Python::with_gil(|py| -> PyResult<(f32, HashMap<String, f32>)> {
+                // Convert to numpy array
+                let x = PyArray2::from_vec2_bound(py, &[processed.clone()])?;
 
-        let fraud_probability = proba[0][1]; // Probability of fraud class
-        
-        // Get feature contributions
-        let contributions = self.calculate_feature_contributions(py, features)?;
+                // Get prediction probability
+                let proba = self
+                    .model
+                    .call_method1(py, "predict_proba", (&x,))?
+                    .extract::<Vec<Vec<f32>>>(py)?;
+
+                let fraud_probability = proba[0][1]; // Probability of fraud class
+
+                // Get feature contributions
+                let contributions = self.calculate_feature_contributions(py, &processed)?;
+
+                Ok((fraud_probability, contributions))
+            })?;
 
         Ok(FraudPrediction {
             is_fraud: fraud_probability >= self.params.prediction_threshold,
@@ -168,26 +168,29 @@ impl FraudDetectionModel {
         &self,
         py: Python,
         features: &[f32],
-    ) -> Result<HashMap<String, f32>> {
-        let shap = py.import("shap")?;
-        
+    ) -> PyResult<HashMap<String, f32>> {
+        let shap = py.import_bound("shap")?;
+
         // Create explainer
-        let explainer = shap.call_method1(
-            "TreeExplainer",
-            (self.model,)
-        )?;
+        let explainer = shap.call_method1("TreeExplainer", (&self.model.clone_ref(py),))?;
 
         // Get SHAP values
-        let x = PyArray2::from_vec2(py, &[features.to_vec()])?;
-        let shap_values = explainer.call_method1("shap_values", (x,))?;
+        let x = PyArray2::from_vec2_bound(py, &[features.to_vec()])?;
+        let shap_values = explainer.call_method1("shap_values", (&x,))?;
 
         // Convert to feature contributions
-        let contributions: Vec<f32> = shap_values
-            .extract::<Vec<Vec<f32>>>()?
-            .pop()
-            .ok_or_else(|| anyhow!("Failed to get SHAP values"))?;
+        let contributions: Vec<f32> =
+            shap_values
+                .extract::<Vec<Vec<f32>>>()?
+                .pop()
+                .ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>("Failed to get SHAP values")
+                })?;
 
-        Ok(self.feature_processor.feature_names.iter()
+        Ok(self
+            .feature_processor
+            .feature_names
+            .iter()
             .zip(contributions.iter())
             .map(|(name, &value)| (name.clone(), value))
             .collect())
@@ -229,7 +232,7 @@ impl FeatureProcessor {
                 processed.push(value);
             }
         }
-        
+
         Ok(processed)
     }
-} 
+}

@@ -19,9 +19,7 @@ fn main() {
 
     for &tx_size in &tx_sizes {
         for &tx_count in &tx_counts {
-            println!(
-                "\nTesting with {tx_count} transactions of {tx_size} bytes each:"
-            );
+            println!("\nTesting with {tx_count} transactions of {tx_size} bytes each:");
 
             // Generate test transactions
             let transactions = generate_test_transactions(tx_count, tx_size);
@@ -109,7 +107,7 @@ fn process_transactions_parallel(transactions: &[Vec<u8>], threads: usize) -> us
 
     for chunk in chunks {
         // Clone the chunk data to send to the thread
-        let chunk_data: Vec<Vec<u8>> = chunk.iter().cloned().collect();
+        let chunk_data: Vec<Vec<u8>> = chunk.to_vec();
 
         let handle = thread::spawn(move || {
             let mut processed = 0;

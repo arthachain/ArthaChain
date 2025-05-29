@@ -238,37 +238,34 @@ impl NetworkTelemetry {
                         .entry(*shard_id)
                         .or_insert_with(|| ShardPrometheusMetrics {
                             total_transactions: Counter::new(
-                                format!("shard_{}_total_transactions", shard_id),
+                                format!("shard_{shard_id}_total_transactions"),
                                 "Total transactions in shard",
                             )
                             .unwrap(),
                             total_blocks: Counter::new(
-                                format!("shard_{}_total_blocks", shard_id),
+                                format!("shard_{shard_id}_total_blocks"),
                                 "Total blocks in shard",
                             )
                             .unwrap(),
                             average_block_time: Histogram::with_opts(HistogramOpts::new(
-                                format!("shard_{}_average_block_time", shard_id),
+                                format!("shard_{shard_id}_average_block_time"),
                                 "Average block time in shard",
                             ))
                             .unwrap(),
                             transaction_rate: Gauge::new(
-                                format!("shard_{}_transaction_rate", shard_id),
+                                format!("shard_{shard_id}_transaction_rate"),
                                 "Transaction rate in shard",
                             )
                             .unwrap(),
                             block_rate: Gauge::new(
-                                format!("shard_{}_block_rate", shard_id),
+                                format!("shard_{shard_id}_block_rate"),
                                 "Block rate in shard",
                             )
                             .unwrap(),
-                            shard_size: Gauge::new(
-                                format!("shard_{}_size", shard_id),
-                                "Shard size",
-                            )
-                            .unwrap(),
+                            shard_size: Gauge::new(format!("shard_{shard_id}_size"), "Shard size")
+                                .unwrap(),
                             cross_shard_messages: Counter::new(
-                                format!("shard_{}_cross_shard_messages", shard_id),
+                                format!("shard_{shard_id}_cross_shard_messages"),
                                 "Cross-shard messages in shard",
                             )
                             .unwrap(),
@@ -401,6 +398,76 @@ impl PeerMetrics {
         self.last_seen = SerializableInstant {
             instant: Instant::now(),
         };
+    }
+}
+
+impl NetworkMetrics {
+    /// Record shard latency
+    pub fn record_shard_latency(&mut self, _source: u64, _target: u64, latency: Duration) {
+        // Convert Duration to f64 for the method call
+        let _latency_ms = latency.as_secs_f64() * 1000.0;
+        // Placeholder implementation
+        // In a real implementation, this would update shard-specific latency metrics
+    }
+
+    /// Record shard load
+    pub fn record_shard_load(&mut self, _shard: u64, _load: f64) {
+        // Placeholder implementation
+        // In a real implementation, this would update shard load metrics
+    }
+
+    /// Record successful route
+    pub fn record_successful_route(&mut self, _route: Vec<u64>) {
+        // Placeholder implementation
+        // In a real implementation, this would update route success metrics
+    }
+
+    /// Record failed route
+    pub fn record_failed_route(&mut self, _route: Vec<u64>) {
+        // Placeholder implementation
+        // In a real implementation, this would update route failure metrics
+    }
+
+    /// Record connection quality for network optimization
+    pub fn record_connection_quality<T>(
+        &mut self,
+        _peer_id: T,
+        _latency: u64,
+        _bandwidth: u64,
+        _stability: f64,
+    ) {
+        // Placeholder implementation
+        // In a real implementation, this would update connection quality metrics
+    }
+
+    /// Record route optimization
+    pub fn record_route_optimization<T>(
+        &mut self,
+        _source: T,
+        _target: T,
+        _latency: u64,
+        _reliability: f64,
+    ) {
+        // Placeholder implementation
+        // In a real implementation, this would update route optimization metrics
+    }
+
+    /// Record mempool addition
+    pub fn record_mempool_add<T>(&mut self, _tx_hash: T) {
+        // Placeholder implementation
+        // In a real implementation, this would update mempool metrics
+    }
+
+    /// Record batch processing error
+    pub fn record_batch_error<T>(&mut self, _error: T) {
+        // Placeholder implementation
+        // In a real implementation, this would update error metrics
+    }
+
+    /// Record transaction processing
+    pub fn record_transaction_processed<T>(&mut self, _tx_hash: T) {
+        // Placeholder implementation
+        // In a real implementation, this would update transaction processing metrics
     }
 }
 

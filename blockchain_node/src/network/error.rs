@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt;
 use std::io;
 use thiserror::Error;
 
@@ -40,38 +39,19 @@ pub enum NetworkError {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
-}
 
-impl fmt::Display for NetworkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", std::error::Error::description(self))
-    }
-}
+    #[error("Peer is banned")]
+    PeerBanned,
 
-impl Error for NetworkError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            NetworkError::IoError(err) => Some(err),
-            NetworkError::Other(err) => Some(err.as_ref()),
-            _ => None,
-        }
-    }
-}
+    #[error("Too many peers connected")]
+    TooManyPeers,
 
-impl From<io::Error> for NetworkError {
-    fn from(err: io::Error) -> Self {
-        NetworkError::ConnectionError(err.to_string())
-    }
-}
-
-impl From<Box<dyn Error + Send + Sync>> for NetworkError {
-    fn from(err: Box<dyn Error + Send + Sync>) -> Self {
-        NetworkError::Other(err)
-    }
+    #[error("Event channel is closed")]
+    EventChannelClosed,
 }
 
 // Helper function for converting errors
-pub fn to_network_error<E: Error>(err: E) -> NetworkError {
+pub fn to_network_error<E: Error + Send + Sync + 'static>(err: E) -> NetworkError {
     NetworkError::Other(Box::new(err))
 }
 
@@ -109,4 +89,10 @@ impl From<anyhow::Error> for NetworkError {
     fn from(err: anyhow::Error) -> Self {
         NetworkError::Unknown(err.to_string())
     }
-} 
+}
+
+impl From<Box<dyn Error + Send + Sync>> for NetworkError {
+    fn from(err: Box<dyn Error + Send + Sync>) -> Self {
+        NetworkError::Other(err)
+    }
+}

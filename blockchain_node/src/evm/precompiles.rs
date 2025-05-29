@@ -1,5 +1,5 @@
 use crate::evm::types::{EvmAddress, EvmError, PrecompileFunction};
-use ethereum_types::{H160, H256};
+use ethereum_types::H160;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
