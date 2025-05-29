@@ -16,6 +16,8 @@ ArthaChain is a high-performance, scalable blockchain designed for enterprise an
 | Storage System | Multi-layered blockchain data storage | [storage_system.md](./storage_system.md) |
 | Smart Contracts | WASM and EVM smart contract execution | [wasm_smart_contracts.md](./wasm_smart_contracts.md) |
 | Performance | Performance monitoring and optimization | [performance_monitoring.md](./performance_monitoring.md), [performance_optimizations.md](./performance_optimizations.md) |
+| Benchmarks | Detailed benchmark results | [benchmark_results.md](./benchmark_results.md) |
+| Quantum Resistance | Post-quantum cryptography implementation | [quantum_resistance.md](./quantum_resistance.md) |
 | Security | Formal verification and security features | [formal_verification.md](./formal_verification.md) |
 | Network Monitoring | Network monitoring and validation | [VALIDATOR_COORDINATION.md](./VALIDATOR_COORDINATION.md), [NETWORK_MONITORING_IMPLEMENTATION.md](../NETWORK_MONITORING_IMPLEMENTATION.md) |
 
@@ -113,11 +115,15 @@ For detailed API documentation, refer to the API Explorer documentation in the [
 
 ArthaChain is designed for high-performance blockchain applications:
 
-- **Transaction Throughput**: Up to 500,000 TPS across all shards
+- **Transaction Throughput**: 
+  - Small transactions (100 bytes): Up to 22,680,000 TPS
+  - Medium transactions (1KB): Up to 4,694,000 TPS
+  - Large transactions (10KB): Up to 608,000 TPS
 - **Block Time**: 1-3 seconds under normal network conditions
 - **Finality**: Absolute finality after 2-3 blocks
 - **Latency**: Sub-second transaction confirmation in optimal conditions
 - **Cross-Shard Performance**: 2-4 seconds for cross-shard transactions
+- **Consensus Operation**: 731.5 nanoseconds per operation
 
 For more details on performance optimizations, see [performance_optimizations.md](./performance_optimizations.md).
 

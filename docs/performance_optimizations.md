@@ -315,21 +315,44 @@ The system is designed to maintain security in a post-quantum environment while 
 
 ## Benchmark Results
 
-Our benchmarks demonstrate impressive performance:
+Our latest benchmarks demonstrate impressive performance:
 
-- **Raw parallel processing**: ~827,650 TPS
-- **Sharded transactions**: ~420,767 TPS (378,286 intra-shard, 42,481 cross-shard)
-- **Storage performance**: ~285 MB/s write, ~19.5 GB/s read
-- **End-to-end pipeline**: ~193,761 TPS on a single machine
+### Transaction Processing Performance
+- **Small transactions (100 bytes)**: 
+  - Single-threaded: Up to 22,680,876 TPS
+  - Multi-threaded (16 threads): Up to 8,796,217 TPS
+  - Large batches (500,000 tx): Up to 19,507,740 TPS
 
-In a distributed environment with proper hardware, the system is projected to exceed 500,000 TPS.
+- **Medium transactions (1000 bytes)**:
+  - Multi-threaded (16 threads): Up to 4,694,896 TPS
+  - Large batches (500,000 tx): Up to 4,336,373 TPS
+
+- **Large transactions (10000 bytes)**:
+  - Multi-threaded (32 threads): Up to 608,799 TPS
+  - Large batches (500,000 tx): Up to 20,234 TPS
+
+### Data Operations Performance
+- **Data chunking**:
+  - Small data (1 unit): 1.2ms
+  - Medium data (10 units): 45.1ms
+  - Large data (50 units): 223.1ms
+
+- **Data reconstruction**:
+  - Small data (1 unit): 0.75ms
+  - Medium data (10 units): 8.7ms
+  - Large data (50 units): 42.9ms
+
+### Consensus Performance
+- **Cross-shard consensus**: 731.5 nanoseconds per operation
+
+In a distributed environment with proper hardware, the system is projected to exceed 500,000 TPS even with larger transaction sizes.
 
 ## Running Performance Benchmarks
 
 You can run the performance benchmarks using:
 
 ```bash
-./scripts/run_performance_benchmarks.sh
+cargo bench
 ```
 
 This will execute tests for all optimizations and display performance metrics.

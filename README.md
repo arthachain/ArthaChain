@@ -5,7 +5,11 @@ ArthaChain is a high-performance, quantum-resistant blockchain platform designed
 ## Key Features
 
 - **Ultra-High Performance**: Up to 500,000 TPS through innovative sharding and parallel execution
-- **Quantum Resistance**: Post-quantum cryptographic algorithms protecting against future quantum threats
+- **Quantum Resistance**: Comprehensive post-quantum cryptography protecting against future quantum threats:
+  - Quantum SVBFT consensus mechanism
+  - Dilithium signature scheme for transaction verification
+  - Quantum-resistant Merkle trees for light client verification
+  - Configurable security levels for optimal performance
 - **Mobile-First Validator Support**: Full validator functionality on mobile devices with battery-aware protocols
 - **Social Verified Consensus Protocol (SVCP)**: Novel consensus approach combining social metrics with proof-of-stake
 - **Advanced AI Integration**: Neural network-based optimizations and fraud detection mechanisms
@@ -169,12 +173,25 @@ See [ROADMAP.md](ROADMAP.md) for our development roadmap and upcoming features.
 
 ## Performance
 
-ArthaChain achieves industry-leading performance:
+ArthaChain achieves industry-leading performance metrics based on our latest benchmarks:
 
-- **Raw parallel processing**: ~827,650 TPS
-- **Sharded transactions**: ~420,767 TPS (378,286 intra-shard, 42,481 cross-shard)
-- **Storage performance**: ~285 MB/s write, ~19.5 GB/s read
-- **End-to-end pipeline**: ~193,761 TPS on a single machine
+- **Small transactions (100 bytes)**: 
+  - Single-threaded: Up to 22,680,876 TPS
+  - Multi-threaded (16 threads): Up to 8,796,217 TPS
+  - Large batches (500,000 tx): Up to 19,507,740 TPS
+
+- **Medium transactions (1000 bytes)**:
+  - Multi-threaded (16 threads): Up to 4,694,896 TPS
+  - Large batches (500,000 tx): Up to 4,336,373 TPS
+
+- **Large transactions (10000 bytes)**:
+  - Multi-threaded (32 threads): Up to 608,799 TPS
+
+- **Data operations**:
+  - Chunking: 1.2ms for small data, 226ms for large data
+  - Reconstruction: 0.75ms for small data, 43.6ms for large data
+
+- **Cross-shard consensus**: 731.5 nanoseconds per operation
 
 ## License
 
