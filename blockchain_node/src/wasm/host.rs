@@ -6,16 +6,38 @@
 use crate::types::Address;
 use crate::wasm::types::WasmError;
 use std::sync::Arc;
-use wasmer::{Memory, Memory32View, WasmPtr};
 
+// Import WASM runtime types
+use crate::wasm::runtime::{Store, Function, FunctionType, Memory, WasmPtr, Memory32View, FunctionEnv, Type, Imports, WasmEnv, ImportObject, Value};
 use crate::wasm::{gas::GasMeter, storage::WasmStorage, types::CallContext};
-use wasmer::{Function, FunctionEnv, Store, WasmerEnv};
+
+/// Gas cost helper for tracking different operation types
+pub struct Gas;
+
+impl Gas {
+    pub fn storage_read(key_len: usize) -> u64 {
+        crate::wasm::GAS_COST_STORAGE_READ + (key_len as u64) / 32
+    }
+
+    pub fn storage_write(key_len: usize, value_len: usize) -> u64 {
+        crate::wasm::GAS_COST_STORAGE_WRITE + (key_len as u64 + value_len as u64) / 32
+    }
+
+    pub fn storage_delete(key_len: usize) -> u64 {
+        crate::wasm::GAS_COST_STORAGE_DELETE + (key_len as u64) / 32
+    }
+
+    pub fn context_operation() -> u64 {
+        crate::wasm::GAS_COST_CONTEXT_READ
+    }
+}
+// use wasmer::{Function, FunctionEnv, Store, WasmerEnv}; // Disabled
 
 /// Maximum memory read/write size
 pub const MAX_MEMORY_ACCESS_SIZE: usize = 1 * 1024 * 1024; // 1MB
 
 /// Environment for host functions
-#[derive(WasmerEnv, Clone)]
+#[derive(Clone)]
 pub struct HostEnv {
     /// Storage interface
     pub storage: Arc<WasmStorage>,
@@ -171,7 +193,7 @@ pub fn read_memory_string(
 
 /// Write a string to WASM memory
 pub fn write_memory_string(memory: &Memory, ptr: WasmPtr<u8>, s: &str) -> Result<(), WasmError> {
-    write_memory_bytes(memory, ptr, s.as_bytes())
+    write_memory_bytes(memory, ptr, s.as_ref())
 }
 
 /// Write a 32-bit integer to WASM memory
@@ -408,7 +430,7 @@ fn get_caller(env: FunctionEnv<HostEnv>, ptr: u32, len: u32) -> i32 {
 
     // Get caller address from context
     let caller = &env_ref.context.caller;
-    let caller_bytes = caller.as_bytes();
+    let caller_bytes = caller.as_ref();
 
     // Check if buffer is large enough
     if caller_bytes.len() > len as usize {
@@ -492,8 +514,9 @@ fn debug_log(env: FunctionEnv<HostEnv>, ptr: u32, len: u32) {
 // Implements the host functions that are exposed to WASM smart contracts.
 // These functions allow the contracts to interact with the blockchain environment.
 
-use crate::wasm::{runtime::WasmEnv, types::HostFunctionCallback};
-use wasmer::{Function, FunctionType, ImportObject, Store, Type, Value};
+// use crate::wasm::{runtime::WasmEnv, types::HostFunctionCallback}; // Disabled
+use crate::wasm::types::HostFunctionCallback;
+// use wasmer::{Function, FunctionType, ImportObject, Store, Type, Value}; // Disabled
 
 /// Create an import object with all host functions for the WASM module
 pub fn create_import_object(store: &Store, env: Arc<WasmEnv>) -> ImportObject {
@@ -693,7 +716,7 @@ fn get_caller_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
         let caller = env.caller().to_string();
 
         // Write to memory and return pointer
-        let ptr = env.write_to_memory(caller.as_bytes())?;
+        let ptr = env.write_to_memory(caller.as_ref())?;
 
         Ok(vec![Value::I32(ptr as i32)])
     })
@@ -738,7 +761,7 @@ fn get_contract_address_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
         let address = env.contract_address().to_string();
 
         // Write to memory and return pointer
-        let ptr = env.write_to_memory(address.as_bytes())?;
+        let ptr = env.write_to_memory(address.as_ref())?;
 
         Ok(vec![Value::I32(ptr as i32)])
     })
@@ -777,24 +800,4 @@ fn dealloc_fn(store: &Store, env: Arc<WasmEnv>) -> Function {
     })
 }
 
-impl WasmStorage for dyn Storage {
-    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, WasmError> {
-        self.get(key)
-            .map_err(|e| WasmError::StorageError(e.to_string()))
-    }
 
-    fn set(&self, key: &[u8], value: &[u8]) -> Result<(), WasmError> {
-        self.set(key, value)
-            .map_err(|e| WasmError::StorageError(e.to_string()))
-    }
-
-    fn delete(&self, key: &[u8]) -> Result<(), WasmError> {
-        self.delete(key)
-            .map_err(|e| WasmError::StorageError(e.to_string()))
-    }
-
-    fn has(&self, key: &[u8]) -> Result<bool, WasmError> {
-        self.has(key)
-            .map_err(|e| WasmError::StorageError(e.to_string()))
-    }
-}

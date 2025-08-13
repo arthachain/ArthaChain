@@ -1,7 +1,8 @@
 use super::neural_base::{NeuralBase, NeuralConfig, NeuralNetwork};
 use anyhow::{anyhow, Result};
+
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+// use std::cell::RefCell; // Unused import removed
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -66,13 +67,13 @@ pub struct Spike {
 /// Brain-Computer Interface model
 pub struct BCIModel {
     /// Neural base model
-    neural_base: Arc<RwLock<Box<dyn NeuralNetwork>>>,
+    neural_base: Arc<RwLock<Box<dyn NeuralNetwork + Send + Sync>>>,
     /// Signal processing parameters
-    signal_params: RefCell<SignalParams>,
+    signal_params: Arc<RwLock<SignalParams>>,
     /// Processed signal buffer
     signal_buffer: Vec<Vec<f32>>,
     /// Current state
-    current_state: RefCell<BCIState>,
+    current_state: Arc<RwLock<BCIState>>,
     #[allow(dead_code)]
     neural_net: Arc<RwLock<NeuralBase>>,
     #[allow(dead_code)]
@@ -108,19 +109,19 @@ impl BCIModel {
     /// Create a new BCI model
     pub async fn new(config: NeuralConfig, signal_params: SignalParams) -> Result<Self> {
         // Create neural base with a clone of the config
-        let neural_base = NeuralBase::new(config.clone()).await?;
+        let neural_base = NeuralBase::new_sync(config.clone())?;
 
         Ok(Self {
             neural_base: Arc::new(RwLock::new(Box::new(neural_base))),
-            signal_params: RefCell::new(signal_params.clone()),
+            signal_params: Arc::new(RwLock::new(signal_params.clone())),
             signal_buffer: Vec::new(),
-            current_state: RefCell::new(BCIState {
+            current_state: Arc::new(RwLock::new(BCIState {
                 filter_state: vec![0.0; signal_params.num_channels * 4],
                 spike_timestamps: Vec::new(),
                 features: Vec::new(),
                 classifications: Vec::new(),
-            }),
-            neural_net: Arc::new(RwLock::new(NeuralBase::new(config).await?)),
+            })),
+            neural_net: Arc::new(RwLock::new(NeuralBase::new_sync(config)?)),
             feature_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -131,7 +132,7 @@ impl BCIModel {
         self.signal_buffer.extend(signals.iter().cloned());
 
         // Trim buffer to maximum size
-        let max_buffer_size = self.signal_params.borrow().window_size * 3;
+        let max_buffer_size = self.signal_params.read().await.window_size * 3;
         if self.signal_buffer.len() > max_buffer_size {
             self.signal_buffer = self
                 .signal_buffer
@@ -139,36 +140,37 @@ impl BCIModel {
         }
 
         // Check if we have enough data
-        if self.signal_buffer.len() < self.signal_params.borrow().window_size {
+        if self.signal_buffer.len() < self.signal_params.read().await.window_size {
             return Ok(Vec::new());
         }
 
         // Extract features
-        let features = self.extract_features()?;
+        let features = self.extract_features().await?;
 
         // Classify features
         let neural_base = self.neural_base.read().await;
         let mut classifications = Vec::new();
 
         for feature in features.clone() {
-            let output = neural_base.forward(&feature);
+            // Convert feature vector to slice for neural network forward pass
+            let output = neural_base.forward(&feature)?;
             let class = output
                 .iter()
                 .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
             classifications.push(class);
-            self.current_state.borrow_mut().classifications.push(class);
+            self.current_state.write().await.classifications.push(class);
         }
 
         Ok(classifications)
     }
 
     /// Extract features from signal buffer
-    fn extract_features(&mut self) -> Result<Vec<Vec<f32>>> {
-        let window_size = self.signal_params.borrow().window_size;
+    async fn extract_features(&mut self) -> Result<Vec<Vec<f32>>> {
+        let window_size = self.signal_params.read().await.window_size;
         let mut features = Vec::new();
 
         // Process each window
@@ -185,14 +187,14 @@ impl BCIModel {
             let filtered = self.apply_filter(&window)?;
 
             // Detect spikes
-            self.detect_spikes(&filtered, window_start as u64);
+            self.detect_spikes(&filtered, window_start as u64).await;
 
             // Extract features from filtered signal
-            let feature = self.compute_features(&filtered)?;
+            let feature = self.compute_features(&filtered).await?;
             features.push(feature.clone());
 
             // Store feature
-            self.current_state.borrow_mut().features.push(feature);
+            self.current_state.write().await.features.push(feature);
         }
 
         Ok(features)
@@ -208,13 +210,15 @@ impl BCIModel {
     }
 
     /// Detect spikes in filtered signal
-    fn detect_spikes(&mut self, filtered: &[Vec<f32>], start_time: u64) {
+    async fn detect_spikes(&mut self, filtered: &[Vec<f32>], start_time: u64) {
+        let spike_threshold = self.signal_params.read().await.spike_threshold;
         for channel in filtered.iter() {
             for (j, &sample) in channel.iter().enumerate() {
-                if sample.abs() > self.signal_params.borrow().spike_threshold {
+                if sample.abs() > spike_threshold {
                     let timestamp = start_time + j as u64;
                     self.current_state
-                        .borrow_mut()
+                        .write()
+                        .await
                         .spike_timestamps
                         .push(timestamp);
                 }
@@ -223,7 +227,7 @@ impl BCIModel {
     }
 
     /// Compute features from filtered signal
-    fn compute_features(&self, filtered: &[Vec<f32>]) -> Result<Vec<f32>> {
+    async fn compute_features(&self, filtered: &[Vec<f32>]) -> Result<Vec<f32>> {
         if filtered.is_empty() {
             return Err(anyhow!("Empty filtered signal"));
         }
@@ -267,8 +271,16 @@ impl BCIModel {
             })
             .collect();
 
-        // Train neural base
-        neural_base.train(&training_data)?;
+        // Train neural base - split training data into inputs and targets
+        let inputs: Vec<Vec<f32>> = training_data
+            .iter()
+            .map(|(input, _)| input.clone())
+            .collect();
+        let targets: Vec<Vec<f32>> = training_data
+            .iter()
+            .map(|(_, target)| target.clone())
+            .collect();
+        neural_base.train(&inputs, &targets)?;
 
         Ok(())
     }
@@ -288,8 +300,8 @@ impl BCIModel {
 
         // Save signal params and current state
         let state = BCIModelState {
-            signal_params: self.signal_params.borrow().clone(),
-            current_state: self.current_state.borrow().clone(),
+            signal_params: self.signal_params.read().await.clone(),
+            current_state: self.current_state.read().await.clone(),
         };
 
         let serialized = serde_json::to_string_pretty(&state)?;
@@ -312,25 +324,25 @@ impl BCIModel {
             let serialized = std::fs::read_to_string(&state_path)?;
             let state: BCIModelState = serde_json::from_str(&serialized)?;
 
-            // Update state using interior mutability via RefCell
-            *self.signal_params.borrow_mut() = state.signal_params;
-            *self.current_state.borrow_mut() = state.current_state;
+            // Update state using async locks
+            *self.signal_params.write().await = state.signal_params;
+            *self.current_state.write().await = state.current_state;
         }
 
         Ok(())
     }
 
     /// Get a serializable state for persistence
-    pub fn get_serializable_state(&self) -> BCIModelState {
+    pub async fn get_serializable_state(&self) -> BCIModelState {
         BCIModelState {
-            signal_params: self.signal_params.borrow().clone(),
-            current_state: self.current_state.borrow().clone(),
+            signal_params: self.signal_params.read().await.clone(),
+            current_state: self.current_state.read().await.clone(),
         }
     }
 
     /// Restore from a serializable state
-    pub fn restore_from_state(&mut self, state: BCIModelState) {
-        *self.signal_params.borrow_mut() = state.signal_params;
-        *self.current_state.borrow_mut() = state.current_state;
+    pub async fn restore_from_state(&self, state: BCIModelState) {
+        *self.signal_params.write().await = state.signal_params;
+        *self.current_state.write().await = state.current_state;
     }
 }

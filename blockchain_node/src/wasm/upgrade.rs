@@ -45,14 +45,14 @@ pub trait WasmStorage {
 impl WasmStorage for BlockchainStorage {
     fn get_contract_code(&self, address: &str) -> Result<Vec<u8>, String> {
         let key = format!("contract_code:{}", address);
-        self.get(key.as_bytes())
+        self.get(key.as_ref())
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Contract code not found for address: {}", address))
     }
 
     fn put_contract_code(&self, address: &str, code: &[u8]) -> Result<(), String> {
         let key = format!("contract_code:{}", address);
-        self.put(key.as_bytes(), code).map_err(|e| e.to_string())
+        self.put(key.as_ref(), code).map_err(|e| e.to_string())
     }
 
     fn put(&self, key: &[u8], value: &[u8]) -> Result<(), String> {
@@ -264,7 +264,7 @@ impl UpgradeManager {
                 address: self.contract_address.clone(),
                 topics: vec![
                     b"Upgraded".to_vec(),
-                    self.current_version.implementation.as_bytes().to_vec(),
+                    self.current_version.implementation.as_ref().to_vec(),
                 ],
                 data: self.current_version.version.to_be_bytes().to_vec(),
             }],
@@ -289,7 +289,7 @@ impl UpgradeManager {
 
             // Update implementation slot
             self.storage
-                .put(implementation_slot, new_implementation.as_bytes())
+                .put(implementation_slot, new_implementation.as_ref())
                 .map_err(|e| {
                     WasmError::StorageError(format!("Failed to update implementation slot: {}", e))
                 })?;
@@ -375,7 +375,7 @@ impl UpgradeManager {
                         logs.push(WasmLog {
                             address: self.contract_address.clone(),
                             topics: vec![b"FacetAdded".to_vec()],
-                            data: cut.facet_address.as_bytes().to_vec(),
+                            data: cut.facet_address.as_ref().to_vec(),
                         });
                     }
                     FacetCutAction::Replace => {
@@ -383,7 +383,7 @@ impl UpgradeManager {
                         logs.push(WasmLog {
                             address: self.contract_address.clone(),
                             topics: vec![b"FacetReplaced".to_vec()],
-                            data: cut.facet_address.as_bytes().to_vec(),
+                            data: cut.facet_address.as_ref().to_vec(),
                         });
                     }
                     FacetCutAction::Remove => {
@@ -391,7 +391,7 @@ impl UpgradeManager {
                         logs.push(WasmLog {
                             address: self.contract_address.clone(),
                             topics: vec![b"FacetRemoved".to_vec()],
-                            data: cut.facet_address.as_bytes().to_vec(),
+                            data: cut.facet_address.as_ref().to_vec(),
                         });
                     }
                 }
@@ -579,8 +579,8 @@ impl UpgradeManager {
     fn calculate_storage_layout_hash(&self, layout: &[StorageVariable]) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         for var in layout {
-            hasher.update(var.name.as_bytes());
-            hasher.update(var.var_type.as_bytes());
+            hasher.update(var.name.as_ref());
+            hasher.update(var.var_type.as_ref());
             hasher.update(&var.slot.to_be_bytes());
             hasher.update(&var.offset.to_be_bytes());
             hasher.update(&var.size.to_be_bytes());
@@ -617,7 +617,7 @@ impl UpgradeManager {
             .map_err(|e| WasmError::StorageError(format!("Failed to serialize version: {}", e)))?;
 
         self.storage
-            .put(version_key.as_bytes(), &serialized)
+            .put(version_key.as_ref(), &serialized)
             .map_err(|e| WasmError::StorageError(format!("Failed to store version: {}", e)))?;
 
         Ok(())
@@ -633,7 +633,7 @@ impl UpgradeManager {
             .map_err(|e| WasmError::StorageError(format!("Failed to serialize facets: {}", e)))?;
 
         self.storage
-            .put(facets_key.as_bytes(), &serialized)
+            .put(facets_key.as_ref(), &serialized)
             .map_err(|e| WasmError::StorageError(format!("Failed to store facets: {}", e)))?;
 
         Ok(())
@@ -671,7 +671,7 @@ impl UpgradeManager {
 
     /// Generate function selector from signature
     pub fn generate_function_selector(signature: &str) -> FunctionSelector {
-        let hash = Keccak256::digest(signature.as_bytes());
+        let hash = Keccak256::digest(signature.as_ref());
         [hash[0], hash[1], hash[2], hash[3]]
     }
 
@@ -805,7 +805,7 @@ impl DiamondStorageManager {
         let key_hex = general_purpose::STANDARD.encode(key); // Use base64 instead of hex for safer encoding
         let prefixed_key = format!("facet:{}:{}", facet_address, key_hex);
         self.storage
-            .get(prefixed_key.as_bytes())
+            .get(prefixed_key.as_ref())
             .map_err(|e| WasmError::StorageError(e))
     }
 
@@ -819,7 +819,7 @@ impl DiamondStorageManager {
         let key_hex = general_purpose::STANDARD.encode(key); // Use base64 instead of hex for safer encoding
         let prefixed_key = format!("facet:{}:{}", facet_address, key_hex);
         self.storage
-            .put(prefixed_key.as_bytes(), value)
+            .put(prefixed_key.as_ref(), value)
             .map_err(|e| WasmError::StorageError(e))
     }
 
@@ -828,7 +828,7 @@ impl DiamondStorageManager {
         let key_hex = general_purpose::STANDARD.encode(key); // Use base64 instead of hex for safer encoding
         let prefixed_key = format!("diamond:{}:{}", self.diamond_address, key_hex);
         self.storage
-            .get(prefixed_key.as_bytes())
+            .get(prefixed_key.as_ref())
             .map_err(|e| WasmError::StorageError(e))
     }
 
@@ -837,7 +837,7 @@ impl DiamondStorageManager {
         let key_hex = general_purpose::STANDARD.encode(key); // Use base64 instead of hex for safer encoding
         let prefixed_key = format!("diamond:{}:{}", self.diamond_address, key_hex);
         self.storage
-            .put(prefixed_key.as_bytes(), value)
+            .put(prefixed_key.as_ref(), value)
             .map_err(|e| WasmError::StorageError(e))
     }
 }
@@ -910,7 +910,7 @@ impl UniversalProxy {
                 address: self.proxy_address.clone(),
                 topics: vec![
                     b"DelegateCall".to_vec(),
-                    implementation_address.as_bytes().to_vec(),
+                    implementation_address.as_ref().to_vec(),
                 ],
                 data: function_selector.to_vec(),
             }],
@@ -984,7 +984,7 @@ impl LogicPointerTracker {
             WasmError::StorageError(format!("Failed to serialize logic pointer: {}", e))
         })?;
 
-        self.storage.put(key.as_bytes(), &serialized).map_err(|e| {
+        self.storage.put(key.as_ref(), &serialized).map_err(|e| {
             WasmError::StorageError(format!("Failed to store logic pointer: {}", e))
         })?;
 
@@ -1021,7 +1021,7 @@ impl LogicPointerTracker {
                 WasmError::StorageError(format!("Failed to serialize logic pointer: {}", e))
             })?;
 
-            self.storage.put(key.as_bytes(), &serialized).map_err(|e| {
+            self.storage.put(key.as_ref(), &serialized).map_err(|e| {
                 WasmError::StorageError(format!("Failed to store logic pointer: {}", e))
             })?;
 
@@ -1060,13 +1060,13 @@ impl InMemoryStorage {
 impl WasmStorage for InMemoryStorage {
     fn get_contract_code(&self, address: &str) -> Result<Vec<u8>, String> {
         let key = format!("contract_code:{}", address);
-        self.get(key.as_bytes())?
+        self.get(key.as_ref())?
             .ok_or_else(|| format!("Contract code not found for address: {}", address))
     }
 
     fn put_contract_code(&self, address: &str, code: &[u8]) -> Result<(), String> {
         let key = format!("contract_code:{}", address);
-        self.put(key.as_bytes(), code)
+        self.put(key.as_ref(), code)
     }
 
     fn put(&self, key: &[u8], value: &[u8]) -> Result<(), String> {

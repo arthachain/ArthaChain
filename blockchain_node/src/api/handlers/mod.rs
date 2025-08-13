@@ -1,7 +1,11 @@
 pub mod accounts;
 pub mod blocks;
 pub mod consensus;
+pub mod faucet;
 pub mod metrics;
 pub mod network_monitoring;
 pub mod status;
+pub mod testnet_api;
 pub mod transactions;
+pub mod validators;
+pub mod wallet_rpc;

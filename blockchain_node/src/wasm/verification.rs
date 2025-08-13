@@ -2,7 +2,33 @@ use log::error;
 use serde::{Deserialize, Serialize};
 
 use thiserror::Error;
-use z3::{Ast, Config, Context, FuncDecl, Model, Solver, Sort};
+// Stub types for z3 (to avoid external dependency)
+#[derive(Debug, Clone)]
+pub struct Ast;
+#[derive(Debug, Clone)]
+pub struct Config;
+#[derive(Debug, Clone)]
+pub struct Context;
+#[derive(Debug, Clone)]
+pub struct FuncDecl;
+#[derive(Debug, Clone)]
+pub struct Model;
+#[derive(Debug, Clone)]
+pub struct Solver;
+#[derive(Debug, Clone)]
+pub struct Sort;
+#[derive(Debug, Clone)]
+pub struct Symbol;
+
+// Additional z3 stub types
+pub mod z3 {
+    #[derive(Debug, Clone)]
+    pub enum SatResult {
+        Sat,
+        Unsat,
+        Unknown,
+    }
+}
 
 /// Formal verification error
 #[derive(Debug, Error)]

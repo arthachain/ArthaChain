@@ -301,7 +301,10 @@ impl StaticAnalyzer {
         // Validate WASM bytecode
         let validation_result = self.validate_wasm(bytecode)?;
         if !validation_result.is_valid {
-            return Err(anyhow!("Invalid WASM bytecode: {}", validation_result.error.unwrap_or_default()));
+            return Err(anyhow!(
+                "Invalid WASM bytecode: {}",
+                validation_result.error.unwrap_or_default()
+            ));
         }
 
         // Calculate contract hash
@@ -326,7 +329,10 @@ impl StaticAnalyzer {
         let verification = self.verify_properties(&module).ok();
 
         // Generate quantum-resistant proof
-        let quantum_proof = self.quantum_verifier.generate_proof(bytecode, &security_issues).ok();
+        let quantum_proof = self
+            .quantum_verifier
+            .generate_proof(bytecode, &security_issues)
+            .ok();
 
         Ok(AnalysisResult {
             contract_hash,
@@ -416,18 +422,16 @@ impl StaticAnalyzer {
             // This is a simplified version; a real implementation would translate
             // the WASM bytecode to Z3 expressions and verify properties
             let solver = Solver::new(context);
-            
+
             // Example property: "Memory accesses are always within bounds"
-            let properties_verified = vec![
-                Property {
-                    name: "memory_bounds".to_string(),
-                    description: "Memory accesses are always within bounds".to_string(),
-                    formula: "forall (i: Int) access(i) => i >= 0 and i < memory_size".to_string(),
-                }
-            ];
-            
+            let properties_verified = vec![Property {
+                name: "memory_bounds".to_string(),
+                description: "Memory accesses are always within bounds".to_string(),
+                formula: "forall (i: Int) access(i) => i >= 0 and i < memory_size".to_string(),
+            }];
+
             let properties_failed = Vec::new();
-            
+
             Ok(VerificationResult {
                 properties_verified,
                 properties_failed,
@@ -500,14 +504,15 @@ impl SecurityChecker {
                     recommendation: "Add memory size validation before allocation".to_string(),
                 });
             }
-            
+
             if pattern.name == "quantum_vulnerable_crypto" {
                 // Check for quantum-vulnerable crypto operations
                 // This is a placeholder for real detection logic
                 issues.push(SecurityIssue {
                     severity: pattern.severity.clone(),
                     issue_type: pattern.issue_type.clone(),
-                    description: "Potentially quantum-vulnerable cryptographic operations detected".to_string(),
+                    description: "Potentially quantum-vulnerable cryptographic operations detected"
+                        .to_string(),
                     location: CodeLocation {
                         function: "unknown".to_string(),
                         offset: 0,
@@ -612,7 +617,7 @@ impl GasAnalyzer {
                 avg_cost: 5000,
             },
         );
-        
+
         Ok(GasAnalysisResult {
             function_costs,
             worst_case_path: Vec::new(),
@@ -637,11 +642,11 @@ impl QuantumVerifier {
         // Create a proof that combines the bytecode and analysis results
         let mut data = Vec::new();
         data.extend_from_slice(bytecode);
-        
+
         // Add serialized issues to the data
         let issues_json = serde_json::to_vec(issues)?;
         data.extend_from_slice(&issues_json);
-        
+
         // Add timestamp
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -649,11 +654,11 @@ impl QuantumVerifier {
             .as_secs()
             .to_le_bytes();
         data.extend_from_slice(&timestamp);
-        
+
         // Add to quantum Merkle tree and get proof
         let proof = self.merkle_tree.add_leaf(&data)?;
-        
+
         // Return root hash as proof
         Ok(self.merkle_tree.root())
     }
-} 
+}

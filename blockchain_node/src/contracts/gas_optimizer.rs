@@ -1,8 +1,8 @@
-use std::collections::{HashMap, BTreeMap};
+use crate::consensus::metrics::GasMetrics;
+use crate::types::{Address, CallData, GasLimit, GasPrice, Hash};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::types::{Address, Hash, GasPrice, GasLimit, CallData};
-use crate::consensus::metrics::GasMetrics;
 
 pub struct GasOptimizer {
     // Gas price tracking
@@ -91,6 +91,7 @@ enum OptimizationStrategy {
     CustomStrategy(Box<dyn Fn(&CallData) -> OptimizedCall + Send + Sync>),
 }
 
+#[derive(Debug, Clone)]
 struct OptimizedCall {
     data: CallData,
     gas_estimate: GasLimit,
@@ -129,64 +130,79 @@ impl GasOptimizer {
         }
     }
 
-    pub async fn optimize_call(&self, target: Address, data: CallData) -> anyhow::Result<OptimizedCall> {
+    pub async fn optimize_call(
+        &self,
+        target: Address,
+        data: CallData,
+    ) -> anyhow::Result<OptimizedCall> {
         // Track original gas estimate
         let original_estimate = self.estimate_gas(&target, &data).await?;
-        
+
         // Apply optimization strategies
         let optimizer = self.optimizer.read().await;
         let optimized = optimizer.optimize_call(&target, &data).await?;
-        
+
         // Record optimization metrics
-        let savings = original_estimate - optimized.gas_estimate;
-        self.metrics.record_gas_savings(target, savings);
-        
+        let savings_u64: u64 = u64::from(original_estimate) - u64::from(optimized.gas_estimate);
+        self.metrics
+            .record_gas_savings(target, GasLimit::from(savings_u64));
+
         Ok(optimized)
     }
 
-    pub async fn batch_transactions(&self, transactions: Vec<BatchableTransaction>) -> anyhow::Result<Vec<OptimizedCall>> {
+    pub async fn batch_transactions(
+        &self,
+        transactions: Vec<BatchableTransaction>,
+    ) -> anyhow::Result<Vec<OptimizedCall>> {
         let mut processor = self.batch_processor.write().await;
         let batched = processor.process_batch(transactions).await?;
-        
+
         // Record batching metrics
         self.metrics.record_batch_processed(batched.len());
-        
+
         Ok(batched)
     }
 
     pub async fn update_gas_price(&self, block_number: u64, price: GasPrice) -> anyhow::Result<()> {
         let mut oracle = self.price_oracle.write().await;
         oracle.update_price(block_number, price);
-        
+
         self.metrics.record_gas_price_update(block_number, price);
         Ok(())
     }
 
-    pub async fn track_gas_usage(&self, contract: Address, function: Hash, gas_used: u64) -> anyhow::Result<()> {
+    pub async fn track_gas_usage(
+        &self,
+        contract: Address,
+        function: Hash,
+        gas_used: u64,
+    ) -> anyhow::Result<()> {
         let mut tracker = self.usage_tracker.write().await;
-        tracker.record_usage(contract, function, gas_used);
-        
-        self.metrics.record_gas_usage(contract, function, gas_used);
+        tracker.record_usage(contract, function.clone(), gas_used);
+
+        self.metrics
+            .record_gas_usage(contract, function.clone(), gas_used);
         Ok(())
     }
 
     async fn estimate_gas(&self, target: &Address, data: &CallData) -> anyhow::Result<GasLimit> {
         let tracker = self.usage_tracker.read().await;
-        
+
         // Get historical usage patterns
         let contract_stats = tracker.get_contract_stats(target);
         let function_stats = tracker.get_function_stats(&data.function_hash());
-        
+
         // Calculate estimate based on patterns
         let base_estimate = match (contract_stats, function_stats) {
             (Some(c_stats), Some(f_stats)) => {
                 let complexity = data.estimate_complexity();
-                f_stats.base_cost + (f_stats.per_byte_cost * data.size() as u64) +
-                    (f_stats.complexity_factor * complexity as f64) as u64
+                f_stats.base_cost
+                    + (f_stats.per_byte_cost * data.size() as u64)
+                    + (f_stats.complexity_factor * complexity as f64) as u64
             }
             _ => 21000, // Default gas limit
         };
-        
+
         Ok(base_estimate.into())
     }
 }
@@ -205,14 +221,14 @@ impl GasPriceOracle {
         self.price_history.insert(block_number, price);
         self.update_base_fee(price.base_fee());
         self.priority_fee_estimator.update(price.priority_fee());
-        
+
         // Keep only recent history
         while self.price_history.len() > 1000 {
             if let Some((&first_key, _)) = self.price_history.iter().next() {
                 self.price_history.remove(&first_key);
             }
         }
-        
+
         // Update predictions
         self.update_predictions();
     }
@@ -241,24 +257,30 @@ impl GasUsageTracker {
 
     fn record_usage(&mut self, contract: Address, function: Hash, gas_used: u64) {
         // Update contract stats
-        let contract_stats = self.contract_usage.entry(contract).or_insert_with(|| ContractGasStats {
-            avg_gas_used: gas_used,
-            min_gas_used: gas_used,
-            max_gas_used: gas_used,
-            call_count: 0,
-            last_updated: 0,
-        });
-        
+        let contract_stats =
+            self.contract_usage
+                .entry(contract)
+                .or_insert_with(|| ContractGasStats {
+                    avg_gas_used: gas_used,
+                    min_gas_used: gas_used,
+                    max_gas_used: gas_used,
+                    call_count: 0,
+                    last_updated: 0,
+                });
+
         contract_stats.update(gas_used);
-        
+
         // Update function stats
-        let function_stats = self.function_usage.entry(function).or_insert_with(|| FunctionGasStats {
-            base_cost: gas_used,
-            per_byte_cost: 0,
-            complexity_factor: 1.0,
-            execution_times: Vec::new(),
-        });
-        
+        let function_stats =
+            self.function_usage
+                .entry(function)
+                .or_insert_with(|| FunctionGasStats {
+                    base_cost: gas_used,
+                    per_byte_cost: 0,
+                    complexity_factor: 1.0,
+                    execution_times: Vec::new(),
+                });
+
         function_stats.update(gas_used);
     }
 
@@ -280,15 +302,24 @@ impl CallOptimizer {
         }
     }
 
-    async fn optimize_call(&self, target: &Address, data: &CallData) -> anyhow::Result<OptimizedCall> {
+    async fn optimize_call(
+        &self,
+        target: &Address,
+        data: &CallData,
+    ) -> anyhow::Result<OptimizedCall> {
         // Check cache first
-        let cache_key = data.hash();
+        let cache_key = data.hash()?;
         if let Some(cached) = self.optimization_cache.get(&cache_key) {
-            if !cached.is_expired() {
+            if cached.valid_until
+                > std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            {
                 return Ok(cached.clone());
             }
         }
-        
+
         // Apply optimization strategies
         let mut optimized_data = data.clone();
         for strategy in &self.strategies {
@@ -305,19 +336,21 @@ impl CallOptimizer {
                 OptimizationStrategy::OptimizeStorage => {
                     // Implement storage optimization
                 }
-                OptimizationStrategy::CustomStrategy(optimizer) => {
-                    return optimizer(&optimized_data);
+                OptimizationStrategy::CustomStrategy(optimizer_fn) => {
+                    let oc = optimizer_fn(&optimized_data);
+                    return Ok(oc);
                 }
             }
         }
-        
+
         Ok(OptimizedCall {
             data: optimized_data,
             gas_estimate: 21000.into(), // Would be actual estimate in production
             valid_until: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_secs() + 3600, // 1 hour validity
+                .as_secs()
+                + 3600, // 1 hour validity
         })
     }
 }
@@ -331,10 +364,13 @@ impl BatchProcessor {
         }
     }
 
-    async fn process_batch(&mut self, transactions: Vec<BatchableTransaction>) -> anyhow::Result<Vec<OptimizedCall>> {
+    async fn process_batch(
+        &mut self,
+        transactions: Vec<BatchableTransaction>,
+    ) -> anyhow::Result<Vec<OptimizedCall>> {
         let mut optimized = Vec::new();
         let mut current_batch = Vec::new();
-        
+
         for tx in transactions {
             if self.should_start_new_batch(&current_batch, &tx) {
                 let batch_result = self.optimize_batch(&current_batch)?;
@@ -343,57 +379,57 @@ impl BatchProcessor {
             }
             current_batch.push(tx);
         }
-        
+
         // Process final batch
         if !current_batch.is_empty() {
             let batch_result = self.optimize_batch(&current_batch)?;
             optimized.extend(batch_result);
         }
-        
+
         Ok(optimized)
     }
 
-    fn should_start_new_batch(&self, current_batch: &[BatchableTransaction], next_tx: &BatchableTransaction) -> bool {
+    fn should_start_new_batch(
+        &self,
+        current_batch: &[BatchableTransaction],
+        next_tx: &BatchableTransaction,
+    ) -> bool {
         if current_batch.is_empty() {
             return false;
         }
-        
+
         // Check if batch is full
         if let Some(&optimal_size) = self.optimal_sizes.get(&next_tx.target) {
             if current_batch.len() >= optimal_size {
                 return true;
             }
         }
-        
+
         // Check if adding transaction would exceed block gas limit
-        let batch_gas: u64 = current_batch.iter()
-            .map(|tx| tx.gas_limit.into())
-            .sum();
-            
+        let batch_gas: u64 = current_batch.iter().map(|tx| u64::from(tx.gas_limit)).sum();
+
         batch_gas + u64::from(next_tx.gas_limit) > 15_000_000 // Example block gas limit
     }
 
     fn optimize_batch(&self, batch: &[BatchableTransaction]) -> anyhow::Result<Vec<OptimizedCall>> {
         let mut optimized = Vec::new();
-        
+
         // Group transactions by target contract
         let mut by_target: HashMap<Address, Vec<&BatchableTransaction>> = HashMap::new();
         for tx in batch {
-            by_target.entry(tx.target)
-                .or_insert_with(Vec::new)
-                .push(tx);
+            by_target.entry(tx.target).or_insert_with(Vec::new).push(tx);
         }
-        
+
         // Optimize each group
         for (target, txs) in by_target {
-            let mut combined_data = CallData::new(); // Would be actual implementation
+            let mut combined_data = CallData::new(Vec::new()); // Would be actual implementation
             let mut total_gas = 0;
-            
+
             for tx in txs {
                 combined_data.append(&tx.data);
                 total_gas += u64::from(tx.gas_limit);
             }
-            
+
             // Apply batch-specific optimizations
             optimized.push(OptimizedCall {
                 data: combined_data,
@@ -401,10 +437,11 @@ impl BatchProcessor {
                 valid_until: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_secs() + 3600,
+                    .as_secs()
+                    + 3600,
             });
         }
-        
+
         Ok(optimized)
     }
 }
@@ -413,11 +450,11 @@ impl ContractGasStats {
     fn update(&mut self, gas_used: u64) {
         self.min_gas_used = self.min_gas_used.min(gas_used);
         self.max_gas_used = self.max_gas_used.max(gas_used);
-        
+
         let total = self.avg_gas_used * self.call_count;
         self.call_count += 1;
         self.avg_gas_used = (total + gas_used) / self.call_count;
-        
+
         self.last_updated = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -431,7 +468,7 @@ impl FunctionGasStats {
         if self.execution_times.len() > 100 {
             self.execution_times.remove(0);
         }
-        
+
         // Update complexity factor based on execution pattern
         self.update_complexity_factor();
     }
@@ -440,16 +477,20 @@ impl FunctionGasStats {
         if self.execution_times.len() < 2 {
             return;
         }
-        
+
         // Calculate variance in execution times
-        let mean: f64 = self.execution_times.iter().sum::<u64>() as f64 / self.execution_times.len() as f64;
-        let variance: f64 = self.execution_times.iter()
+        let mean: f64 =
+            self.execution_times.iter().sum::<u64>() as f64 / self.execution_times.len() as f64;
+        let variance: f64 = self
+            .execution_times
+            .iter()
             .map(|&x| {
                 let diff = x as f64 - mean;
                 diff * diff
             })
-            .sum::<f64>() / self.execution_times.len() as f64;
-            
+            .sum::<f64>()
+            / self.execution_times.len() as f64;
+
         // Update complexity factor based on variance
         self.complexity_factor = 1.0 + (variance.sqrt() / mean);
     }
@@ -467,11 +508,11 @@ impl PriorityFeeEstimator {
     fn update(&mut self, tip: u64) {
         self.recent_tips.push(tip);
         self.max_tip = self.max_tip.max(tip);
-        
+
         if self.recent_tips.len() > 100 {
             self.recent_tips.remove(0);
         }
-        
+
         self.update_percentiles();
     }
 
@@ -479,14 +520,18 @@ impl PriorityFeeEstimator {
         if self.recent_tips.is_empty() {
             return;
         }
-        
+
         let mut sorted_tips = self.recent_tips.clone();
         sorted_tips.sort_unstable();
-        
+
         // Calculate key percentiles
-        self.percentiles.insert(25, sorted_tips[sorted_tips.len() * 25 / 100]);
-        self.percentiles.insert(50, sorted_tips[sorted_tips.len() * 50 / 100]);
-        self.percentiles.insert(75, sorted_tips[sorted_tips.len() * 75 / 100]);
-        self.percentiles.insert(90, sorted_tips[sorted_tips.len() * 90 / 100]);
+        self.percentiles
+            .insert(25, sorted_tips[sorted_tips.len() * 25 / 100]);
+        self.percentiles
+            .insert(50, sorted_tips[sorted_tips.len() * 50 / 100]);
+        self.percentiles
+            .insert(75, sorted_tips[sorted_tips.len() * 75 / 100]);
+        self.percentiles
+            .insert(90, sorted_tips[sorted_tips.len() * 90 / 100]);
     }
-} 
+}

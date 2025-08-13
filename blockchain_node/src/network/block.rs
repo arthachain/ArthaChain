@@ -12,7 +12,7 @@ impl BlockManager {
     }
 
     pub fn process_block(&mut self, block: Block) -> Result<(), NetworkError> {
-        let hash = block.hash();
+        let hash = block.hash()?;
         
         // Validate block header
         if !self.validate_header(&block.header) {

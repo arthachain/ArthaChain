@@ -1075,8 +1075,8 @@ impl ByzantineDetector {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(format!("{:?}", fault_type).as_bytes());
-        hasher.update(node_id.as_bytes());
+        hasher.update(format!("{:?}", fault_type).as_ref());
+        hasher.update(node_id.as_ref());
         hasher.update(data);
 
         hasher.finalize().to_vec()

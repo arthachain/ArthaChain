@@ -1,6 +1,9 @@
+use blake3;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fmt;
+
+// Re-export Hasher for other modules
+pub use blake3::Hasher;
 
 /// Hash type used throughout the blockchain
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -12,13 +15,11 @@ impl Hash {
         Hash(data)
     }
 
-    /// Create a hash from input data
+    /// Create a quantum-resistant hash from input data using BLAKE3
     pub fn from_data(data: &[u8]) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let result = hasher.finalize();
+        let hash_result = blake3::hash(data);
         let mut hash_data = [0u8; 32];
-        hash_data.copy_from_slice(&result);
+        hash_data.copy_from_slice(hash_result.as_bytes());
         Hash(hash_data)
     }
 

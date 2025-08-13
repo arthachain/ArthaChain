@@ -3,6 +3,7 @@ pub mod svcp;
 
 // Make cross_shard and reputation modules always available
 pub mod cross_shard;
+pub mod metrics;
 pub mod reputation;
 
 #[cfg(not(skip_problematic_modules))]
@@ -16,8 +17,10 @@ pub mod quantum_svbft;
 pub mod svbft;
 pub mod view_change;
 
-#[cfg(not(skip_problematic_modules))]
 pub mod leader_election;
+pub mod leader_failover;
+pub mod load_balancer;
+pub mod validator_set;
 
 pub mod batch;
 #[cfg(not(skip_problematic_modules))]
@@ -44,14 +47,14 @@ pub use checkpoint::CheckpointManager;
 #[cfg(not(skip_problematic_modules))]
 pub use cross_shard::CrossShardManager;
 // Quantum-resistant enhanced cross-shard coordinator
-pub use cross_shard::{
-    CoordinatorMessage, CrossShardCoordinator, EnhancedCrossShardManager, ParticipantHandler,
-    TxPhase,
-};
+pub use cross_shard::{CrossShardCoordinator, EnhancedCrossShardManager};
+// Import network cross-shard types
+pub use crate::network::cross_shard::{CoordinatorMessage, ParticipantHandler, TxPhase};
 #[cfg(not(skip_problematic_modules))]
 pub use dag::DagManager;
 #[cfg(not(skip_problematic_modules))]
 pub use incentives::IncentiveManager;
+pub use metrics::{ConsensusMetrics, MetricsCollector};
 pub use parallel_processor::ParallelProcessor;
 #[cfg(not(skip_problematic_modules))]
 pub use security::SecurityManager;
@@ -88,4 +91,10 @@ pub use social_graph::SocialGraph;
 pub use weight_adjustment::DynamicWeightAdjuster;
 
 pub use quantum_svbft::QuantumSVBFTConsensus;
+pub use validator_set::{ValidatorSetConfig, ValidatorSetManager};
 pub use view_change::ViewChangeManager;
+
+pub mod consensus_manager;
+
+// Re-export main consensus types that are imported by lib.rs
+pub use consensus_manager::{ConsensusConfig, ConsensusManager};

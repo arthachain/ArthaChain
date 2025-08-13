@@ -522,7 +522,7 @@ fn format_analysis_result(result: &AnalysisResult) -> String {
 
     output.push_str("\n🚀 PERFORMANCE METRICS\n");
     output.push_str(&"-".repeat(30));
-    output.push_str("\n");
+    output.push('\n');
     output.push_str(&format!(
         "⛽ Estimated Gas Cost: {}\n",
         result.performance_metrics.estimated_gas_cost
@@ -539,7 +539,7 @@ fn format_analysis_result(result: &AnalysisResult) -> String {
     if !result.security_issues.is_empty() {
         output.push_str("\n⚠️  SECURITY ISSUES\n");
         output.push_str(&"-".repeat(30));
-        output.push_str("\n");
+        output.push('\n');
 
         for (i, issue) in result.security_issues.iter().enumerate() {
             let severity_icon = match issue.severity {
@@ -582,7 +582,7 @@ fn format_verification_result(result: &VerificationResult) -> String {
 
     output.push_str("📋 PROPERTIES TESTED\n");
     output.push_str(&"-".repeat(30));
-    output.push_str("\n");
+    output.push('\n');
 
     for property in &result.properties_tested {
         let category_icon = match property.category {
@@ -602,7 +602,7 @@ fn format_verification_result(result: &VerificationResult) -> String {
     if !result.issues.is_empty() {
         output.push_str("⚠️  ISSUES FOUND\n");
         output.push_str(&"-".repeat(30));
-        output.push_str("\n");
+        output.push('\n');
 
         for (i, issue) in result.issues.iter().enumerate() {
             let severity_icon = match issue.severity {

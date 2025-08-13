@@ -245,15 +245,12 @@ impl VerificationToolService {
             .k_framework_path
             .as_ref()
             .map(|path| KFrameworkVerifier { path: path.clone() });
-            
-        let z3_solver = tool_paths
-            .z3_path
-            .as_ref()
-            .map(|path| Z3Verifier {
-                path: path.clone(),
-                context: Context::new(&Config::new()).ok(),
-            });
-            
+
+        let z3_solver = tool_paths.z3_path.as_ref().map(|path| Z3Verifier {
+            path: path.clone(),
+            context: Context::new(&Config::new()).ok(),
+        });
+
         Self {
             k_framework,
             z3_solver,
@@ -274,33 +271,38 @@ impl VerificationToolService {
         let k_framework = self.k_framework.as_ref().ok_or_else(|| {
             anyhow!("K Framework not available. Please set K_FRAMEWORK_PATH environment variable.")
         })?;
-        
+
         // Calculate contract hash
         let contract_hash = hex::encode(blake3::hash(contract_bytecode).as_bytes());
-        
+
         // Check cache
-        let cache_key = format!("k_framework:{}:{}", contract_hash, specification.module_name);
+        let cache_key = format!(
+            "k_framework:{}:{}",
+            contract_hash, specification.module_name
+        );
         if let Some(result) = self.results_cache.get(&cache_key) {
             return Ok(result.clone());
         }
-        
+
         // Generate K specification file
         let spec_file = self.generate_k_specification(specification)?;
-        
+
         // Start verification
         let start_time = Instant::now();
         let verification_result = k_framework.verify_contract(contract_bytecode, &spec_file)?;
         let verification_time_ms = start_time.elapsed().as_millis() as u64;
-        
+
         // Parse output
-        let (properties_verified, properties_failed, issues) = self.parse_k_framework_output(&verification_result);
-        
+        let (properties_verified, properties_failed, issues) =
+            self.parse_k_framework_output(&verification_result);
+
         // Generate quantum proof
-        let quantum_proof = self.quantum_verifier
+        let quantum_proof = self
+            .quantum_verifier
             .generate_verification(contract_bytecode, &properties_verified, &properties_failed)
             .ok()
             .map(hex::encode);
-            
+
         let result = VerificationResult {
             contract_hash,
             tool: VerificationToolType::KFramework,
@@ -311,10 +313,10 @@ impl VerificationToolService {
             quantum_proof,
             issues,
         };
-        
+
         // Cache result
         self.results_cache.insert(cache_key, result.clone());
-        
+
         Ok(result)
     }
 
@@ -326,34 +328,36 @@ impl VerificationToolService {
         specification: &Z3Specification,
     ) -> Result<VerificationResult> {
         // Check for Z3 availability
-        let z3_solver = self.z3_solver.as_ref().ok_or_else(|| {
-            anyhow!("Z3 not available. Please set Z3_PATH environment variable.")
-        })?;
-        
+        let z3_solver = self
+            .z3_solver
+            .as_ref()
+            .ok_or_else(|| anyhow!("Z3 not available. Please set Z3_PATH environment variable."))?;
+
         // Calculate contract hash
         let contract_hash = hex::encode(blake3::hash(contract_bytecode).as_bytes());
-        
+
         // Check cache
         let cache_key = format!("z3:{}", contract_hash);
         if let Some(result) = self.results_cache.get(&cache_key) {
             return Ok(result.clone());
         }
-        
+
         // Start verification
         let start_time = Instant::now();
         let verification_result = z3_solver.verify_contract(contract_bytecode, specification)?;
         let verification_time_ms = start_time.elapsed().as_millis() as u64;
-        
+
         // Parse output
-        let (properties_verified, properties_failed, issues, tool_output) = 
+        let (properties_verified, properties_failed, issues, tool_output) =
             self.parse_z3_output(&verification_result);
-        
+
         // Generate quantum proof
-        let quantum_proof = self.quantum_verifier
+        let quantum_proof = self
+            .quantum_verifier
             .generate_verification(contract_bytecode, &properties_verified, &properties_failed)
             .ok()
             .map(hex::encode);
-            
+
         let result = VerificationResult {
             contract_hash,
             tool: VerificationToolType::Z3,
@@ -364,10 +368,10 @@ impl VerificationToolService {
             quantum_proof,
             issues,
         };
-        
+
         // Cache result
         self.results_cache.insert(cache_key, result.clone());
-        
+
         Ok(result)
     }
 
@@ -376,38 +380,38 @@ impl VerificationToolService {
         // Create temporary directory for specification files
         let temp_dir = std::env::temp_dir().join("k_specs");
         std::fs::create_dir_all(&temp_dir)?;
-        
+
         let spec_file = temp_dir.join(format!("{}.k", specification.module_name));
         let mut content = String::new();
-        
+
         // Generate module declaration
         content.push_str(&format!("module {}\n", specification.module_name));
-        
+
         // Generate imports
         for import in &specification.imports {
             content.push_str(&format!("  imports {}\n", import));
         }
-        
+
         // Generate rules
         for rule in &specification.rules {
             content.push_str("  rule ");
             if !rule.name.is_empty() {
                 content.push_str(&format!("[{}]: ", rule.name));
             }
-            
+
             content.push_str(&format!("{} => {}", rule.lhs, rule.rhs));
-            
+
             if let Some(requires) = &rule.requires {
                 content.push_str(&format!(" requires {}", requires));
             }
-            
+
             if let Some(ensures) = &rule.ensures {
                 content.push_str(&format!(" ensures {}", ensures));
             }
-            
+
             content.push_str("\n");
         }
-        
+
         // Generate claims
         for claim in &specification.claims {
             content.push_str(&format!("  claim [{}]: ", claim.name));
@@ -415,12 +419,12 @@ impl VerificationToolService {
             content.push_str(&format!(" {{ {} }} ", claim.pre));
             content.push_str(&format!(" => {{ {} }}\n", claim.post));
         }
-        
+
         content.push_str("endmodule\n");
-        
+
         // Write specification to file
         std::fs::write(&spec_file, content)?;
-        
+
         Ok(spec_file)
     }
 
@@ -432,7 +436,7 @@ impl VerificationToolService {
         let mut properties_verified = Vec::new();
         let mut properties_failed = Vec::new();
         let mut issues = Vec::new();
-        
+
         // Parse verification results
         // This is a simplified parser for demonstration
         for line in output.lines() {
@@ -447,17 +451,19 @@ impl VerificationToolService {
                         reason: "Verification condition not satisfied".to_string(),
                         counterexample: extract_counterexample(line),
                     });
-                    
+
                     issues.push(VerificationIssue {
                         severity: IssueSeverity::High,
                         description: format!("Property {} verification failed", property_name),
                         location: None,
-                        recommended_fix: Some("Review contract logic to ensure property holds".to_string()),
+                        recommended_fix: Some(
+                            "Review contract logic to ensure property holds".to_string(),
+                        ),
                     });
                 }
             }
         }
-        
+
         (properties_verified, properties_failed, issues)
     }
 
@@ -465,12 +471,17 @@ impl VerificationToolService {
     fn parse_z3_output(
         &self,
         output: &Z3VerificationOutput,
-    ) -> (Vec<String>, Vec<PropertyFailure>, Vec<VerificationIssue>, String) {
+    ) -> (
+        Vec<String>,
+        Vec<PropertyFailure>,
+        Vec<VerificationIssue>,
+        String,
+    ) {
         let mut properties_verified = Vec::new();
         let mut properties_failed = Vec::new();
         let mut issues = Vec::new();
         let mut tool_output = String::new();
-        
+
         // Convert results to structured output
         for (query_name, result) in &output.query_results {
             match result {
@@ -481,17 +492,20 @@ impl VerificationToolService {
                     } else {
                         properties_failed.push(PropertyFailure {
                             property_name: query_name.clone(),
-                            reason: "Found satisfying assignment but expected unsatisfiable".to_string(),
+                            reason: "Found satisfying assignment but expected unsatisfiable"
+                                .to_string(),
                             counterexample: output.models.get(query_name).cloned(),
                         });
-                        
+
                         tool_output.push_str(&format!("{}: sat (expected: unsat)\n", query_name));
-                        
+
                         issues.push(VerificationIssue {
                             severity: IssueSeverity::High,
                             description: format!("Property {} verification failed", query_name),
                             location: None,
-                            recommended_fix: Some("Fix contract logic to ensure property holds".to_string()),
+                            recommended_fix: Some(
+                                "Fix contract logic to ensure property holds".to_string(),
+                            ),
                         });
                     }
                 }
@@ -502,17 +516,20 @@ impl VerificationToolService {
                     } else {
                         properties_failed.push(PropertyFailure {
                             property_name: query_name.clone(),
-                            reason: "Property is unsatisfiable but expected satisfiable".to_string(),
+                            reason: "Property is unsatisfiable but expected satisfiable"
+                                .to_string(),
                             counterexample: None,
                         });
-                        
+
                         tool_output.push_str(&format!("{}: unsat (expected: sat)\n", query_name));
-                        
+
                         issues.push(VerificationIssue {
                             severity: IssueSeverity::High,
                             description: format!("Property {} verification failed", query_name),
                             location: None,
-                            recommended_fix: Some("Fix property specification or contract logic".to_string()),
+                            recommended_fix: Some(
+                                "Fix property specification or contract logic".to_string(),
+                            ),
                         });
                     }
                 }
@@ -522,9 +539,9 @@ impl VerificationToolService {
                         reason: "Solver could not determine satisfiability".to_string(),
                         counterexample: None,
                     });
-                    
+
                     tool_output.push_str(&format!("{}: unknown\n", query_name));
-                    
+
                     issues.push(VerificationIssue {
                         severity: IssueSeverity::Medium,
                         description: format!("Property {} verification inconclusive", query_name),
@@ -534,7 +551,7 @@ impl VerificationToolService {
                 }
             }
         }
-        
+
         (properties_verified, properties_failed, issues, tool_output)
     }
 }
@@ -556,10 +573,10 @@ impl KFrameworkVerifier {
         // Write contract bytecode to temporary file
         let temp_dir = std::env::temp_dir().join("k_verification");
         std::fs::create_dir_all(&temp_dir)?;
-        
+
         let bytecode_file = temp_dir.join("contract.wasm");
         std::fs::write(&bytecode_file, contract_bytecode)?;
-        
+
         // Build K Framework command
         let output = Command::new(&self.path)
             .arg("kprove")
@@ -573,12 +590,12 @@ impl KFrameworkVerifier {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;
-            
+
         if !output.status.success() {
             // Even if verification fails, we want to parse the output
             // to extract counterexamples and reasons
         }
-        
+
         let output_str = String::from_utf8(output.stdout)?;
         Ok(output_str)
     }
@@ -586,7 +603,11 @@ impl KFrameworkVerifier {
 
 impl Z3Verifier {
     /// Verify a contract
-    fn verify_contract(&self, contract_bytecode: &[u8], specification: &Z3Specification) -> Result<Z3VerificationOutput> {
+    fn verify_contract(
+        &self,
+        contract_bytecode: &[u8],
+        specification: &Z3Specification,
+    ) -> Result<Z3VerificationOutput> {
         // Try to use Z3 API if available
         if let Some(context) = &self.context {
             self.verify_with_api(contract_bytecode, specification, context)
@@ -597,23 +618,31 @@ impl Z3Verifier {
     }
 
     /// Verify with Z3 API
-    fn verify_with_api(&self, contract_bytecode: &[u8], specification: &Z3Specification, context: &Context) -> Result<Z3VerificationOutput> {
+    fn verify_with_api(
+        &self,
+        contract_bytecode: &[u8],
+        specification: &Z3Specification,
+        context: &Context,
+    ) -> Result<Z3VerificationOutput> {
         let mut query_results = HashMap::new();
         let mut expected_results = HashMap::new();
         let mut models = HashMap::new();
-        
+
         let solver = Solver::new(context);
-        
+
         // Add declarations
         // This is simplified - a real implementation would translate declarations to Z3 API calls
-        
+
         // Add assertions
         for assertion in &specification.assertions {
             // In a real implementation, we would parse the formula and add to solver
             // For now, we just log it
-            println!("Adding assertion: {} = {}", assertion.name, assertion.formula);
+            println!(
+                "Adding assertion: {} = {}",
+                assertion.name, assertion.formula
+            );
         }
-        
+
         // Check queries
         for query in &specification.queries {
             // In a real implementation, we would parse the formula and check with solver
@@ -621,7 +650,7 @@ impl Z3Verifier {
             expected_results.insert(query.name.clone(), query.expected_result);
             query_results.insert(query.name.clone(), query.expected_result);
         }
-        
+
         Ok(Z3VerificationOutput {
             query_results,
             expected_results,
@@ -630,34 +659,45 @@ impl Z3Verifier {
     }
 
     /// Verify with Z3 command-line interface
-    fn verify_with_cli(&self, contract_bytecode: &[u8], specification: &Z3Specification) -> Result<Z3VerificationOutput> {
+    fn verify_with_cli(
+        &self,
+        contract_bytecode: &[u8],
+        specification: &Z3Specification,
+    ) -> Result<Z3VerificationOutput> {
         let mut query_results = HashMap::new();
         let mut expected_results = HashMap::new();
         let mut models = HashMap::new();
-        
+
         // Generate SMT-LIB2 file
         let temp_dir = std::env::temp_dir().join("z3_verification");
         std::fs::create_dir_all(&temp_dir)?;
-        
+
         let smt_file = temp_dir.join("verification.smt2");
         let mut content = String::new();
-        
+
         // Add declarations
         for declaration in &specification.declarations {
             match declaration.decl_type {
                 Z3DeclarationType::Constant => {
                     for param in &declaration.parameters {
-                        content.push_str(&format!("(declare-const {} {})\n", param.name, param.param_type));
+                        content.push_str(&format!(
+                            "(declare-const {} {})\n",
+                            param.name, param.param_type
+                        ));
                     }
                 }
                 Z3DeclarationType::Function => {
                     if declaration.parameters.len() >= 2 {
                         let return_type = &declaration.parameters.last().unwrap().param_type;
-                        let arg_types: Vec<_> = declaration.parameters.iter().take(declaration.parameters.len() - 1)
+                        let arg_types: Vec<_> = declaration
+                            .parameters
+                            .iter()
+                            .take(declaration.parameters.len() - 1)
                             .map(|p| p.param_type.clone())
                             .collect();
-                        
-                        content.push_str(&format!("(declare-fun {} ({}) {})\n",
+
+                        content.push_str(&format!(
+                            "(declare-fun {} ({}) {})\n",
                             declaration.name,
                             arg_types.join(" "),
                             return_type
@@ -666,37 +706,40 @@ impl Z3Verifier {
                 }
                 Z3DeclarationType::Datatype => {
                     // Datatype declarations are more complex, simplifying for now
-                    content.push_str(&format!("(declare-datatypes () (({} )))\n", declaration.name));
+                    content.push_str(&format!(
+                        "(declare-datatypes () (({} )))\n",
+                        declaration.name
+                    ));
                 }
             }
         }
-        
+
         // Add assertions
         for assertion in &specification.assertions {
             content.push_str(&format!("(assert {})\n", assertion.formula));
         }
-        
+
         // Check queries
         for query in &specification.queries {
             let query_file = temp_dir.join(format!("{}.smt2", query.name));
             let mut query_content = content.clone();
-            
+
             // Add query-specific assertion
             query_content.push_str(&format!("(assert {})\n", query.formula));
             query_content.push_str("(check-sat)\n");
             query_content.push_str("(get-model)\n");
-            
+
             std::fs::write(&query_file, query_content)?;
-            
+
             // Run Z3 on this query
             let output = Command::new(&self.path)
                 .arg(&query_file)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()?;
-                
+
             let output_str = String::from_utf8(output.stdout)?;
-            
+
             // Parse Z3 output
             let result = if output_str.contains("sat") {
                 Z3QueryResult::Sat
@@ -705,10 +748,10 @@ impl Z3Verifier {
             } else {
                 Z3QueryResult::Unknown
             };
-            
+
             query_results.insert(query.name.clone(), result);
             expected_results.insert(query.name.clone(), query.expected_result);
-            
+
             // Extract model if sat
             if result == Z3QueryResult::Sat {
                 if let Some(model_str) = extract_z3_model(&output_str) {
@@ -716,7 +759,7 @@ impl Z3Verifier {
                 }
             }
         }
-        
+
         Ok(Z3VerificationOutput {
             query_results,
             expected_results,
@@ -743,14 +786,14 @@ impl QuantumVerifier {
         // Create a proof that combines the bytecode and verification results
         let mut data = Vec::new();
         data.extend_from_slice(contract_bytecode);
-        
+
         // Add serialized verification results
         let verified_json = serde_json::to_vec(properties_verified)?;
         data.extend_from_slice(&verified_json);
-        
+
         let failed_json = serde_json::to_vec(properties_failed)?;
         data.extend_from_slice(&failed_json);
-        
+
         // Add timestamp
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -758,10 +801,10 @@ impl QuantumVerifier {
             .as_secs()
             .to_le_bytes();
         data.extend_from_slice(&timestamp);
-        
+
         // Add to quantum Merkle tree and get proof
         let proof = self.merkle_tree.add_leaf(&data)?;
-        
+
         // Return root hash as proof
         Ok(self.merkle_tree.root())
     }
@@ -793,4 +836,4 @@ fn extract_z3_model(output: &str) -> Option<String> {
         }
     }
     None
-} 
+}

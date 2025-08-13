@@ -568,7 +568,7 @@ impl VoteAggregator {
         hasher.update(&[vote_type as u8]);
         hasher.update(&height.to_be_bytes());
         hasher.update(&round.to_be_bytes());
-        hasher.update(validator_id.as_bytes());
+        hasher.update(validator_id.as_ref());
         let signature = hasher.finalize().to_vec();
 
         Ok(signature)

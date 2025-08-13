@@ -33,7 +33,7 @@ fn main() {
         let data = generate_sample_file(size);
         let mut config = Config::default();
         config.chunking_config.max_chunk_size = 10 * 1024 * 1024;
-        config.chunking_config.min_chunk_size = 1 * 1024 * 1024;
+        config.chunking_config.min_chunk_size = 1048576;
         config.chunking_config.default_compression = CompressionType::None;
 
         // Prepare the test data once

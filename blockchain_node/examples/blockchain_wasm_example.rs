@@ -66,7 +66,7 @@ impl ContractStorage {
     pub fn store_value(&mut self, contract: &str, key: &str, value: Vec<u8>) {
         self.contract_states
             .entry(contract.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(key.to_string(), value);
     }
 
@@ -131,11 +131,11 @@ impl WasmVm {
             "increment" => self.execute_increment(contract_address, context),
             "get" => self.execute_get(contract_address, context),
             "set" => {
-                let value = args.get(0).copied().unwrap_or(0);
+                let value = args.first().copied().unwrap_or(0);
                 self.execute_set(contract_address, context, value)
             }
             "transfer" => {
-                let amount = args.get(0).copied().unwrap_or(0) as u64;
+                let amount = args.first().copied().unwrap_or(0) as u64;
                 self.execute_transfer(contract_address, context, amount)
             }
             "balance" => self.execute_get_balance(contract_address, context),

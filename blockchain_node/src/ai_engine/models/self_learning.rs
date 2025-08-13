@@ -2,6 +2,7 @@ use super::types::Experience;
 use crate::ai_engine::models::neural_base::{
     ActivationType, LayerConfig, NeuralBase, NeuralConfig, NeuralNetwork,
 };
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::result::Result;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Type alias for neural network model storage
-type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>;
+type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork + Send + Sync>>>>;
 
 /// Type alias for training data
 type TrainingDataVec = Vec<(Vec<f32>, Vec<f32>)>;
@@ -114,8 +115,8 @@ impl SelfLearningSystem {
     /// Create a new self-learning system
     pub async fn new(config: SelfLearningConfig) -> Result<Self, anyhow::Error> {
         // Create neural model
-        let model = NeuralBase::new(config.base_config.clone()).await?;
-        let model: Box<dyn NeuralNetwork> = Box::new(model);
+        let model = NeuralBase::new_sync(config.base_config.clone())?;
+        let model: Box<dyn NeuralNetwork + Send + Sync> = Box::new(model);
 
         let mut models = HashMap::new();
         models.insert("base".to_string(), Arc::new(RwLock::new(model)));
@@ -156,8 +157,8 @@ impl SelfLearningSystem {
         name: &str,
         config: NeuralConfig,
     ) -> Result<(), anyhow::Error> {
-        let model = NeuralBase::new(config.clone()).await?;
-        let model: Box<dyn NeuralNetwork> = Box::new(model);
+        let model = NeuralBase::new_sync(config.clone())?;
+        let model: Box<dyn NeuralNetwork + Send + Sync> = Box::new(model);
         self.models
             .insert(name.to_string(), Arc::new(RwLock::new(model)));
         self.configs.insert(name.to_string(), config);
@@ -179,8 +180,16 @@ impl SelfLearningSystem {
             // Convert experiences to training data
             let training_data = self.prepare_training_data()?;
 
-            // Train model using the NeuralNetwork trait method
-            model.train(&training_data)?;
+            // Train model using the NeuralNetwork trait method - split training data into inputs and targets
+            let inputs: Vec<Vec<f32>> = training_data
+                .iter()
+                .map(|(input, _)| input.clone())
+                .collect();
+            let targets: Vec<Vec<f32>> = training_data
+                .iter()
+                .map(|(_, target)| target.clone())
+                .collect();
+            model.train(&inputs, &targets)?;
 
             // Update metrics
             let mut system_metrics = self.metrics.write().await;
@@ -269,22 +278,23 @@ impl SelfLearningSystem {
                     // Increase model capacity
                     if let Some(config) = self.configs.get(name) {
                         let mut new_config = config.clone();
-                        // Get the last layer from the layers vector
-                        if !new_config.layers.is_empty() {
+                        // Get the last layer from the hidden_layers vector
+                        if !new_config.hidden_layers.is_empty() {
                             // Get the last layer's output dimension
-                            let last_layer = new_config.layers.last().unwrap();
-                            let last_output_dim = last_layer.output_dim;
+                            let last_layer = new_config.hidden_layers.last().unwrap();
+                            let last_output_size = last_layer.output_size;
 
                             // Add a new layer with twice the output dimension
-                            new_config.layers.push(LayerConfig {
-                                input_dim: last_output_dim,
-                                output_dim: last_output_dim * 2,
+                            new_config.hidden_layers.push(LayerConfig {
+                                input_size: last_output_size,
+                                output_size: last_output_size * 2,
                                 activation: ActivationType::GELU,
-                                dropout_rate: 0.2,
+                                dropout_rate: Some(0.2),
+                                batch_norm: true,
                             });
 
                             // Create new model with adapted architecture
-                            let _new_model = NeuralBase::new(new_config.clone()).await?;
+                            let _new_model = NeuralBase::new_sync(new_config.clone())?;
                             // Here we would replace the old model, but this is a simplification
                         }
                     }
@@ -305,8 +315,8 @@ impl SelfLearningSystem {
         {
             use sysinfo::System;
             let mut sys = System::new();
-            sys.refresh_cpu();
-            _metrics.resource_usage.cpu_usage = sys.global_cpu_info().cpu_usage();
+            sys.refresh_cpu_all();
+            _metrics.resource_usage.cpu_usage = sys.global_cpu_usage();
             _metrics.resource_usage.memory_usage =
                 (sys.used_memory() * 100 / sys.total_memory()) as u64;
         }
@@ -410,47 +420,111 @@ impl SelfLearningSystem {
         Ok(())
     }
 
-    /// Save model to disk
+    /// Save model to disk with real neural network serialization
     pub async fn save_model(&self, path: &str) -> Result<(), anyhow::Error> {
-        // In a real implementation, this would serialize the neural models
-        // For this simulation, just write a placeholder file
+        // Create directory structure for model storage
+        let model_dir = std::path::Path::new(path);
+        if let Some(parent) = model_dir.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
 
+        // Save metadata
         let metadata = SelfLearningMeta {
             models: self.models.keys().cloned().collect(),
             active_model: self.active_model.clone(),
             performance_history: self.performance_history.clone(),
         };
 
-        let serialized = serde_json::to_string(&metadata)?;
-        tokio::fs::write(path, serialized).await?;
+        let metadata_path = format!("{}.meta", path);
+        let serialized_meta = serde_json::to_string_pretty(&metadata)?;
+        tokio::fs::write(&metadata_path, serialized_meta).await?;
 
+        // Save each neural model individually
+        for (model_name, model_arc) in &self.models {
+            let model_path = format!("{}.{}.model", path, model_name);
+            let model = model_arc.read().await;
+
+            // Real model serialization using the save method from NeuralNetwork trait
+            if let Err(e) = model.save(&model_path) {
+                warn!("Failed to save model {}: {}", model_name, e);
+                // Continue saving other models even if one fails
+            }
+        }
+
+        // Save performance metrics
+        let metrics = self.metrics.read().await;
+        let metrics_path = format!("{}.metrics", path);
+        let serialized_metrics = serde_json::to_string_pretty(&*metrics)?;
+        tokio::fs::write(&metrics_path, serialized_metrics).await?;
+
+        info!("Successfully saved self-learning system to {}", path);
         Ok(())
     }
 
-    /// Load model from disk
+    /// Load model from disk with real neural network deserialization
     pub async fn load_model(&mut self, path: &str) -> Result<(), anyhow::Error> {
-        // For this simulation, just read the placeholder file
-
-        let content = match tokio::fs::read_to_string(path).await {
+        // Load metadata first
+        let metadata_path = format!("{}.meta", path);
+        let metadata_content = match tokio::fs::read_to_string(&metadata_path).await {
             Ok(content) => content,
-            Err(_) => return Ok(()), // Silently fail if model doesn't exist
+            Err(e) => {
+                warn!("Failed to read metadata from {}: {}", metadata_path, e);
+                return Ok(()); // Gracefully handle missing files
+            }
         };
 
-        let metadata: SelfLearningMeta = serde_json::from_str(&content)?;
+        let metadata: SelfLearningMeta = serde_json::from_str(&metadata_content)?;
+        info!("Loading self-learning system from {}", path);
 
-        // In a real implementation, we would deserialize and restore each model
-        // For this simulation, just recreate empty models with the same names
-        for model_name in metadata.models {
-            let config = self.configs["base"].clone();
-            let model = NeuralBase::new(config).await?;
-            let boxed_model: Box<dyn NeuralNetwork> = Box::new(model);
+        // Clear existing models
+        self.models.clear();
+
+        // Load each neural model
+        for model_name in &metadata.models {
+            let model_path = format!("{}.{}.model", path, model_name);
+
+            // Create new neural base with appropriate config
+            let config = self
+                .configs
+                .get("base")
+                .ok_or_else(|| anyhow::anyhow!("Base config not found"))?
+                .clone();
+
+            let mut neural_base = NeuralBase::new(config)?;
+
+            // Load the saved model state
+            if let Err(e) = neural_base.load(&model_path) {
+                warn!(
+                    "Failed to load model {} from {}: {}",
+                    model_name, model_path, e
+                );
+                // Create a fresh model if loading fails
+                info!("Creating fresh model for {}", model_name);
+            }
+
+            let boxed_model: Box<dyn NeuralNetwork + Send + Sync> = Box::new(neural_base);
             self.models
                 .insert(model_name.clone(), Arc::new(RwLock::new(boxed_model)));
         }
 
+        // Load performance metrics if available
+        let metrics_path = format!("{}.metrics", path);
+        if let Ok(metrics_content) = tokio::fs::read_to_string(&metrics_path).await {
+            if let Ok(loaded_metrics) = serde_json::from_str::<PerformanceMetrics>(&metrics_content)
+            {
+                *self.metrics.write().await = loaded_metrics;
+                info!("Loaded performance metrics from disk");
+            }
+        }
+
+        // Restore metadata state
         self.active_model = metadata.active_model;
         self.performance_history = metadata.performance_history;
 
+        info!(
+            "Successfully loaded self-learning system with {} models",
+            self.models.len()
+        );
         Ok(())
     }
 
@@ -496,8 +570,8 @@ impl SelfLearningSystem {
         for i in 0..import.model_count {
             let _model_path = format!("model_{i}");
             let config = self.configs["base"].clone();
-            let model = NeuralBase::new(config).await?;
-            let boxed_model: Box<dyn NeuralNetwork> = Box::new(model);
+            let model = NeuralBase::new_sync(config)?;
+            let boxed_model: Box<dyn NeuralNetwork + Send + Sync> = Box::new(model);
             self.models
                 .insert(format!("model_{i}"), Arc::new(RwLock::new(boxed_model)));
         }

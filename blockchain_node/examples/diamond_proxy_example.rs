@@ -63,6 +63,12 @@ pub struct DiamondStorageManager {
     facets: HashSet<ContractAddress>,
 }
 
+impl Default for DiamondStorageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiamondStorageManager {
     pub fn new() -> Self {
         Self {
@@ -141,6 +147,12 @@ pub trait Storage: Send + Sync {
 /// In-memory storage implementation
 pub struct InMemoryStorage {
     contracts: std::sync::Mutex<HashMap<String, Vec<u8>>>,
+}
+
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryStorage {

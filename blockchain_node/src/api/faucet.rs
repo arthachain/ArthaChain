@@ -279,7 +279,7 @@ impl Faucet {
         tx.signature = crypto::sign(&self.private_key, &tx_bytes)?;
 
         // Return transaction ID
-        Ok(hex::encode(tx.hash()))
+        Ok(hex::encode(tx.hash().as_ref()))
     }
 
     /// Prune old request records

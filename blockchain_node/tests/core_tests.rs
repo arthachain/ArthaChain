@@ -2,14 +2,13 @@
 mod tests {
     use blockchain_node::types::*;
     use blockchain_node::utils::crypto::Hash as CryptoHash;
-    use std::convert::TryFrom;
 
     fn create_test_address() -> Address {
         Address::new([1u8; 20])
     }
 
     fn create_test_hash() -> CryptoHash {
-        CryptoHash::try_from(vec![1u8; 32]).unwrap()
+        CryptoHash::new([1u8; 32])
     }
 
     #[test]
@@ -106,8 +105,10 @@ mod tests {
 
     #[test]
     fn test_block_metadata() {
-        let mut metadata = BlockMetadata::default();
-        metadata.size = 1000;
+        let mut metadata = BlockMetadata {
+            size: 1000,
+            ..Default::default()
+        };
         metadata.gas_used = 21000;
         metadata.gas_limit = 1000000;
         metadata

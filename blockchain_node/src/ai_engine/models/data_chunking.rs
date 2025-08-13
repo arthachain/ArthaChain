@@ -1,303 +1,306 @@
 use anyhow::Result;
-use numpy::PyArray1;
-use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Adaptive data chunking model using NumPy
+/// Pure Rust Adaptive Data Chunking Implementation
 pub struct AdaptiveChunker {
-    /// NumPy module
-    numpy: PyObject,
     /// Chunking parameters
     params: ChunkingParams,
-    /// Chunk statistics
+    /// Chunking statistics
     stats: ChunkStats,
+    /// Rolling hash state
+    hash_state: RollingHashState,
 }
 
-/// Chunking parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkingParams {
-    /// Minimum chunk size
+    /// Minimum chunk size in bytes
     pub min_size: usize,
-    /// Maximum chunk size
+    /// Maximum chunk size in bytes  
     pub max_size: usize,
-    /// Target compression ratio
-    pub target_compression: f32,
-    /// Similarity threshold
-    pub similarity_threshold: f32,
-    /// Adaptation rate
-    pub adaptation_rate: f32,
+    /// Rolling hash window size
+    pub window_size: usize,
+    /// Hash modulus for boundary detection
+    pub hash_modulus: u32,
+    /// Adaptation learning rate
+    pub learning_rate: f32,
 }
 
-/// Chunk statistics
-#[derive(Debug, Clone, Default)]
+impl Default for ChunkingParams {
+    fn default() -> Self {
+        Self {
+            min_size: 4096,  // 4KB
+            max_size: 65536, // 64KB
+            window_size: 16,
+            hash_modulus: 4096,
+            learning_rate: 0.1,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct ChunkStats {
+    /// Total chunks created
+    pub total_chunks: usize,
     /// Average chunk size
-    pub avg_size: f32,
-    /// Compression ratios
-    pub compression_ratios: Vec<f32>,
-    /// Boundary frequencies
-    pub boundary_freq: HashMap<usize, usize>,
-    /// Content entropy
-    pub content_entropy: Vec<f32>,
+    pub avg_chunk_size: f32,
+    /// Compression ratio achieved
+    pub compression_ratio: f32,
+    /// Processing time per byte
+    pub time_per_byte: f32,
+}
+
+#[derive(Debug)]
+struct RollingHashState {
+    /// Current hash value
+    current_hash: u32,
+    /// Hash multiplier
+    multiplier: u32,
+    /// Window buffer
+    window: Vec<u8>,
+    /// Current position in window
+    position: usize,
+}
+
+impl Default for RollingHashState {
+    fn default() -> Self {
+        Self {
+            current_hash: 0,
+            multiplier: 257,
+            window: Vec::new(),
+            position: 0,
+        }
+    }
+}
+
+impl RollingHashState {
+    fn new(window_size: usize) -> Self {
+        Self {
+            current_hash: 0,
+            multiplier: 257,
+            window: vec![0; window_size],
+            position: 0,
+        }
+    }
+
+    fn update(&mut self, byte: u8) -> u32 {
+        let old_byte = self.window[self.position];
+        self.window[self.position] = byte;
+
+        // Remove old byte contribution and add new byte
+        self.current_hash = self
+            .current_hash
+            .wrapping_sub(old_byte as u32)
+            .wrapping_mul(self.multiplier)
+            .wrapping_add(byte as u32);
+
+        self.position = (self.position + 1) % self.window.len();
+        self.current_hash
+    }
 }
 
 impl AdaptiveChunker {
     /// Create a new adaptive chunker
     pub fn new(params: ChunkingParams) -> Result<Self> {
-        Python::with_gil(|py| {
-            // Import NumPy
-            let numpy = py.import_bound("numpy")?;
+        let hash_state = RollingHashState::new(params.window_size);
 
-            Ok(Self {
-                numpy: numpy.into(),
-                params,
-                stats: ChunkStats::default(),
-            })
+        Ok(Self {
+            params,
+            stats: ChunkStats::default(),
+            hash_state,
         })
     }
 
     /// Chunk data adaptively
     pub fn chunk_data(&mut self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        Python::with_gil(|py| {
-            // Convert data to NumPy array
-            let data_array = PyArray1::from_slice_bound(py, data);
+        if data.is_empty() {
+            return Ok(Vec::new());
+        }
 
-            // Calculate rolling hash
-            let window_size = 16;
-            let rolling_hash = self.calculate_rolling_hash(py, &data_array, window_size)?;
+        let start_time = std::time::Instant::now();
+        let mut chunks = Vec::new();
+        let mut chunk_start = 0;
 
-            // Find chunk boundaries
-            let boundaries = self.find_chunk_boundaries(py, &rolling_hash)?;
+        // Reset hash state
+        self.hash_state = RollingHashState::new(self.params.window_size);
 
-            // Create chunks
-            let mut chunks = Vec::new();
-            let mut start = 0;
+        for (i, &byte) in data.iter().enumerate() {
+            let hash = self.hash_state.update(byte);
 
-            for &end in &boundaries {
-                if end - start >= self.params.min_size && end - start <= self.params.max_size {
-                    chunks.push(data[start..end].to_vec());
-                    start = end;
-                }
+            // Check for chunk boundary
+            let chunk_size = i - chunk_start;
+            let is_boundary = (hash % self.params.hash_modulus) == 0;
+            let min_size_reached = chunk_size >= self.params.min_size;
+            let max_size_reached = chunk_size >= self.params.max_size;
+
+            if (is_boundary && min_size_reached) || max_size_reached {
+                let chunk = data[chunk_start..=i].to_vec();
+                chunks.push(chunk);
+                chunk_start = i + 1;
             }
+        }
 
-            // Add final chunk if needed
-            if start < data.len() {
-                chunks.push(data[start..].to_vec());
-            }
+        // Add final chunk if there's remaining data
+        if chunk_start < data.len() {
+            let chunk = data[chunk_start..].to_vec();
+            chunks.push(chunk);
+        }
 
-            // Update statistics
-            self.update_stats(&chunks)?;
+        // Update statistics
+        self.update_stats(&chunks, start_time.elapsed())?;
 
-            // Adapt parameters if needed
-            self.adapt_parameters()?;
+        // Adapt parameters based on performance
+        self.adapt_parameters()?;
 
-            Ok(chunks)
-        })
+        Ok(chunks)
     }
 
-    /// Calculate rolling hash using NumPy
-    fn calculate_rolling_hash(
-        &self,
-        py: Python,
-        data: &Bound<'_, PyArray1<u8>>,
-        window_size: usize,
-    ) -> Result<Vec<u32>> {
-        let code = format!(
-            r#"
-def rolling_hash(data, window_size):
-    # Rabin-Karp rolling hash
-    prime = 31
-    mod_val = 1 << 32
-    
-    # Calculate initial hash
-    hash_val = 0
-    for i in range(window_size):
-        hash_val = (hash_val * prime + int(data[i])) % mod_val
-    
-    hashes = [hash_val]
-    
-    # Calculate rolling hash for remaining windows
-    for i in range(len(data) - window_size):
-        hash_val = (
-            (hash_val - int(data[i]) * pow(prime, window_size - 1, mod_val)) * prime +
-            int(data[i + window_size])
-        ) % mod_val
-        hashes.append(hash_val)
-    
-    return np.array(hashes, dtype=np.uint32)
-
-result = rolling_hash(data, {window_size})
-            "#
-        );
-
-        let locals = PyDict::new_bound(py);
-        locals.set_item("data", data)?;
-        locals.set_item("np", self.numpy.bind(py))?;
-
-        let result = py.eval_bound(&code, None, Some(&locals))?;
-        let hashes = result.extract::<Vec<u32>>()?;
-
-        Ok(hashes)
-    }
-
-    /// Find chunk boundaries using content-defined chunking
-    fn find_chunk_boundaries(&self, py: Python, rolling_hash: &[u32]) -> Result<Vec<usize>> {
-        let hash_array = PyArray1::from_slice_bound(py, rolling_hash);
-
-        let code = format!(
-            r#"
-def find_boundaries(hashes, min_size, max_size, threshold):
-    # Find local maxima in rolling hash values
-    window = min_size // 2
-    maxima = np.zeros_like(hashes, dtype=bool)
-    
-    for i in range(window, len(hashes) - window):
-        if all(hashes[i] >= hashes[i-window:i]) and \
-           all(hashes[i] >= hashes[i+1:i+window+1]):
-            maxima[i] = True
-    
-    # Filter boundaries based on threshold
-    boundaries = np.where(
-        (maxima) & (hashes > np.mean(hashes) * threshold)
-    )[0]
-    
-    # Ensure chunk size constraints
-    valid_boundaries = []
-    last_boundary = 0
-    
-    for b in boundaries:
-        size = b - last_boundary
-        if size >= min_size and size <= max_size:
-            valid_boundaries.append(b)
-            last_boundary = b
-    
-    return np.array(valid_boundaries, dtype=np.uint32) if valid_boundaries else np.array([], dtype=np.uint32)
-
-result = find_boundaries(
-    hashes,
-    {},  # min_size
-    {},  # max_size
-    {}   # threshold
-)
-            "#,
-            self.params.min_size, self.params.max_size, self.params.similarity_threshold
-        );
-
-        let locals = PyDict::new_bound(py);
-        locals.set_item("hashes", hash_array)?;
-        locals.set_item("np", self.numpy.bind(py))?;
-
-        let result = py.eval_bound(&code, None, Some(&locals))?;
-        let boundaries = result.extract::<Vec<usize>>()?;
-
-        Ok(boundaries)
+    /// Calculate content-based hash for boundary detection
+    fn calculate_content_hash(&self, data: &[u8]) -> u32 {
+        let mut hash = 0u32;
+        for &byte in data {
+            hash = hash.wrapping_mul(257).wrapping_add(byte as u32);
+        }
+        hash
     }
 
     /// Update chunking statistics
-    fn update_stats(&mut self, chunks: &[Vec<u8>]) -> Result<()> {
-        Python::with_gil(|py| {
-            // Calculate average chunk size
-            let sizes: Vec<_> = chunks.iter().map(|c| c.len()).collect();
-            let avg_size = sizes.iter().sum::<usize>() as f32 / sizes.len() as f32;
-            self.stats.avg_size = avg_size;
-
-            // Update boundary frequencies
-            for size in sizes {
-                *self.stats.boundary_freq.entry(size).or_insert(0) += 1;
-            }
-
-            // Calculate compression ratios and entropy
-            for chunk in chunks {
-                let chunk_array = PyArray1::from_slice_bound(py, chunk);
-
-                // Compression ratio using numpy's unique count
-                let unique_count = py
-                    .eval_bound(
-                        "len(np.unique(chunk))",
-                        None,
-                        Some(
-                            &[("chunk", chunk_array.as_any()), ("np", self.numpy.bind(py))]
-                                .into_py_dict_bound(py),
-                        ),
-                    )?
-                    .extract::<usize>()?;
-
-                let ratio = unique_count as f32 / chunk.len() as f32;
-                self.stats.compression_ratios.push(ratio);
-
-                // Calculate entropy
-                let entropy = py
-                    .eval_bound(
-                        r#"
-import numpy as np
-hist = np.bincount(chunk) / len(chunk)
--np.sum(hist[hist > 0] * np.log2(hist[hist > 0] + 1e-10))
-                        "#,
-                        None,
-                        Some(
-                            &[("chunk", chunk_array.as_any()), ("np", self.numpy.bind(py))]
-                                .into_py_dict_bound(py),
-                        ),
-                    )?
-                    .extract::<f32>()?;
-
-                self.stats.content_entropy.push(entropy);
-            }
-
-            Ok(())
-        })
-    }
-
-    /// Adapt chunking parameters based on statistics
-    fn adapt_parameters(&mut self) -> Result<()> {
-        // Calculate average compression ratio
-        if !self.stats.compression_ratios.is_empty() {
-            let avg_compression = self.stats.compression_ratios.iter().sum::<f32>()
-                / self.stats.compression_ratios.len() as f32;
-
-            // Adjust similarity threshold based on compression target
-            if avg_compression > self.params.target_compression {
-                self.params.similarity_threshold *= 1.0 + self.params.adaptation_rate;
-            } else {
-                self.params.similarity_threshold *= 1.0 - self.params.adaptation_rate;
-            }
-
-            // Clamp threshold to reasonable range
-            self.params.similarity_threshold = self.params.similarity_threshold.clamp(0.1, 0.9);
+    fn update_stats(&mut self, chunks: &[Vec<u8>], elapsed: std::time::Duration) -> Result<()> {
+        if chunks.is_empty() {
+            return Ok(());
         }
 
-        // Adjust chunk size bounds based on entropy
-        if !self.stats.content_entropy.is_empty() {
-            let avg_entropy = self.stats.content_entropy.iter().sum::<f32>()
-                / self.stats.content_entropy.len() as f32;
+        self.stats.total_chunks += chunks.len();
 
-            if avg_entropy > 0.7 {
-                // High entropy -> larger chunks
-                self.params.min_size = (self.params.min_size as f32 * 1.1) as usize;
-                self.params.max_size = (self.params.max_size as f32 * 1.1) as usize;
-            } else {
-                // Low entropy -> smaller chunks
-                self.params.min_size = (self.params.min_size as f32 * 0.9) as usize;
-                self.params.max_size = (self.params.max_size as f32 * 0.9) as usize;
+        let total_size: usize = chunks.iter().map(|c| c.len()).sum();
+        let current_avg = total_size as f32 / chunks.len() as f32;
+
+        // Update running average
+        if self.stats.total_chunks == chunks.len() {
+            self.stats.avg_chunk_size = current_avg;
+        } else {
+            let alpha = 0.1; // Exponential moving average factor
+            self.stats.avg_chunk_size =
+                alpha * current_avg + (1.0 - alpha) * self.stats.avg_chunk_size;
+        }
+
+        // Update timing statistics
+        self.stats.time_per_byte = elapsed.as_nanos() as f32 / total_size as f32;
+
+        // Estimate compression ratio (simplified)
+        let unique_bytes = self.estimate_entropy(&chunks);
+        self.stats.compression_ratio = unique_bytes / total_size as f32;
+
+        Ok(())
+    }
+
+    /// Estimate data entropy for compression ratio calculation
+    fn estimate_entropy(&self, chunks: &[Vec<u8>]) -> f32 {
+        let mut byte_counts = [0u32; 256];
+        let mut total_bytes = 0;
+
+        for chunk in chunks {
+            for &byte in chunk {
+                byte_counts[byte as usize] += 1;
+                total_bytes += 1;
             }
+        }
 
-            // Clamp size bounds
-            self.params.min_size = self.params.min_size.clamp(64, 4096);
-            self.params.max_size = self.params.max_size.clamp(4096, 65536);
+        if total_bytes == 0 {
+            return 0.0;
+        }
+
+        let mut entropy = 0.0f32;
+        for &count in &byte_counts {
+            if count > 0 {
+                let probability = count as f32 / total_bytes as f32;
+                entropy -= probability * probability.log2();
+            }
+        }
+
+        // Convert entropy to estimated unique bytes
+        (entropy * total_bytes as f32 / 8.0).max(1.0)
+    }
+
+    /// Adapt chunking parameters based on performance
+    fn adapt_parameters(&mut self) -> Result<()> {
+        let target_chunk_size = 32768; // 32KB target
+        let size_diff = self.stats.avg_chunk_size - target_chunk_size as f32;
+
+        // Adjust hash modulus to influence chunk size
+        if size_diff.abs() > 1024.0 {
+            // Only adjust if difference is significant
+            let adjustment = (size_diff * self.params.learning_rate) as i32;
+
+            if size_diff > 0.0 {
+                // Chunks too large, decrease modulus to create more boundaries
+                self.params.hash_modulus =
+                    (self.params.hash_modulus as i32 - adjustment.abs()).max(512) as u32;
+            } else {
+                // Chunks too small, increase modulus to create fewer boundaries
+                self.params.hash_modulus =
+                    (self.params.hash_modulus as i32 + adjustment.abs()).min(8192) as u32;
+            }
         }
 
         Ok(())
     }
 
-    /// Get current statistics
+    /// Get current chunking statistics
     pub fn get_stats(&self) -> &ChunkStats {
         &self.stats
     }
 
-    /// Get current parameters
-    pub fn get_params(&self) -> &ChunkingParams {
-        &self.params
+    /// Reset statistics
+    pub fn reset_stats(&mut self) {
+        self.stats = ChunkStats::default();
+    }
+
+    /// Update parameters
+    pub fn update_params(&mut self, params: ChunkingParams) {
+        self.params = params;
+        self.hash_state = RollingHashState::new(self.params.window_size);
+    }
+
+    /// Validate chunk integrity
+    pub fn validate_chunks(&self, chunks: &[Vec<u8>], original: &[u8]) -> Result<bool> {
+        let reconstructed: Vec<u8> = chunks.iter().flatten().cloned().collect();
+        Ok(reconstructed == original)
+    }
+
+    /// Calculate deduplication potential
+    pub fn analyze_deduplication(&self, chunks: &[Vec<u8>]) -> HashMap<String, f32> {
+        let mut hash_counts = HashMap::new();
+        let mut total_size = 0;
+
+        for chunk in chunks {
+            total_size += chunk.len();
+            let hash = self.calculate_content_hash(chunk);
+            let hash_str = format!("{:08x}", hash);
+            *hash_counts.entry(hash_str).or_insert(0) += 1;
+        }
+
+        let unique_chunks = hash_counts.len();
+        let dedup_ratio = if chunks.len() > 0 {
+            1.0 - (unique_chunks as f32 / chunks.len() as f32)
+        } else {
+            0.0
+        };
+
+        let mut analysis = HashMap::new();
+        analysis.insert("deduplication_ratio".to_string(), dedup_ratio);
+        analysis.insert("unique_chunks".to_string(), unique_chunks as f32);
+        analysis.insert("total_chunks".to_string(), chunks.len() as f32);
+        analysis.insert(
+            "avg_chunk_size".to_string(),
+            if chunks.len() > 0 {
+                total_size as f32 / chunks.len() as f32
+            } else {
+                0.0
+            },
+        );
+
+        analysis
     }
 }

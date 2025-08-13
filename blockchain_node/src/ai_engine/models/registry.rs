@@ -1,6 +1,6 @@
 use super::{
     bci_interface::{BCIModel, SignalParams},
-    neural_base::{NeuralBase, NeuralConfig, NeuralNetwork},
+    neural_base::{LossType, NeuralBase, NeuralConfig, NeuralNetwork, OptimizerType},
     self_learning::{SelfLearningConfig, SelfLearningSystem},
 };
 use anyhow::{anyhow, Result};
@@ -13,7 +13,7 @@ use std::time::SystemTime;
 use tokio::sync::RwLock;
 
 /// Type alias for neural network model storage
-type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork>>>>;
+type NeuralModelMap = HashMap<String, Arc<RwLock<Box<dyn NeuralNetwork + Send + Sync>>>>;
 
 /// Central registry for all AI models
 pub struct ModelRegistry {
@@ -83,6 +83,21 @@ pub struct StorageConfig {
     pub compression: Option<u32>,
 }
 
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            max_models: 10,
+            cleanup_threshold: 8,
+            versioning: VersioningStrategy::Semantic,
+            storage: StorageConfig {
+                base_path: "models".to_string(),
+                format: StorageFormat::PyTorch,
+                compression: Some(3),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StorageFormat {
     PyTorch,
@@ -116,7 +131,7 @@ impl ModelRegistry {
 
     /// Register a new neural model
     pub async fn register_neural_model(&self, name: &str, config: NeuralConfig) -> Result<()> {
-        let model = NeuralBase::new(config).await?;
+        let model = NeuralBase::new_sync(config)?;
 
         self.neural_models
             .write()
@@ -163,7 +178,7 @@ impl ModelRegistry {
     pub async fn get_neural_model(
         &self,
         name: &str,
-    ) -> Result<Arc<RwLock<Box<dyn NeuralNetwork>>>> {
+    ) -> Result<Arc<RwLock<Box<dyn NeuralNetwork + Send + Sync>>>> {
         self.neural_models
             .read()
             .await
@@ -348,14 +363,21 @@ impl ModelRegistry {
     /// Load default models when none exist
     async fn load_default_models(&self) -> Result<(), anyhow::Error> {
         // Create basic configurations
-        let basic_neural_config = NeuralConfig {
-            layers: vec![], // You need to fill in appropriate layer configs
-            learning_rate: 0.001,
-            batch_size: 32,
-            epochs: 10,
-            optimizer: "Adam".to_string(),
-            loss: "MSE".to_string(),
-        };
+        let basic_neural_config = NeuralConfig::with_full_options(
+            "default_neural".to_string(),
+            8,
+            1,
+            vec![
+                NeuralConfig::default().hidden_layers[0].clone(),
+                NeuralConfig::default().hidden_layers[1].clone(),
+            ],
+            0.001,
+            32,
+            10,
+            OptimizerType::Adam,
+            LossType::MeanSquaredError,
+            false,
+        );
 
         // Register a basic neural model
         self.register_neural_model("default_neural", basic_neural_config.clone())

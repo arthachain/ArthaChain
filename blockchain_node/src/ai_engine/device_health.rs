@@ -167,7 +167,7 @@ impl DeviceMonitor {
 
     /// Get CPU usage
     pub fn get_cpu_usage(&mut self) -> f32 {
-        self.sys.refresh_cpu();
+        self.sys.refresh_cpu_all();
         // Get average CPU usage across all cores
         let cpus = self.sys.cpus();
         if cpus.is_empty() {
@@ -215,8 +215,8 @@ impl DeviceMonitor {
 
     /// Get global CPU info
     pub fn get_global_cpu_info(&mut self) -> f32 {
-        self.sys.refresh_cpu();
-        self.sys.global_cpu_info().cpu_usage()
+        self.sys.refresh_cpu_all();
+        self.sys.global_cpu_usage()
     }
 }
 

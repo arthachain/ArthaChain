@@ -1,6 +1,8 @@
 use crate::config::Config;
-use crate::ledger::block::{Block, BlockExt};
+use crate::consensus::view_change::{ViewChangeConfig, ViewChangeManager, ViewChangeMessage};
+use crate::ledger::block::Block;
 use crate::ledger::state::State;
+use crate::types::Address;
 use anyhow::{anyhow, Result};
 use hex;
 use log::{debug, error, info, warn};
@@ -238,6 +240,8 @@ pub struct SVBFTConsensus {
     node_id: String,
     /// Finalized blocks
     finalized_blocks: Arc<Mutex<HashMap<Vec<u8>, Block>>>,
+    /// Enhanced view change manager with Byzantine fault tolerance
+    view_change_manager: Arc<Mutex<ViewChangeManager>>,
 }
 
 impl SVBFTConsensus {
@@ -256,9 +260,26 @@ impl SVBFTConsensus {
             .clone()
             .ok_or_else(|| anyhow!("Node ID not set in config"))?;
 
+        let svbft_cfg = svbft_config.unwrap_or_default();
+
+        // Initialize view change manager with Byzantine fault tolerance
+        let view_change_config = ViewChangeConfig {
+            view_timeout: Duration::from_millis(svbft_cfg.view_change_timeout_ms),
+            max_view_changes: 10,
+            min_validators: svbft_cfg.min_validators,
+            leader_election_interval: Duration::from_millis(svbft_cfg.base_timeout_ms),
+        };
+
+        let view_change_manager = ViewChangeManager::new(
+            svbft_cfg
+                .min_quorum_size
+                .unwrap_or(2 * svbft_cfg.min_validators / 3 + 1),
+            view_change_config,
+        );
+
         Ok(Self {
             config: config.clone(),
-            svbft_config: svbft_config.unwrap_or_default(),
+            svbft_config: svbft_cfg,
             state,
             message_receiver,
             message_sender,
@@ -271,6 +292,7 @@ impl SVBFTConsensus {
             running: Arc::new(Mutex::new(false)),
             node_id,
             finalized_blocks: Arc::new(Mutex::new(HashMap::new())),
+            view_change_manager: Arc::new(Mutex::new(view_change_manager)),
         })
     }
 
@@ -302,6 +324,7 @@ impl SVBFTConsensus {
         let node_id = self.node_id.clone();
         let svbft_config = self.svbft_config.clone();
         let finalized_blocks = self.finalized_blocks.clone();
+        let view_change_manager = self.view_change_manager.clone();
 
         let handle = tokio::spawn(async move {
             info!("SVBFT consensus started");
@@ -385,6 +408,7 @@ impl SVBFTConsensus {
                     &message_sender,
                     &svbft_config,
                     &node_capabilities,
+                    &view_change_manager,
                 )
                 .await
                 {
@@ -536,7 +560,7 @@ impl SVBFTConsensus {
             round.proposed_block = Some(block.clone());
             round.phase = ConsensusPhase::Prepare;
 
-            info!("Proposed block {} in view {}", block.hash(), view);
+            info!("Proposed block {} in view {}", block.hash()?.to_hex(), view);
         } else {
             debug!(
                 "Received block but not the leader for view {}, ignoring",
@@ -572,7 +596,7 @@ impl SVBFTConsensus {
         // Vote for prepare
         let prepare = ConsensusMessage::Prepare {
             view,
-            block_hash: block.hash_bytes().as_bytes().to_vec(),
+            block_hash: block.hash_bytes(),
             node_id: node_id.to_string(),
             signature: vec![0; 64], // In real implementation, sign the block hash
         };
@@ -590,7 +614,7 @@ impl SVBFTConsensus {
 
         info!(
             "Received proposal for block {} in view {}, sent prepare vote",
-            block.hash(),
+            block.hash()?,
             view
         );
 
@@ -1032,7 +1056,11 @@ impl SVBFTConsensus {
                                 r.phase = ConsensusPhase::Prepare;
                             }
 
-                            info!("Proposed block {} in new view {}", block.hash(), new_view);
+                            info!(
+                                "Proposed block {} in new view {}",
+                                block.hash()?.to_hex(),
+                                new_view
+                            );
                         }
                     }
                 }
@@ -1051,6 +1079,7 @@ impl SVBFTConsensus {
         message_sender: &mpsc::Sender<ConsensusMessage>,
         svbft_config: &SVBFTConfig,
         node_capabilities: &Arc<RwLock<HashMap<String, NodeCapabilities>>>,
+        view_change_manager: &Arc<Mutex<ViewChangeManager>>,
     ) -> Result<()> {
         let mut round_guard = current_round.lock().await;
 
@@ -1063,34 +1092,83 @@ impl SVBFTConsensus {
         if round.start_time.elapsed() > round.current_timeout {
             info!("Timeout in view {} phase {:?}", round.view, round.phase);
 
-            // Initiate view change
-            let view = *current_view.lock().await;
-            let new_view = view + 1;
-
-            // Create new view message
-            let new_view_msg = ConsensusMessage::NewView {
-                new_view,
-                node_id: node_id.to_string(),
-                signatures: vec![],
-                new_block: None,
-            };
-
-            // Send new view message
-            message_sender.send(new_view_msg).await?;
-
-            // Drop the lock before starting new view
+            // Drop the round lock before view change operations
+            let view = round.view;
             drop(round_guard);
 
-            // Advance to next view
-            Self::advance_to_next_view(
-                current_view,
-                current_round,
-                validators,
-                node_id,
-                svbft_config,
-                node_capabilities,
-            )
-            .await?;
+            // Use enhanced view change manager with Byzantine fault tolerance
+            let new_view = view + 1;
+            let validator_bytes = node_id.as_bytes().to_vec();
+
+            // Create view change message
+            let validator_addr = Address::from_bytes(&validator_bytes)
+                .map_err(|_| anyhow!("Invalid validator address"))?;
+
+            let view_change_msg = ViewChangeMessage::new(
+                new_view,
+                validator_addr.clone(),
+                vec![1, 2, 3, 4], // Mock signature - in production, use real crypto
+            );
+
+            // Process view change through enhanced manager
+            {
+                let mut manager = view_change_manager.lock().await;
+
+                // Initialize manager with current validators if not done
+                let validators_set = validators.read().await;
+                let validator_hashes: HashSet<Vec<u8>> = validators_set
+                    .iter()
+                    .map(|v| v.as_bytes().to_vec())
+                    .collect();
+                drop(validators_set);
+
+                if let Err(e) = manager.initialize(validator_hashes).await {
+                    warn!("Failed to initialize view change manager: {}", e);
+                    return Ok(());
+                }
+
+                // Process the view change message
+                match manager
+                    .process_view_change_message(view_change_msg, validator_addr)
+                    .await
+                {
+                    Ok(view_changed) => {
+                        if view_changed {
+                            info!("View change executed successfully to view {}", new_view);
+
+                            // Update current view
+                            {
+                                let mut view_guard = current_view.lock().await;
+                                *view_guard = new_view;
+                            }
+
+                            // Advance to next view
+                            Self::advance_to_next_view(
+                                current_view,
+                                current_round,
+                                validators,
+                                node_id,
+                                svbft_config,
+                                node_capabilities,
+                            )
+                            .await?;
+                        }
+                    }
+                    Err(e) => {
+                        warn!("View change failed: {}", e);
+
+                        // Fallback to traditional view change
+                        let new_view_msg = ConsensusMessage::NewView {
+                            new_view,
+                            node_id: node_id.to_string(),
+                            signatures: vec![],
+                            new_block: None,
+                        };
+
+                        message_sender.send(new_view_msg).await?;
+                    }
+                }
+            }
         }
 
         Ok(())

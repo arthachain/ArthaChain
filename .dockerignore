@@ -1,14 +1,29 @@
-# Exclude these directories to reduce build context size
-target/
-.git/
-data/
-WHITEPAPER/
-.vscode/
-docs/
-explorer/
-
-# Exclude large files
-*.log
-*.tar.gz
-*.zip
-*.db 
+# Ignore build artifacts and large/unneeded dirs to shrink Docker context
+.git
+**/.git
+**/.gitignore
+**/.DS_Store
+**/.env
+**/.venv
+**/venv
+**/node_modules
+**/dist
+**/build
+**/target
+**/target/**
+**/testnet_data
+**/logs
+**/coverage
+**/models
+**/datasets
+**/tools
+**/tmp
+**/cache
+**/__pycache__
+**/*.log
+**/*.tmp
+**/*.swp
+**/*.bak
+**/*.zip
+**/*.tar
+**/*.tar.gz

@@ -85,7 +85,7 @@ mod tests {
         // Setup with custom config - larger chunks
         let (config, _) = setup_custom_config(
             10 * 1024 * 1024, // 10 MB max
-            1 * 1024 * 1024,  // 1 MB min
+            1048576,          // 1 MB min
             CompressionType::LZ4,
         );
 
@@ -110,8 +110,7 @@ mod tests {
         for chunk in &chunks {
             assert!(chunk.data.len() <= 10 * 1024 * 1024, "Chunk too large");
             assert!(
-                chunk.data.len() >= 1 * 1024 * 1024
-                    || chunk.metadata.chunk_index == chunks.len() - 1,
+                chunk.data.len() >= 1048576 || chunk.metadata.chunk_index == chunks.len() - 1,
                 "Chunk too small (except last chunk)"
             );
         }
@@ -173,7 +172,7 @@ mod tests {
             // Setup with specific compression
             let (config, _) = setup_custom_config(
                 5 * 1024 * 1024, // 5 MB max
-                1 * 1024 * 1024, // 1 MB min
+                1048576,         // 1 MB min
                 compression_type.clone(),
             );
 
@@ -203,8 +202,7 @@ mod tests {
         // Verify we can correctly reconstruct with each compression type
         // Since our test implementation doesn't actually compress/decompress,
         // we just verify the logic flow works correctly
-        let (config, _) =
-            setup_custom_config(5 * 1024 * 1024, 1 * 1024 * 1024, CompressionType::ZStd);
+        let (config, _) = setup_custom_config(5 * 1024 * 1024, 1048576, CompressionType::ZStd);
 
         let ai = DataChunkingAI::new(&config);
         let chunks = ai
@@ -248,7 +246,7 @@ mod tests {
 
         let (config, _) = setup_custom_config(
             4 * 1024 * 1024, // 4 MB max
-            1 * 1024 * 1024, // 1 MB min
+            1048576,         // 1 MB min
             CompressionType::LZ4,
         );
 
@@ -305,8 +303,8 @@ mod tests {
         let data = create_patterned_data(data_size);
 
         let (config, _) = setup_custom_config(
-            1 * 1024 * 1024, // Decreased from 2 MB to 1 MB max
-            256 * 1024,      // Decreased from 512 KB to 256 KB min
+            1048576,    // Decreased from 2 MB to 1 MB max
+            256 * 1024, // Decreased from 512 KB to 256 KB min
             CompressionType::None,
         );
 
@@ -335,7 +333,7 @@ mod tests {
             assert_eq!(plan.len(), chunks.len());
 
             // Verify replication factor
-            for (_, node_ids) in &plan {
+            for node_ids in plan.values() {
                 assert_eq!(node_ids.len(), 3); // Default replication factor
 
                 // Verify all node IDs are unique
@@ -348,7 +346,7 @@ mod tests {
             // Analyze load balancing
             let mut node_load = HashMap::new();
 
-            for (_, node_ids) in &plan {
+            for node_ids in plan.values() {
                 for node_id in node_ids {
                     *node_load.entry(node_id.clone()).or_insert(0) += 1;
                 }
@@ -360,7 +358,7 @@ mod tests {
             let mut max_load = 0;
             let mut min_load = usize::MAX;
 
-            for (_, load) in &node_load {
+            for load in node_load.values() {
                 max_load = std::cmp::max(max_load, *load);
                 min_load = std::cmp::min(min_load, *load);
             }

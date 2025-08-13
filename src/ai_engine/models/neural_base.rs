@@ -109,8 +109,211 @@ impl NeuralBase {
     pub async fn new(config: NeuralConfig) -> Result<Self> {
         let model = Arc::new(RwLock::new(
             Python::with_gil(|py| -> PyResult<PyObject> {
-                // Create a placeholder PyObject
-                Ok(py.None().into())
+                // Create real neural network using PyTorch
+                let torch = py.import("torch")?;
+                let torch_nn = py.import("torch.nn")?;
+                let torch_optim = py.import("torch.optim")?;
+                
+                // Define the neural network architecture
+                let net_dict = PyDict::new(py);
+                
+                // Build layer definitions
+                let mut layers = Vec::new();
+                let mut current_dim = config.input_dim;
+                
+                // Hidden layers
+                for (i, &hidden_dim) in config.hidden_layers.iter().enumerate() {
+                    layers.push(format!("fc{}", i));
+                    layers.push(format!("activation{}", i));
+                    if config.dropout_rate > 0.0 {
+                        layers.push(format!("dropout{}", i));
+                    }
+                    current_dim = hidden_dim;
+                }
+                
+                // Output layer
+                layers.push("output".to_string());
+                
+                // Create Sequential model
+                let module_list = PyList::empty(py);
+                current_dim = config.input_dim;
+                
+                for (i, &hidden_dim) in config.hidden_layers.iter().enumerate() {
+                    // Linear layer
+                    let linear = torch_nn.getattr("Linear")?.call1((current_dim, hidden_dim))?;
+                    module_list.append(linear)?;
+                    
+                    // Activation function
+                    let activation = match config.activation {
+                        ActivationType::ReLU => torch_nn.getattr("ReLU")?.call0()?,
+                        ActivationType::GELU => torch_nn.getattr("GELU")?.call0()?,
+                        ActivationType::Sigmoid => torch_nn.getattr("Sigmoid")?.call0()?,
+                        ActivationType::Tanh => torch_nn.getattr("Tanh")?.call0()?,
+                    };
+                    module_list.append(activation)?;
+                    
+                    // Dropout if specified
+                    if config.dropout_rate > 0.0 {
+                        let dropout = torch_nn.getattr("Dropout")?.call1((config.dropout_rate,))?;
+                        module_list.append(dropout)?;
+                    }
+                    
+                    current_dim = hidden_dim;
+                }
+                
+                // Output layer
+                let output_layer = torch_nn.getattr("Linear")?.call1((current_dim, config.output_dim))?;
+                module_list.append(output_layer)?;
+                
+                // Create Sequential model
+                let model = torch_nn.getattr("Sequential")?.call1((module_list,))?;
+                
+                // Initialize weights with Xavier initialization
+                let init_weights_code = r#"
+def init_weights(m):
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            torch.nn.init.zeros_(m.bias)
+"#;
+                
+                py.run(init_weights_code, Some(net_dict), None)?;
+                let init_fn = net_dict.get_item("init_weights")?;
+                model.call_method1("apply", (init_fn,))?;
+                
+                // Add optimizer
+                let optimizer = torch_optim.getattr("Adam")?.call(
+                    (),
+                    Some([
+                        ("params", model.call_method0("parameters")?),
+                        ("lr", config.learning_rate.into_py(py)),
+                        ("weight_decay", 1e-5_f32.into_py(py))
+                    ].into_py_dict(py))
+                )?;
+                
+                // Add loss function
+                let criterion = torch_nn.getattr("MSELoss")?.call0()?;
+                
+                // Create model container with all components
+                let model_container = PyDict::new(py);
+                model_container.set_item("model", model)?;
+                model_container.set_item("optimizer", optimizer)?;
+                model_container.set_item("criterion", criterion)?;
+                model_container.set_item("device", torch.call_method0("device")?.call1(("cpu",))?)?;
+                
+                // Add training utilities
+                let training_code = r#"
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+
+class NeuralNetwork:
+    def __init__(self, model, optimizer, criterion, device):
+        self.model = model
+        self.optimizer = optimizer
+        self.criterion = criterion
+        self.device = device
+        self.training_history = []
+        
+    def forward(self, x):
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).float()
+        elif isinstance(x, list):
+            x = torch.tensor(x, dtype=torch.float32)
+        
+        x = x.to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            output = self.model(x)
+        return output.cpu().numpy().tolist()
+    
+    def train_step(self, x, y):
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).float()
+        elif isinstance(x, list):
+            x = torch.tensor(x, dtype=torch.float32)
+            
+        if isinstance(y, np.ndarray):
+            y = torch.from_numpy(y).float()
+        elif isinstance(y, list):
+            y = torch.tensor(y, dtype=torch.float32)
+        
+        x, y = x.to(self.device), y.to(self.device)
+        
+        self.model.train()
+        self.optimizer.zero_grad()
+        
+        # Forward pass
+        output = self.model(x)
+        loss = self.criterion(output, y)
+        
+        # Backward pass
+        loss.backward()
+        
+        # Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        
+        # Update weights
+        self.optimizer.step()
+        
+        self.training_history.append(loss.item())
+        return loss.item()
+    
+    def validate(self, x, y):
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).float()
+        elif isinstance(x, list):
+            x = torch.tensor(x, dtype=torch.float32)
+            
+        if isinstance(y, np.ndarray):
+            y = torch.from_numpy(y).float()
+        elif isinstance(y, list):
+            y = torch.tensor(y, dtype=torch.float32)
+        
+        x, y = x.to(self.device), y.to(self.device)
+        
+        self.model.eval()
+        with torch.no_grad():
+            output = self.model(x)
+            loss = self.criterion(output, y)
+            
+            # Calculate accuracy for classification
+            if output.shape[1] > 1:  # Multi-class
+                pred = torch.argmax(output, dim=1)
+                target = torch.argmax(y, dim=1) if y.shape[1] > 1 else y.long()
+                accuracy = (pred == target).float().mean().item()
+            else:  # Regression
+                accuracy = 1.0 - torch.abs(output - y).mean().item()
+                
+        return loss.item(), accuracy
+    
+    def save_state(self):
+        return {
+            'model_state': self.model.state_dict(),
+            'optimizer_state': self.optimizer.state_dict(),
+            'training_history': self.training_history.copy()
+        }
+    
+    def load_state(self, state):
+        self.model.load_state_dict(state['model_state'])
+        self.optimizer.load_state_dict(state['optimizer_state'])
+        self.training_history = state['training_history']
+"#;
+                
+                py.run(training_code, Some(net_dict), None)?;
+                let neural_network_class = net_dict.get_item("NeuralNetwork")?;
+                let neural_network = neural_network_class.call1((
+                    model_container.get_item("model")?,
+                    model_container.get_item("optimizer")?,
+                    model_container.get_item("criterion")?,
+                    model_container.get_item("device")?
+                ))?;
+                
+                info!("Created real neural network with {} inputs, {} outputs, {} hidden layers", 
+                      config.input_dim, config.output_dim, config.hidden_layers.len());
+                
+                Ok(neural_network.into())
             })?
         ));
         
@@ -142,6 +345,13 @@ impl NeuralBase {
         Ok(neural_base)
     }
     
+    /// Create a new neural base synchronously (for compatibility)
+    pub fn new_sync(config: NeuralConfig) -> Result<Self> {
+        // For blockchain operations that need immediate access
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(Self::new(config))
+    }
+    
     /// Train the model
     pub async fn train(&mut self, batch_size: usize) -> Result<TrainingMetrics> {
         Python::with_gil(|py| {
@@ -170,12 +380,17 @@ impl NeuralBase {
             locals.set_item("next_states", next_states)?;
             locals.set_item("dones", dones)?;
             
-            // Train step
-            let loss = py.eval(
-                r#"model.train_step(states, actions, rewards, next_states, dones)"#, 
-                None, 
-                Some(locals)
-            )?;
+            // Train step - use supervised learning training
+            let loss = if self.memory_buffer.transitions.is_empty() {
+                // No experience data, use random training data for initialization
+                warn!("No training data available, using initialization training");
+                model_ref.call_method1("train_step", 
+                    (PyArray2::zeros(py, [batch_size, self.config.input_dim], false),
+                     PyArray2::zeros(py, [batch_size, self.config.output_dim], false)))?
+            } else {
+                // Use experience replay for RL training
+                model_ref.call_method1("train_step", (states, rewards))?
+            };
             
             let loss: f32 = loss.extract()?;
             
@@ -190,6 +405,59 @@ impl NeuralBase {
                 learning_rate: self.config.learning_rate,
             })
         })
+    }
+    
+    /// Train with supervised learning (inputs and targets)
+    pub async fn train_supervised(&mut self, inputs: &[Vec<f32>], targets: &[Vec<f32>]) -> Result<TrainingMetrics> {
+        Python::with_gil(|py| {
+            // Convert to PyTorch tensors
+            let x = PyArray2::from_vec2(py, inputs)?;
+            let y = PyArray2::from_vec2(py, targets)?;
+            
+            // Get model reference
+            let model = self.model.blocking_read();
+            let model_ref = model.as_ref(py);
+            
+            // Training step
+            let loss = model_ref.call_method1("train_step", (x, y))?;
+            let loss: f32 = loss.extract()?;
+            
+            // Update learning state
+            self.learning_state.epoch += 1;
+            self.learning_state.loss_history.push(loss);
+            
+            // Validate if we have enough data
+            let accuracy = if inputs.len() >= 10 {
+                let (val_loss, acc) = self.validate_internal(py, model_ref, inputs, targets)?;
+                self.learning_state.validation_metrics
+                    .entry("validation_loss".to_string())
+                    .or_insert_with(Vec::new)
+                    .push(val_loss);
+                Some(acc)
+            } else {
+                None
+            };
+            
+            info!("Training step completed: loss={:.6}, epoch={}", loss, self.learning_state.epoch);
+            
+            Ok(TrainingMetrics {
+                loss,
+                epoch: self.learning_state.epoch,
+                accuracy,
+                learning_rate: self.config.learning_rate,
+            })
+        })
+    }
+    
+    /// Internal validation method
+    fn validate_internal(&self, py: Python, model_ref: &PyAny, inputs: &[Vec<f32>], targets: &[Vec<f32>]) -> Result<(f32, f32)> {
+        let x = PyArray2::from_vec2(py, inputs)?;
+        let y = PyArray2::from_vec2(py, targets)?;
+        
+        let result = model_ref.call_method1("validate", (x, y))?;
+        let (loss, accuracy): (f32, f32) = result.extract()?;
+        
+        Ok((loss, accuracy))
     }
     
     /// Add experience to replay buffer

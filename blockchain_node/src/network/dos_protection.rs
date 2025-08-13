@@ -71,6 +71,7 @@ impl Default for DosConfig {
 }
 
 /// DOS protection service
+#[derive(Debug)]
 pub struct DosProtection {
     /// Configuration
     config: DosConfig,

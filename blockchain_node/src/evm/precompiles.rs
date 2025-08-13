@@ -1,6 +1,7 @@
 use crate::evm::types::{EvmAddress, EvmError, PrecompileFunction};
 use ethereum_types::H160;
-use sha3::{Digest, Keccak256};
+use sha2::{Digest, Sha256};
+use sha3::Keccak256;
 use std::collections::HashMap;
 
 /// Initialize standard precompiled contracts
@@ -10,19 +11,19 @@ pub fn init_precompiles() -> HashMap<EvmAddress, PrecompileFunction> {
     // Ethereum standard precompiles at their standard addresses
 
     // 0x01: ecrecover
-    precompiles.insert(H160::from_low_u64_be(1), ecrecover);
+    precompiles.insert(H160::from_low_u64_be(1), ecrecover as PrecompileFunction);
 
     // 0x02: sha256
-    precompiles.insert(H160::from_low_u64_be(2), sha256);
+    precompiles.insert(H160::from_low_u64_be(2), sha256 as PrecompileFunction);
 
     // 0x03: ripemd160
-    precompiles.insert(H160::from_low_u64_be(3), ripemd160);
+    precompiles.insert(H160::from_low_u64_be(3), ripemd160 as PrecompileFunction);
 
     // 0x04: identity (data copy)
-    precompiles.insert(H160::from_low_u64_be(4), identity);
+    precompiles.insert(H160::from_low_u64_be(4), identity as PrecompileFunction);
 
     // 0x05: modexp (EIP-198)
-    precompiles.insert(H160::from_low_u64_be(5), modexp);
+    precompiles.insert(H160::from_low_u64_be(5), modexp as PrecompileFunction);
 
     precompiles
 }
@@ -63,7 +64,7 @@ fn sha256(input: &[u8], gas_limit: u64) -> Result<(Vec<u8>, u64), EvmError> {
     }
 
     // Compute SHA256 hash
-    let mut hasher = sha3::Sha256::new();
+    let mut hasher = Sha256::new();
     hasher.update(input);
     let result = hasher.finalize();
 

@@ -16,6 +16,8 @@ pub enum ExecutionResult {
     Failure(String),
     /// Transaction execution reverted due to VM error
     Reverted(String),
+    /// Transaction validation failed
+    ValidationError(String),
     /// Insufficient balance for transaction
     InsufficientBalance,
     /// Insufficient gas for transaction
@@ -105,7 +107,10 @@ impl TransactionExecutor {
         transaction: &mut Transaction,
         state: &State,
     ) -> Result<ExecutionResult> {
-        debug!("Executing transaction: {}", transaction.hash());
+        debug!(
+            "Executing transaction: {}",
+            hex::encode(transaction.hash().as_ref())
+        );
 
         // Validate transaction before execution
         if let Err(e) = transaction.validate() {
@@ -183,7 +188,10 @@ impl TransactionExecutor {
         match &result {
             ExecutionResult::Success => {
                 transaction.set_status(TransactionStatus::Success);
-                info!("Transaction executed successfully: {}", transaction.hash());
+                info!(
+                    "Transaction executed successfully: {}",
+                    hex::encode(transaction.hash().as_ref())
+                );
             }
             ExecutionResult::Failure(reason) => {
                 transaction.set_status(TransactionStatus::Failed(reason.clone()));
@@ -201,6 +209,10 @@ impl TransactionExecutor {
                 transaction.set_status(TransactionStatus::Failed("Out of gas".into()));
                 error!("Transaction failed: Out of gas");
             }
+            ExecutionResult::ValidationError(reason) => {
+                transaction.set_status(TransactionStatus::Failed(reason.clone()));
+                error!("Transaction validation failed: {}", reason);
+            }
             ExecutionResult::InvalidNonce => {
                 transaction.set_status(TransactionStatus::Failed("Invalid nonce".into()));
                 error!("Transaction failed: Invalid nonce");
@@ -212,7 +224,10 @@ impl TransactionExecutor {
 
     /// Apply transaction to state (core state transition logic)
     pub async fn apply_transaction(&self, transaction: &Transaction, state: &State) -> Result<()> {
-        debug!("Applying transaction to state: {}", transaction.hash());
+        debug!(
+            "Applying transaction to state: {}",
+            hex::encode(transaction.hash().as_ref())
+        );
 
         // Update sender nonce
         state.set_nonce(&transaction.sender, transaction.nonce + 1)?;
@@ -448,7 +463,7 @@ impl TransactionExecutor {
         let current_stake_key = format!("stake:{}", transaction.sender);
         let current_stake = match state.get_storage(&current_stake_key)? {
             Some(data) => {
-                let stake_bytes = data.as_slice();
+                let stake_bytes: &[u8] = data.as_ref();
                 if stake_bytes.len() == 8 {
                     let mut stake_arr = [0u8; 8];
                     stake_arr.copy_from_slice(stake_bytes);
@@ -491,7 +506,7 @@ impl TransactionExecutor {
         let current_stake_key = format!("stake:{}", transaction.sender);
         let current_stake = match state.get_storage(&current_stake_key)? {
             Some(data) => {
-                let stake_bytes = data.as_slice();
+                let stake_bytes: &[u8] = data.as_ref();
                 if stake_bytes.len() == 8 {
                     let mut stake_arr = [0u8; 8];
                     stake_arr.copy_from_slice(stake_bytes);
@@ -541,7 +556,7 @@ impl TransactionExecutor {
         let rewards_key = format!("rewards:{}", transaction.sender);
         let rewards = match state.get_storage(&rewards_key)? {
             Some(data) => {
-                let rewards_bytes = data.as_slice();
+                let rewards_bytes: &[u8] = data.as_slice();
                 if rewards_bytes.len() == 8 {
                     let mut rewards_arr = [0u8; 8];
                     rewards_arr.copy_from_slice(rewards_bytes);
@@ -775,7 +790,8 @@ impl TransactionExecutor {
             }
             TransactionType::Deploy | TransactionType::ContractCreate => {
                 // For contract deployment, create a new contract address
-                let contract_address = format!("contract:{}", transaction.hash());
+                let contract_address =
+                    format!("contract:{}", hex::encode(transaction.hash().as_ref()));
                 write_set.insert(contract_address.clone());
                 write_set.insert(format!("contract_creator:{}", contract_address));
             }
@@ -844,11 +860,11 @@ mod tests {
         let config = Config::default();
         let state = State::new(&config).unwrap();
 
-        // Initialize balances
-        state.set_balance("sender", 1000).unwrap();
+        // Initialize balances - increase sender balance to cover transfer + gas
+        state.set_balance("sender", 25000).unwrap(); // Enough for 500 transfer + 21000 gas + buffer
         state.set_balance("recipient", 100).unwrap();
 
-        // Create transaction
+        // Create transaction with reasonable gas limit
         let mut tx = Transaction::new(
             TransactionType::Transfer,
             "sender".to_string(),
@@ -872,8 +888,12 @@ mod tests {
         // Verify result
         match result {
             ExecutionResult::Success => {
-                // Check state updates
-                assert_eq!(state.get_balance("sender").unwrap(), 500 - 21000); // 500 transferred, 21000 fee
+                // Check state updates - sender should have original - amount - gas_fee
+                let expected_sender_balance = 25000 - 500 - 21000; // 3500
+                assert_eq!(
+                    state.get_balance("sender").unwrap(),
+                    expected_sender_balance
+                );
                 assert_eq!(state.get_balance("recipient").unwrap(), 600); // 100 + 500
                 assert_eq!(state.get_nonce("sender").unwrap(), 1);
             }

@@ -1,5 +1,6 @@
 //! Common blockchain types
 
+use crate::crypto::Signature;
 use crate::utils::crypto::Hash as CryptoHash;
 use anyhow;
 use blake3;
@@ -38,6 +39,64 @@ pub struct BlockHeader {
     pub gas_used: u64,
     /// Block extra data
     pub extra_data: Vec<u8>,
+}
+
+/// A block in the blockchain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    /// Block header containing metadata
+    pub header: BlockHeader,
+    /// Block transactions (flattened from body)
+    pub transactions: Vec<Transaction>,
+    /// Block signature
+    pub signature: Option<Signature>,
+}
+
+impl Block {
+    /// Create new block
+    pub fn new(previous_hash: Hash, transactions: Vec<Transaction>, difficulty: u64) -> Self {
+        let merkle_root = Self::calculate_merkle_root(&transactions).unwrap_or_default();
+        let header = BlockHeader {
+            version: 1,
+            shard_id: 0,
+            height: 0,
+            prev_hash: CryptoHash::default(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            merkle_root,
+            state_root: CryptoHash::default(),
+            receipt_root: CryptoHash::default(),
+            proposer: Address::default(),
+            signature: Vec::new(),
+            extra_data: Vec::new(),
+            gas_limit: 21000,
+            gas_used: 0,
+        };
+
+        Self {
+            header,
+            transactions,
+            signature: None,
+        }
+    }
+
+    fn calculate_merkle_root(transactions: &[Transaction]) -> Result<CryptoHash, anyhow::Error> {
+        if transactions.is_empty() {
+            return Ok(CryptoHash::default());
+        }
+
+        // Simple hash of all transaction hashes concatenated
+        let mut hasher = blake3::Hasher::new();
+        for tx in transactions {
+            hasher.update(tx.hash.as_bytes());
+        }
+        let hash = hasher.finalize();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(hash.as_bytes());
+        Ok(CryptoHash::new(bytes))
+    }
 }
 
 /// Block metadata
@@ -81,28 +140,47 @@ pub struct Transaction {
 pub struct Hash(pub Vec<u8>);
 
 impl Hash {
-    /// Create a new hash from bytes
-    pub fn new(bytes: Vec<u8>) -> Self {
-        Self(bytes)
+    /// Create a new hash from raw bytes
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
     }
 
-    /// Check if the hash is empty
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+    /// Create hash from data
+    pub fn from_data(data: &[u8]) -> Self {
+        let hash_bytes = blake3::hash(data).as_bytes().to_vec();
+        Self(hash_bytes)
     }
 
-    /// Get the underlying bytes
+    /// Create hash from hex string
+    pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
+        let bytes = hex::decode(hex).map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?;
+        Ok(Self(bytes))
+    }
+
+    /// Get raw bytes
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// Get raw bytes as owned vector
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+
+    /// Check if hash is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Convert to hex string
     pub fn to_hex(&self) -> String {
         hex::encode(&self.0)
     }
+}
 
-    pub fn from_hex(hex: &str) -> std::result::Result<Self, anyhow::Error> {
-        let bytes = hex::decode(hex).map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?;
-        Ok(Self(bytes))
+impl AsRef<[u8]> for Hash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -114,24 +192,12 @@ impl fmt::Display for Hash {
 
 impl Default for Hash {
     fn default() -> Self {
-        Self(vec![0; 32])
-    }
-}
-
-impl From<Vec<u8>> for Hash {
-    fn from(bytes: Vec<u8>) -> Self {
-        Self(bytes)
-    }
-}
-
-impl AsRef<[u8]> for Hash {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
+        Self(vec![0u8; 32])
     }
 }
 
 /// Address type (20 bytes)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Address(pub [u8; 20]);
 
 impl Address {
@@ -201,6 +267,22 @@ impl AsRef<[u8]> for Address {
 }
 
 impl Transaction {
+    /// Calculate transaction hash
+    pub fn hash(&self) -> CryptoHash {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.from.as_ref());
+        data.extend_from_slice(self.to.as_ref());
+        data.extend_from_slice(&self.value.to_be_bytes());
+        data.extend_from_slice(&self.nonce.to_be_bytes());
+        data.extend_from_slice(&self.gas_limit.to_be_bytes());
+        data.extend_from_slice(&self.gas_price.to_be_bytes());
+        data.extend_from_slice(&self.data);
+
+        let hash = blake3::hash(&data);
+        let hash_array = *hash.as_bytes();
+        CryptoHash::new(hash_array)
+    }
+
     pub fn new(
         from: Address,
         to: Address,
@@ -312,12 +394,12 @@ impl BlockHeader {
         hasher.update(&self.version.to_le_bytes());
         hasher.update(&self.shard_id.to_le_bytes());
         hasher.update(&self.height.to_le_bytes());
-        hasher.update(self.prev_hash.as_bytes());
+        hasher.update(self.prev_hash.as_ref());
         hasher.update(&self.timestamp.to_le_bytes());
-        hasher.update(self.merkle_root.as_bytes());
-        hasher.update(self.state_root.as_bytes());
-        hasher.update(self.receipt_root.as_bytes());
-        hasher.update(self.proposer.as_bytes());
+        hasher.update(self.merkle_root.as_ref());
+        hasher.update(self.state_root.as_ref());
+        hasher.update(self.receipt_root.as_ref());
+        hasher.update(self.proposer.as_ref());
         hasher.update(&self.signature);
         hasher.update(&self.gas_limit.to_le_bytes());
         hasher.update(&self.gas_used.to_le_bytes());
@@ -416,6 +498,38 @@ impl From<Transaction> for crate::ledger::transaction::Transaction {
     }
 }
 
+impl From<crate::ledger::transaction::Transaction> for Transaction {
+    fn from(tx: crate::ledger::transaction::Transaction) -> Self {
+        let from_bytes = hex::decode(&tx.sender).unwrap_or_default();
+        let to_bytes = hex::decode(&tx.recipient).unwrap_or_default();
+
+        // Ensure addresses are exactly 20 bytes
+        let mut from = [0u8; 20];
+        let mut to = [0u8; 20];
+        if from_bytes.len() >= 20 {
+            from.copy_from_slice(&from_bytes[..20]);
+        }
+        if to_bytes.len() >= 20 {
+            to.copy_from_slice(&to_bytes[..20]);
+        }
+
+        Self {
+            from: Address(from),
+            to: Address(to),
+            value: tx.amount,
+            gas_price: tx.gas_price,
+            gas_limit: tx.gas_limit,
+            nonce: tx.nonce,
+            data: tx.data,
+            signature: tx.signature,
+            hash: CryptoHash::default(), // Will be recalculated
+        }
+    }
+}
+
+// Note: Block conversions are complex due to different field sets between types::Block and ledger::block::Block
+// For now, using manual conversion in the API layer when needed
+
 /// Account identifier type
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AccountId(String);
@@ -453,31 +567,44 @@ impl fmt::Display for AccountId {
 /// Block height type
 pub type BlockHeight = u64;
 
+/// Shard identifier type
+pub type ShardId = u64;
+
+/// Node identifier type (re-export from network types)
+pub use crate::network::types::NodeId;
+
 /// Transaction hash type
 #[derive(Debug, Clone, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TransactionHash {
     /// Hash bytes
-    hash: Vec<u8>,
+    hash: CryptoHash,
     /// String representation (cached)
     string_repr: String,
 }
 
 impl TransactionHash {
     /// Create a new transaction hash
-    pub fn new(hash: Vec<u8>) -> Self {
-        let string_repr = hex::encode(&hash);
+    pub fn new(hash: CryptoHash) -> Self {
+        let string_repr = hex::encode(hash.as_bytes());
         Self { hash, string_repr }
     }
 
     /// Get the hash bytes
     pub fn as_bytes(&self) -> &[u8] {
-        &self.hash
+        self.hash.as_bytes()
+    }
+
+    /// Convert to hex string
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.hash.as_bytes())
     }
 }
 
 impl From<Vec<u8>> for TransactionHash {
     fn from(hash: Vec<u8>) -> Self {
-        Self::new(hash)
+        let mut hash_array = [0u8; 32];
+        hash_array[..hash.len().min(32)].copy_from_slice(&hash[..hash.len().min(32)]);
+        Self::new(CryptoHash::new(hash_array))
     }
 }
 
@@ -501,7 +628,7 @@ impl StdHash for TransactionHash {
 
 impl AsRef<[u8]> for TransactionHash {
     fn as_ref(&self) -> &[u8] {
-        &self.hash
+        self.hash.as_bytes()
     }
 }
 
@@ -528,6 +655,408 @@ mod tests {
 
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, hash3);
-        assert_eq!(hash1.to_string(), "01020304");
+        assert_eq!(
+            hash1.to_string(),
+            "0102030400000000000000000000000000000000000000000000000000000000"
+        );
+    }
+}
+
+// DAO-related types
+/// Unique identifier for a DAO proposal
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProposalId(pub String);
+
+impl ProposalId {
+    pub fn new(id: String) -> Self {
+        Self(id)
+    }
+}
+
+impl fmt::Display for ProposalId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Token amount for DAO operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenAmount(pub u64);
+
+impl TokenAmount {
+    pub fn new(amount: u64) -> Self {
+        Self(amount)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl fmt::Display for TokenAmount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u64> for TokenAmount {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl PartialOrd for TokenAmount {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl Ord for TokenAmount {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl std::ops::Add for TokenAmount {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl From<Address> for Hash {
+    fn from(address: Address) -> Self {
+        Hash::new(address.0.to_vec())
+    }
+}
+
+impl std::ops::Add<&TokenAmount> for TokenAmount {
+    type Output = Self;
+    fn add(self, other: &TokenAmount) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl std::ops::Mul<f64> for TokenAmount {
+    type Output = Self;
+    fn mul(self, rhs: f64) -> Self {
+        Self((self.0 as f64 * rhs) as u64)
+    }
+}
+
+impl std::ops::AddAssign for TokenAmount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::ops::SubAssign for TokenAmount {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 = self.0.saturating_sub(rhs.0);
+    }
+}
+
+impl std::str::FromStr for TokenAmount {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v = s.parse::<u64>()?;
+        Ok(TokenAmount(v))
+    }
+}
+
+impl std::iter::Sum for TokenAmount {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        TokenAmount(iter.map(|x| x.0).sum())
+    }
+}
+
+impl<'a> std::iter::Sum<&'a TokenAmount> for TokenAmount {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = &'a Self>,
+    {
+        TokenAmount(iter.map(|x| x.0).sum())
+    }
+}
+
+impl std::ops::Sub for TokenAmount {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        Self(self.0.saturating_sub(other.0))
+    }
+}
+
+/// Vote weight in DAO governance
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoteWeight(pub u64);
+
+impl VoteWeight {
+    pub fn new(weight: u64) -> Self {
+        Self(weight)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl From<TokenAmount> for VoteWeight {
+    fn from(amount: TokenAmount) -> Self {
+        Self(amount.0)
+    }
+}
+
+impl fmt::Display for VoteWeight {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u64> for VoteWeight {
+    fn from(v: u64) -> Self {
+        VoteWeight(v)
+    }
+}
+
+impl std::ops::Add for VoteWeight {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        VoteWeight(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for VoteWeight {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+// Gas-related types
+/// Gas limit for transactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GasLimit(pub u64);
+
+impl GasLimit {
+    pub fn new(limit: u64) -> Self {
+        Self(limit)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for GasLimit {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<GasLimit> for u64 {
+    fn from(g: GasLimit) -> u64 {
+        g.0
+    }
+}
+
+impl std::ops::Sub for GasLimit {
+    type Output = u64;
+    fn sub(self, rhs: Self) -> u64 {
+        self.0.saturating_sub(rhs.0)
+    }
+}
+
+/// Gas price for transactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GasPrice(pub u64);
+
+impl GasPrice {
+    pub fn new(price: u64) -> Self {
+        Self(price)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+    pub fn base_fee(&self) -> u64 {
+        self.0
+    }
+    pub fn priority_fee(&self) -> u64 {
+        0
+    }
+}
+
+/// Call data for smart contract calls
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallData(pub Vec<u8>);
+
+impl CallData {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Get function hash from first 4 bytes (like Ethereum function selector)
+    pub fn function_hash(&self) -> Hash {
+        if self.0.len() >= 4 {
+            let mut hash_bytes = [0u8; 32];
+            hash_bytes[..4].copy_from_slice(&self.0[..4]);
+            Hash::new(hash_bytes.to_vec())
+        } else {
+            Hash::new(vec![0u8; 32])
+        }
+    }
+
+    /// Estimate computational complexity based on call data size and patterns
+    pub fn estimate_complexity(&self) -> u64 {
+        let base_complexity = 1000u64;
+        let size_factor = self.0.len() as u64;
+
+        // Additional complexity for nested calls, loops, etc.
+        let pattern_complexity = self.0.iter().fold(0u64, |acc, &byte| {
+            // Simple heuristic: certain byte patterns suggest higher complexity
+            match byte {
+                0xff => acc + 10,       // Loops, jumps
+                0xf0..=0xf4 => acc + 5, // Contract creation/calls
+                _ => acc + 1,
+            }
+        });
+
+        base_complexity + size_factor + pattern_complexity
+    }
+
+    /// Get size of call data
+    pub fn size(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Get hash of the entire call data
+    pub fn hash(&self) -> anyhow::Result<Hash> {
+        use blake3;
+        let hash_bytes = blake3::hash(&self.0);
+        Ok(Hash::new(hash_bytes.as_bytes().to_vec()))
+    }
+
+    pub fn append(&mut self, other: &CallData) {
+        self.0.extend_from_slice(&other.0);
+    }
+
+    pub fn value(&self) -> u64 {
+        self.0.len() as u64
+    }
+}
+
+impl Default for CallData {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+/// Contract identifier
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ContractId(pub String);
+
+impl ContractId {
+    pub fn new(id: String) -> Self {
+        Self(id)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ContractId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<Address> for ContractId {
+    fn from(address: Address) -> Self {
+        ContractId(hex::encode(address.0))
+    }
+}
+
+impl From<u64> for ProposalId {
+    fn from(v: u64) -> Self {
+        ProposalId(v.to_string())
+    }
+}
+
+/// Conversion from ledger::Block to types::Block
+impl From<crate::ledger::block::Block> for Block {
+    fn from(ledger_block: crate::ledger::block::Block) -> Self {
+        use crate::utils::crypto::Hash as CryptoHash;
+
+        // Convert ledger header to types header
+        let header = BlockHeader {
+            version: 1,  // Default version
+            shard_id: 0, // Default shard for now
+            height: ledger_block.header.height,
+            prev_hash: CryptoHash::from_slice(ledger_block.header.previous_hash.as_ref()),
+            timestamp: ledger_block.header.timestamp,
+            merkle_root: CryptoHash::from_slice(ledger_block.header.merkle_root.as_ref()),
+            state_root: CryptoHash::default(), // Will be calculated elsewhere
+            receipt_root: CryptoHash::default(), // Will be calculated elsewhere
+            proposer: {
+                let producer_bytes = ledger_block.header.producer.as_bytes();
+                let mut addr_bytes = [0u8; 20];
+                let copy_len = producer_bytes.len().min(20);
+                addr_bytes[..copy_len].copy_from_slice(&producer_bytes[..copy_len]);
+                Address(addr_bytes)
+            }, // Convert BLS key to address
+            signature: Vec::new(),             // Will be set from block signature
+            gas_limit: 21000000,               // Default gas limit
+            gas_used: 0,                       // Will be calculated
+            extra_data: Vec::new(),            // Empty for now
+        };
+
+        // Convert transactions from ledger::block::Transaction to types::Transaction
+        let transactions: Vec<Transaction> = ledger_block
+            .transactions
+            .into_iter()
+            .map(|ledger_tx| {
+                // Convert Vec<u8> addresses to [u8; 20] addresses
+                let from_addr = {
+                    let mut addr_bytes = [0u8; 20];
+                    let copy_len = ledger_tx.from.len().min(20);
+                    addr_bytes[..copy_len].copy_from_slice(&ledger_tx.from[..copy_len]);
+                    Address(addr_bytes)
+                };
+                let to_addr = {
+                    let mut addr_bytes = [0u8; 20];
+                    let copy_len = ledger_tx.to.len().min(20);
+                    addr_bytes[..copy_len].copy_from_slice(&ledger_tx.to[..copy_len]);
+                    Address(addr_bytes)
+                };
+
+                Transaction {
+                    from: from_addr,
+                    to: to_addr,
+                    value: ledger_tx.amount,
+                    gas_price: ledger_tx.fee, // Use fee as gas_price
+                    gas_limit: 21000,         // Default gas limit
+                    nonce: ledger_tx.nonce,
+                    data: ledger_tx.data,
+                    signature: ledger_tx
+                        .signature
+                        .map(|s| s.as_bytes().to_vec())
+                        .unwrap_or_default(),
+                    hash: CryptoHash::from_slice(ledger_tx.id.as_ref()),
+                }
+            })
+            .collect();
+
+        Block {
+            header,
+            transactions,
+            signature: ledger_block.signature,
+        }
     }
 }

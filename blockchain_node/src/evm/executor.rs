@@ -33,30 +33,26 @@ impl EvmExecutor {
             config,
         };
 
-        // Spawn a task to process transactions
-        let runtime_mutex = executor.runtime.clone();
+        // Spawn a task to process transactions with its own runtime instance
+        let bg_config = executor.config.clone();
         tokio::spawn(async move {
+            let mut bg_runtime = EvmRuntime::new(storage, bg_config);
             while let Some(tx) = tx_receiver.recv().await {
-                let mut runtime = runtime_mutex.lock().unwrap();
-
                 // Set block context from current time
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
 
-                runtime.set_block_context(0, now); // Block number would come from the blockchain
+                bg_runtime.set_block_context(0, now); // Block number would come from the blockchain
 
                 // Execute the transaction
-                match runtime.execute(tx).await {
+                match bg_runtime.execute(tx).await {
                     Ok(result) => {
                         info!(
                             "EVM transaction executed: success={}, gas_used={}",
                             result.success, result.gas_used
                         );
-
-                        // Here is where we would integrate with the blockchain's consensus
-                        // and transaction processing systems
                     }
                     Err(e) => {
                         error!("Failed to execute EVM transaction: {:?}", e);
@@ -64,7 +60,7 @@ impl EvmExecutor {
                 }
 
                 // Clear caches to free memory
-                runtime.clear_cache();
+                bg_runtime.clear_cache();
             }
         });
 

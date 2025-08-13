@@ -18,12 +18,12 @@ impl WasmContractAddress {
     /// Create a new WASM contract address from a deployer address and nonce
     pub fn new(deployer: &Address, nonce: u64) -> Self {
         let mut hasher = Hasher::new();
-        hasher.update(deployer.as_bytes());
+        hasher.update(deployer.as_ref());
         hasher.update(&nonce.to_be_bytes());
 
         // Take the first 20 bytes of the hash as an address (like Ethereum)
         let hash = hasher.finalize();
-        let address_bytes = &hash.as_bytes()[0..20];
+        let address_bytes = &hash.as_ref()[0..20];
 
         // Prefix with "wasm:" to distinguish from other address types
         let address = format!("wasm:{}", hex::encode(address_bytes));
@@ -37,7 +37,7 @@ impl WasmContractAddress {
 
     /// Get the address as bytes
     pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
+        self.0.as_ref()
     }
 
     /// Get the address as a string
@@ -144,6 +144,51 @@ pub enum WasmValueType {
     Address,
     /// Contract Address
     ContractAddress,
+}
+
+/// Actual values that can be passed to/from WASM functions
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum WasmValue {
+    /// Unsigned 8-bit integer
+    U8(u8),
+    /// Unsigned 16-bit integer
+    U16(u16),
+    /// Unsigned 32-bit integer
+    U32(u32),
+    /// Unsigned 64-bit integer
+    U64(u64),
+    /// Unsigned 128-bit integer
+    U128(u128),
+    /// Signed 8-bit integer
+    I8(i8),
+    /// Signed 16-bit integer
+    I16(i16),
+    /// Signed 32-bit integer
+    I32(i32),
+    /// Signed 64-bit integer
+    I64(i64),
+    /// Signed 128-bit integer
+    I128(i128),
+    /// 32-bit floating point
+    F32(f32),
+    /// 64-bit floating point
+    F64(f64),
+    /// Boolean
+    Bool(bool),
+    /// String (UTF-8)
+    String(String),
+    /// Binary data
+    Bytes(Vec<u8>),
+    /// Array of values
+    Array(Vec<WasmValue>),
+    /// Map with string keys
+    Map(std::collections::HashMap<String, WasmValue>),
+    /// Optional value
+    Option(Option<Box<WasmValue>>),
+    /// Blockchain Address
+    Address(crate::types::Address),
+    /// Contract Address
+    ContractAddress(WasmContractAddress),
 }
 
 /// Error type for WASM operations
@@ -522,9 +567,9 @@ impl WasmTransaction {
         let mut hasher = Keccak256::new();
 
         // Add transaction fields to hash
-        hasher.update(self.from.as_bytes());
+        hasher.update(self.from.as_ref());
         if let Some(to) = &self.to {
-            hasher.update(to.as_bytes());
+            hasher.update(to.as_ref());
         }
         if let Some(value) = self.value {
             hasher.update(&value.to_be_bytes());
@@ -542,7 +587,7 @@ impl WasmTransaction {
         }
 
         if let Some(function) = &self.function {
-            hasher.update(function.as_bytes());
+            hasher.update(function.as_ref());
         }
 
         if let Some(args) = &self.function_args {
@@ -743,4 +788,104 @@ pub struct WasmGasConfig {
 
     /// Gas limit
     pub gas_limit: u64,
+}
+
+/// Configuration for WASM runtime
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasmConfig {
+    pub max_memory_pages: u32,
+    pub max_call_depth: u32,
+    pub gas_limit: u64,
+    pub enable_bulk_memory: bool,
+    pub enable_multi_value: bool,
+}
+
+impl Default for WasmConfig {
+    fn default() -> Self {
+        Self {
+            max_memory_pages: 256,
+            max_call_depth: 1024,
+            gas_limit: 10_000_000,
+            enable_bulk_memory: true,
+            enable_multi_value: true,
+        }
+    }
+}
+
+/// Metadata for a WASM function
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionMetadata {
+    pub name: String,
+    pub parameters: Vec<ParameterMetadata>,
+    pub return_type: Option<WasmValueType>,
+    pub gas_cost: u64,
+}
+
+/// Metadata for a function parameter
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParameterMetadata {
+    pub name: String,
+    pub param_type: WasmValueType,
+    pub optional: bool,
+}
+
+/// Call parameters for WASM function invocation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallParams {
+    pub function_name: String,
+    pub arguments: Vec<WasmValue>,
+    pub gas_limit: u64,
+}
+
+/// Result of a WASM function call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallResult {
+    pub success: bool,
+    pub return_value: Option<WasmValue>,
+    pub gas_used: u64,
+    pub error: Option<String>,
+}
+
+/// Host function callback type
+pub type HostFunctionCallback = fn(&[WasmValue]) -> Result<Option<WasmValue>, WasmError>;
+
+/// Call frame for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallFrame {
+    pub function_name: String,
+    pub instruction_pointer: u32,
+    pub locals: Vec<WasmValue>,
+}
+
+/// Execution state for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionState {
+    pub call_stack: Vec<CallFrame>,
+    pub memory_state: Vec<u8>,
+    pub global_state: Vec<WasmValue>,
+}
+
+/// WASM instruction for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Instruction {
+    pub opcode: u8,
+    pub operands: Vec<u32>,
+    pub offset: u32,
+}
+
+/// Generic value type for WASM debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Value {
+    pub value_type: WasmValueType,
+    pub data: Vec<u8>,
+}
+
+/// WASM module representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasmModule {
+    pub name: String,
+    pub bytecode: Vec<u8>,
+    pub exports: Vec<String>,
+    pub imports: Vec<String>,
+    pub functions: Vec<FunctionMetadata>,
 }

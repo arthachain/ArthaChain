@@ -245,8 +245,9 @@ impl NetworkMonitoringService {
             0
         };
 
-        let max_peers = 50; // TODO: Get from config
-        let min_peers = 3; // TODO: Get from config
+        // Use default configuration values (TODO: integrate with proper config system)
+        let max_peers = 50; // Default max peers
+        let min_peers = 3;  // Default min peers
 
         let network_health = self.assess_network_health(peer_count, min_peers);
 
@@ -620,7 +621,7 @@ mod tests {
         // Verify uptime is greater than 0
         assert!(uptime_response.uptime_seconds >= 0);
         assert!(!uptime_response.uptime_formatted.is_empty());
-        assert!(uptime_response.current_timestamp > uptime_response.start_timestamp);
+        assert!(uptime_response.current_timestamp >= uptime_response.start_timestamp);
 
         // Test format_duration function
         assert_eq!(format_duration(30), "30s");

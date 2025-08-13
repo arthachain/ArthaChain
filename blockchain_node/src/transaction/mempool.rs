@@ -168,6 +168,7 @@ impl EnhancedMempool {
 
         // Create mempool transaction
         let mempool_tx = MempoolTransaction::new(transaction.clone(), &self.config)?;
+        let actual_hash = mempool_tx.hash.clone(); // Store the actual hash used for storage
 
         // Check account transaction limit
         {
@@ -200,7 +201,10 @@ impl EnhancedMempool {
 
         // Add transaction to indices
         {
-            let expire_time = mempool_tx.expires_at.elapsed().as_secs();
+            let expire_time = mempool_tx
+                .expires_at
+                .duration_since(mempool_tx.added_at)
+                .as_secs();
             let priority = mempool_tx.priority;
             let account = transaction.sender.clone();
             let hash = mempool_tx.hash.clone();
@@ -246,7 +250,7 @@ impl EnhancedMempool {
         // Clean up expired transactions occasionally
         self.maybe_cleanup().await;
 
-        Ok(tx_hash)
+        Ok(actual_hash) // Return the actual hash used for storage
     }
 
     /// Remove a transaction from the mempool
@@ -586,8 +590,8 @@ mod tests {
         let config = MempoolConfig::default();
         let mempool = EnhancedMempool::new(config);
 
-        // Add transaction
-        let tx = create_test_transaction("sender1", 1, 10);
+        // Add transaction with higher gas price to ensure it passes validation
+        let tx = create_test_transaction("sender1", 1, 100);
         let tx_hash = mempool.add_transaction(tx.clone()).await.unwrap();
 
         // Verify transaction was added

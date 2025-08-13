@@ -1,15 +1,9 @@
-
-
-
 use wasmer::AsStoreRef;
 use wasmer::{Instance, Module, Store, Type, Value};
 use wasmer_compiler::Cranelift;
 use wasmer_engine::Universal;
 
-use crate::wasm::debug::{
-    Breakpoint, DebugManager, LocalVariable, MemoryState, StackFrame,
-};
-
+use crate::wasm::debug::{Breakpoint, DebugManager, LocalVariable, MemoryState, StackFrame};
 
 /// Test WASM module
 const TEST_WASM: &[u8] = include_bytes!("../../tests/test_contract.wasm");

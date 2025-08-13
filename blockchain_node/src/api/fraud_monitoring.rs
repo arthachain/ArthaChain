@@ -243,24 +243,18 @@ impl FraudMonitoringService {
 
     /// Get top N risky addresses
     async fn get_top_risky_addresses(&self, limit: usize) -> Result<Vec<AddressRiskScore>> {
-        let mut result = Vec::new();
+        // Get real address profiles from the fraud detection model
+        let address_profiles = self.detection_model.get_top_risky_addresses(limit).await;
 
-        // In a real implementation, this would query the address profiles
-        // Since we don't have direct access to that here, we'll return placeholder data
-        // In a full implementation, you'd use self.detection_model.get_address_profiles()
-
-        // Placeholder data
-        for i in 0..limit {
-            result.push(AddressRiskScore {
-                address: format!("0x{i:040x}"),
-                risk_score: 0.5 + (i as f32 * 0.05),
-                transaction_count: 10 + i as u32,
-                last_activity: Utc::now() - Duration::hours(i as i64),
-            });
-        }
-
-        // Sort by risk score (descending)
-        result.sort_by(|a, b| b.risk_score.partial_cmp(&a.risk_score).unwrap());
+        let result: Vec<AddressRiskScore> = address_profiles
+            .into_iter()
+            .map(|profile| AddressRiskScore {
+                address: profile.address,
+                risk_score: profile.risk_score,
+                transaction_count: profile.interaction_count,
+                last_activity: profile.last_update,
+            })
+            .collect();
 
         Ok(result)
     }

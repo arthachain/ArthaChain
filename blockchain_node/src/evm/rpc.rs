@@ -51,14 +51,14 @@ impl EvmRpcService {
         let chain_id = self.chain_id;
 
         // eth_chainId
-        io.add_method("eth_chainId", move |_params: Params| {
+        io.add_method("eth_chainId", move |_params: Params| async move {
             let chain_id_hex = format!("0x{chain_id:x}");
             Ok(Value::String(chain_id_hex))
         });
 
         // eth_blockNumber
         let executor_clone = executor.clone();
-        io.add_method("eth_blockNumber", move |_params: Params| {
+        io.add_method("eth_blockNumber", move |_params: Params| async move {
             // In a real implementation, this would get the current block number
             // For now, return a placeholder
             let block_number = 0;
@@ -68,7 +68,7 @@ impl EvmRpcService {
 
         // eth_getBalance
         let executor_clone = executor.clone();
-        io.add_method("eth_getBalance", move |params: Params| {
+        io.add_method("eth_getBalance", move |params: Params| async move {
             // Parse parameters
             let params: (String, String) = params
                 .parse()
@@ -104,43 +104,49 @@ impl EvmRpcService {
         // eth_gasPrice
         let executor_clone = executor.clone();
         io.add_method("eth_gasPrice", move |_params: Params| {
-            // In a real implementation, this would get the current gas price
-            // For now, return the default gas price
-            let config = executor_clone.get_config();
-            let gas_price_hex = format!("0x{:x}", config.default_gas_price);
-            Ok(Value::String(gas_price_hex))
+            let executor = executor_clone.clone();
+            async move {
+                // In a real implementation, this would get the current gas price
+                // For now, return the default gas price
+                let config = executor.get_config();
+                let gas_price_hex = format!("0x{:x}", config.default_gas_price);
+                Ok(Value::String(gas_price_hex))
+            }
         });
 
         // eth_estimateGas
         let executor_clone = executor.clone();
-        io.add_method("eth_estimateGas", move |params: Params| async move {
-            // Parse parameters
-            let call_request: CallRequest = params
-                .parse()
-                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {e:?}")))?;
+        io.add_method("eth_estimateGas", move |params: Params| {
+            let executor = executor_clone.clone();
+            async move {
+                // Parse parameters
+                let call_request: CallRequest = params
+                    .parse()
+                    .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {e:?}")))?;
 
-            // Create a transaction with a high gas limit for estimation
-            let tx = EvmTransaction {
-                from: call_request.from.unwrap_or(H160::zero()),
-                to: call_request.to,
-                value: call_request.value.unwrap_or(U256::zero()),
-                data: call_request.data.unwrap_or_else(Vec::new),
-                gas_price: call_request
-                    .gas_price
-                    .unwrap_or(U256::from(executor_clone.get_config().default_gas_price)),
-                gas_limit: call_request.gas.unwrap_or(U256::from(10_000_000)), // High gas limit for estimation
-                nonce: U256::zero(), // Nonce isn't important for estimation
-                chain_id: Some(chain_id),
-                signature: None,
-            };
+                // Create a transaction with a high gas limit for estimation
+                let tx = EvmTransaction {
+                    from: call_request.from.unwrap_or(H160::zero()),
+                    to: call_request.to,
+                    value: call_request.value.unwrap_or(U256::zero()),
+                    data: call_request.data.unwrap_or_else(Vec::new),
+                    gas_price: call_request
+                        .gas_price
+                        .unwrap_or(U256::from(executor.get_config().default_gas_price)),
+                    gas_limit: call_request.gas.unwrap_or(U256::from(10_000_000)), // High gas limit for estimation
+                    nonce: U256::zero(), // Nonce isn't important for estimation
+                    chain_id: Some(chain_id),
+                    signature: None,
+                };
 
-            // Execute transaction to estimate gas (this is a simplified implementation)
-            // In a real implementation, this would execute the transaction in a sandbox
-            // and return the gas used
-            let gas_estimate = U256::from(100_000); // Placeholder
-            let gas_estimate_hex = format!("0x{:x}", gas_estimate);
+                // Execute transaction to estimate gas (this is a simplified implementation)
+                // In a real implementation, this would execute the transaction in a sandbox
+                // and return the gas used
+                let gas_estimate = U256::from(100_000); // Placeholder
+                let gas_estimate_hex = format!("0x{:x}", gas_estimate);
 
-            Ok(Value::String(gas_estimate_hex))
+                Ok(Value::String(gas_estimate_hex))
+            }
         });
 
         // eth_sendRawTransaction
@@ -187,41 +193,44 @@ impl EvmRpcService {
 
         // eth_call
         let executor_clone = executor.clone();
-        io.add_method("eth_call", move |params: Params| async move {
-            // Parse parameters
-            let params: (CallRequest, String) = params
-                .parse()
-                .map_err(|e| RpcError::invalid_params(format!("Invalid parameters: {:?}", e)))?;
+        io.add_method("eth_call", move |params: Params| {
+            let executor = executor_clone.clone();
+            async move {
+                // Parse parameters
+                let params: (CallRequest, String) = params.parse().map_err(|e| {
+                    RpcError::invalid_params(format!("Invalid parameters: {:?}", e))
+                })?;
 
-            let call_request = params.0;
-            let block_identifier = params.1; // "latest", "earliest", "pending", or block number
+                let call_request = params.0;
+                let block_identifier = params.1; // "latest", "earliest", "pending", or block number
 
-            // Create a transaction for the call
-            let tx = EvmTransaction {
-                from: call_request.from.unwrap_or(H160::zero()),
-                to: call_request.to,
-                value: call_request.value.unwrap_or(U256::zero()),
-                data: call_request.data.unwrap_or_else(Vec::new),
-                gas_price: call_request
-                    .gas_price
-                    .unwrap_or(U256::from(executor_clone.get_config().default_gas_price)),
-                gas_limit: call_request
-                    .gas
-                    .unwrap_or(U256::from(executor_clone.get_config().default_gas_limit)),
-                nonce: U256::zero(), // Nonce isn't important for call
-                chain_id: Some(chain_id),
-                signature: None,
-            };
+                // Create a transaction for the call
+                let tx = EvmTransaction {
+                    from: call_request.from.unwrap_or(H160::zero()),
+                    to: call_request.to,
+                    value: call_request.value.unwrap_or(U256::zero()),
+                    data: call_request.data.unwrap_or_else(Vec::new),
+                    gas_price: call_request
+                        .gas_price
+                        .unwrap_or(U256::from(executor.get_config().default_gas_price)),
+                    gas_limit: call_request
+                        .gas
+                        .unwrap_or(U256::from(executor.get_config().default_gas_limit)),
+                    nonce: U256::zero(), // Nonce isn't important for call
+                    chain_id: Some(chain_id),
+                    signature: None,
+                };
 
-            // Execute the call
-            // In a real implementation, this would execute the transaction in a sandbox
-            // without modifying state
+                // Execute the call
+                // In a real implementation, this would execute the transaction in a sandbox
+                // without modifying state
 
-            // Placeholder implementation
-            let return_data = Vec::new();
-            let return_data_hex = format!("0x{}", hex::encode(&return_data));
+                // Placeholder implementation
+                let return_data = Vec::new();
+                let return_data_hex = format!("0x{}", hex::encode(&return_data));
 
-            Ok(Value::String(return_data_hex))
+                Ok(Value::String(return_data_hex))
+            }
         });
 
         // Start the server

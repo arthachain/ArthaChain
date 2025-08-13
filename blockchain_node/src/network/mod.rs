@@ -2,17 +2,21 @@
 pub mod adaptive_gossip;
 pub mod cross_shard;
 pub mod custom_udp;
-pub mod custom_udp_test;
+// pub mod custom_udp_test;  // Removed - test file doesn't exist
 pub mod dos_protection;
+pub mod enterprise_connectivity;
+pub mod enterprise_load_balancer;
 pub mod error;
-pub mod handler;
+// pub mod handler;  // Removed - file doesn't exist
 pub mod handlers;
 pub mod message;
 pub mod nat;
 pub mod optimizer;
 pub mod p2p;
+pub mod partition_healer;
 pub mod peer;
 pub mod peer_reputation;
+pub mod redundant_network;
 pub mod rpc;
 pub mod sync;
 pub mod telemetry;

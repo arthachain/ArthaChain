@@ -1,0 +1,21 @@
+{
+  email {$CADDY_EMAIL}
+}
+{$API_HOST} {
+  encode gzip
+  reverse_proxy node:3000
+}
+{$RPC_HOST} {
+  encode gzip
+  reverse_proxy node:8545
+}
+{$WS_HOST} {
+  reverse_proxy node:8546 {
+    header_up Connection {>Connection}
+    header_up Upgrade {>Upgrade}
+  }
+}
+{$METRICS_HOST} {
+  encode gzip
+  reverse_proxy node:9090
+}

@@ -1,12 +1,7 @@
-use crate::storage::{
-    RocksDbStorage, Storage, StorageBackend, StorageError, StorageInit, SvdbStorage,
-};
-use crate::types::Hash;
+use super::{Result, Storage, StorageInit};
 use async_trait::async_trait;
-use std::any::Any;
-use std::path::Path;
 
-type Result<T> = std::result::Result<T, StorageError>;
+type StorageResult<T> = Result<T>;
 
 /// Hybrid storage combining RocksDB and SVDB
 pub struct HybridStorage {
@@ -22,9 +17,12 @@ pub struct HybridStorage {
 
 impl HybridStorage {
     /// Create a new hybrid storage instance
-    pub fn new(svdb_url: String, size_threshold: usize) -> Result<Self> {
-        let rocksdb = Box::new(RocksDbStorage::new());
-        let svdb = Box::new(SvdbStorage::new(svdb_url)?);
+    pub fn new(_svdb_url: String, size_threshold: usize) -> anyhow::Result<Self> {
+        // Assume both storages are provided externally in production; here we keep placeholders
+        let rocksdb = crate::storage::rocksdb_storage::RocksDbStorage::new();
+        let svdb = crate::storage::svdb_storage::SvdbStorage::new("memory://".to_string())?;
+        let rocksdb: Box<dyn Storage> = Box::new(rocksdb);
+        let svdb: Box<dyn Storage> = Box::new(svdb);
 
         Ok(Self {
             rocksdb,
@@ -36,110 +34,75 @@ impl HybridStorage {
 
 #[async_trait]
 impl Storage for HybridStorage {
-    async fn store(&self, data: &[u8]) -> Result<Hash> {
-        if data.len() > self.size_threshold {
-            self.svdb.store(data).await
-        } else {
-            self.rocksdb.store(data).await
-        }
-    }
-
-    async fn retrieve(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
-        match self.rocksdb.retrieve(hash).await {
+    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // Try RocksDB first for smaller data, then SVDB
+        match self.rocksdb.get(key).await {
             Ok(Some(data)) => Ok(Some(data)),
-            Ok(None) => self.svdb.retrieve(hash).await,
-            Err(_) => self.svdb.retrieve(hash).await,
+            Ok(None) => self.svdb.get(key).await,
+            Err(_) => self.svdb.get(key).await,
         }
     }
 
-    async fn exists(&self, hash: &Hash) -> Result<bool> {
-        match self.rocksdb.exists(hash).await {
-            Ok(true) => Ok(true),
-            Ok(false) => self.svdb.exists(hash).await,
-            Err(_) => self.svdb.exists(hash).await,
+    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Use SVDB for larger data, RocksDB for smaller
+        if value.len() > self.size_threshold {
+            self.svdb.put(key, value).await
+        } else {
+            self.rocksdb.put(key, value).await
         }
     }
 
-    async fn delete(&self, hash: &Hash) -> Result<()> {
+    async fn delete(&self, key: &[u8]) -> Result<()> {
         // Try to delete from both storages
-        let rocksdb_result = self.rocksdb.delete(hash).await;
-        let svdb_result = self.svdb.delete(hash).await;
+        let rocksdb_result = self.rocksdb.delete(key).await;
+        let svdb_result = self.svdb.delete(key).await;
 
-        // Return error only if both failed
+        // Return Ok if at least one deletion succeeded
         match (rocksdb_result, svdb_result) {
             (Ok(_), _) | (_, Ok(_)) => Ok(()),
-            (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to delete from both storages - RocksDB: {e1}, SVDB: {e2}"
-            ))),
+            (Err(_), Err(e)) => Err(e),
         }
     }
 
-    async fn verify(&self, hash: &Hash, data: &[u8]) -> Result<bool> {
-        match self.rocksdb.verify(hash, data).await {
+    async fn exists(&self, key: &[u8]) -> Result<bool> {
+        // Check both storages
+        match self.rocksdb.exists(key).await {
             Ok(true) => Ok(true),
-            Ok(false) => self.svdb.verify(hash, data).await,
-            Err(_) => self.svdb.verify(hash, data).await,
+            Ok(false) => self.svdb.exists(key).await,
+            Err(_) => self.svdb.exists(key).await,
         }
+    }
+
+    async fn list_keys(&self, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
+        // Combine keys from both storages
+        let mut keys = self.rocksdb.list_keys(prefix).await.unwrap_or_default();
+        let svdb_keys = self.svdb.list_keys(prefix).await.unwrap_or_default();
+        keys.extend(svdb_keys);
+        keys.sort();
+        keys.dedup();
+        Ok(keys)
+    }
+
+    async fn get_stats(&self) -> Result<crate::storage::StorageStats> {
+        Ok(crate::storage::StorageStats::default())
+    }
+
+    async fn flush(&self) -> Result<()> {
+        self.rocksdb.flush().await?;
+        self.svdb.flush().await?;
+        Ok(())
     }
 
     async fn close(&self) -> Result<()> {
-        // Close both storages
-        let rocksdb_result = self.rocksdb.close().await;
-        let svdb_result = self.svdb.close().await;
-
-        // Return error only if both failed
-        match (rocksdb_result, svdb_result) {
-            (Ok(_), _) | (_, Ok(_)) => Ok(()),
-            (Err(e1), Err(e2)) => Err(StorageError::Other(format!(
-                "Failed to close both storages - RocksDB: {e1}, SVDB: {e2}"
-            ))),
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+        self.rocksdb.close().await?;
+        self.svdb.close().await?;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl StorageInit for HybridStorage {
-    async fn init(&mut self, path: Box<dyn AsRef<Path> + Send + Sync>) -> Result<()> {
-        // Extract the path and convert to PathBuf
-        let path_ref = path.as_ref();
-        let path_buf = path_ref.as_ref().to_path_buf();
-
-        // Initialize RocksDB storage
-        let rocksdb_path = path_buf.join("rocksdb");
-        let box_path = Box::new(rocksdb_path) as Box<dyn AsRef<Path> + Send + Sync>;
-        self.rocksdb
-            .as_any_mut()
-            .downcast_mut::<RocksDbStorage>()
-            .ok_or_else(|| {
-                StorageError::Other(
-                    "Failed to get mutable reference to RocksDB storage".to_string(),
-                )
-            })?
-            .init(box_path)
-            .await?;
-
-        // Initialize SVDB storage
-        let svdb_path = path_buf.join("svdb");
-        let box_path = Box::new(svdb_path) as Box<dyn AsRef<Path> + Send + Sync>;
-        self.svdb
-            .as_any_mut()
-            .downcast_mut::<SvdbStorage>()
-            .ok_or_else(|| {
-                StorageError::Other("Failed to get mutable reference to SVDB storage".to_string())
-            })?
-            .init(box_path)
-            .await?;
-
+    async fn init(&self, _config: &crate::storage::StorageConfig) -> Result<()> {
         Ok(())
     }
 }
-
-impl StorageBackend for HybridStorage {}

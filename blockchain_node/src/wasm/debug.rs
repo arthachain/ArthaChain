@@ -1,7 +1,35 @@
-use crate::wasm::types::{CallFrame, ExecutionState, Instruction, Value, WasmContractAddress};
+use crate::wasm::types::{CallFrame, ExecutionState, Instruction, Value, WasmContractAddress, WasmValue, WasmValueType};
 use std::collections::HashMap;
 use thiserror::Error;
-use wasmer::{Instance, Module, Store};
+// Note: wasmer dependency disabled for now
+// use wasmer::{Instance, Module, Store};
+use serde::{Deserialize, Serialize};
+
+/// Local variable information for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalVariable {
+    pub name: String,
+    pub value: WasmValue,
+    pub variable_type: WasmValueType,
+    pub scope: String,
+}
+
+/// Memory state information for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryState {
+    pub total_size: u32,
+    pub used_size: u32,
+    pub memory_regions: Vec<MemoryRegion>,
+}
+
+/// Memory region for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryRegion {
+    pub start_address: u32,
+    pub size: u32,
+    pub permissions: String,
+    pub content: Vec<u8>,
+}
 
 /// Debug error types
 #[derive(Error, Debug)]

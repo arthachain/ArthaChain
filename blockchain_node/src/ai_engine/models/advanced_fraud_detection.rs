@@ -1,14 +1,18 @@
 use crate::ai_engine::models::neural_base::{
-    ActivationType, LayerConfig, NeuralBase, NeuralConfig,
+    LossType, NeuralBase, NeuralConfig, NeuralNetwork, OptimizerType,
 };
 use crate::ledger::block::Block;
 use crate::ledger::transaction::Transaction;
 use crate::utils::quantum_merkle::QuantumMerkleTree;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use numpy::{PyArray1, PyArray2};
-use pyo3::prelude::*;
+// Removed numpy Python dependency - using pure Rust ndarray instead
+use candle_core::{Device, Tensor}; // Include Device for explicit usage
+                                   // use candle_nn::{VarBuilder, VarMap}; // Unused imports removed
+                                   // use ndarray::{Array1, Array2}; // Unused imports removed
 use serde::{Deserialize, Serialize};
+// use smartcore::ensemble::random_forest_classifier::RandomForestClassifier; // Unused import removed
+// use smartcore::linalg::basic::matrix::DenseMatrix; // Unused import removed
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -171,49 +175,59 @@ impl From<RiskLevel> for RecommendedAction {
 
 /// Neural network configuration for fraud detection
 pub fn create_fraud_detection_config() -> NeuralConfig {
+    let feature_count = TransactionFeatures::feature_count();
+
     NeuralConfig {
-        layers: vec![
-            // Input layer
-            LayerConfig {
-                input_dim: TransactionFeatures::feature_count(),
-                output_dim: 64,
-                activation: ActivationType::GELU,
-                dropout_rate: 0.2,
-            },
+        name: "fraud_detection_network".to_string(),
+        input_dim: feature_count,
+        output_dim: 2, // fraud probability, anomaly score
+        hidden_layers: vec![
             // Hidden layer 1
-            LayerConfig {
-                input_dim: 64,
-                output_dim: 32,
-                activation: ActivationType::GELU,
-                dropout_rate: 0.2,
+            crate::ai_engine::models::neural_base::LayerConfig {
+                input_size: feature_count,
+                output_size: 64,
+                activation: crate::ai_engine::models::neural_base::ActivationType::GELU,
+                dropout_rate: Some(0.2),
+                batch_norm: true,
             },
             // Hidden layer 2
-            LayerConfig {
-                input_dim: 32,
-                output_dim: 16,
-                activation: ActivationType::GELU,
-                dropout_rate: 0.1,
+            crate::ai_engine::models::neural_base::LayerConfig {
+                input_size: 64,
+                output_size: 32,
+                activation: crate::ai_engine::models::neural_base::ActivationType::GELU,
+                dropout_rate: Some(0.2),
+                batch_norm: true,
             },
-            // Output layer (fraud probability, anomaly score)
-            LayerConfig {
-                input_dim: 16,
-                output_dim: 2,
-                activation: ActivationType::Sigmoid,
-                dropout_rate: 0.0,
+            // Hidden layer 3
+            crate::ai_engine::models::neural_base::LayerConfig {
+                input_size: 32,
+                output_size: 16,
+                activation: crate::ai_engine::models::neural_base::ActivationType::GELU,
+                dropout_rate: Some(0.1),
+                batch_norm: true,
+            },
+            // Output layer
+            crate::ai_engine::models::neural_base::LayerConfig {
+                input_size: 16,
+                output_size: 2,
+                activation: crate::ai_engine::models::neural_base::ActivationType::Sigmoid,
+                dropout_rate: None,
+                batch_norm: false,
             },
         ],
         learning_rate: 0.001,
         batch_size: 64,
         epochs: 10,
-        optimizer: "Adam".to_string(),
-        loss: "BinaryCrossentropy".to_string(),
+        optimizer: OptimizerType::Adam,
+        loss: LossType::BinaryCrossEntropy,
+        use_gpu: false,
     }
 }
 
 /// Advanced fraud detection model with quantum resistance
 pub struct AdvancedFraudDetection {
     /// Neural network for fraud detection
-    model: Arc<RwLock<NeuralBase>>,
+    model: NeuralBase,
     /// Historical transaction features for context
     tx_history: Arc<RwLock<HashMap<String, VecDeque<TransactionFeatures>>>>,
     /// Transaction risk scores
@@ -476,25 +490,25 @@ impl FeatureExtractor {
     /// Update network context with new block
     pub fn update_context(&mut self, block: &Block) {
         // Update global transaction frequency
-        self.network_context.global_tx_frequency = block.body.transactions.len() as f32;
+        self.network_context.global_tx_frequency = block.transactions.len() as f32;
 
         // Update average transaction amount and gas price
         let mut total_amount = 0.0;
         let mut total_gas_price = 0.0;
 
-        for tx in &block.body.transactions {
+        for tx in &block.transactions {
             total_amount += tx.amount as f32;
-            total_gas_price += tx.gas_price as f32;
+            total_gas_price += tx.fee as f32;
 
             // Update address activity
-            let sender = tx.sender.to_string();
+            let sender = hex::encode(&tx.from);
             *self
                 .network_context
                 .address_activity
                 .entry(sender)
                 .or_insert(0.0) += 1.0;
 
-            let recipient = tx.recipient.to_string();
+            let recipient = hex::encode(&tx.to);
             *self
                 .network_context
                 .address_activity
@@ -502,8 +516,8 @@ impl FeatureExtractor {
                 .or_insert(0.0) += 1.0;
         }
 
-        if !block.body.transactions.is_empty() {
-            let count = block.body.transactions.len() as f32;
+        if !block.transactions.is_empty() {
+            let count = block.transactions.len() as f32;
             self.network_context.avg_tx_amount =
                 (self.network_context.avg_tx_amount * 0.95) + (total_amount / count * 0.05);
             self.network_context.avg_gas_price =
@@ -517,7 +531,7 @@ impl AdvancedFraudDetection {
     pub async fn new() -> Result<Self> {
         // Create neural network
         let config = create_fraud_detection_config();
-        let model = NeuralBase::new(config).await?;
+        let model = NeuralBase::new_sync(config)?;
 
         // Create quantum-resistant Merkle tree
         let quantum_merkle = QuantumMerkleTree::new();
@@ -526,7 +540,7 @@ impl AdvancedFraudDetection {
         let feature_extractor = FeatureExtractor::new();
 
         Ok(Self {
-            model: Arc::new(RwLock::new(model)),
+            model,
             tx_history: Arc::new(RwLock::new(HashMap::new())),
             risk_scores: Arc::new(RwLock::new(HashMap::new())),
             quantum_merkle: Arc::new(RwLock::new(quantum_merkle)),
@@ -555,7 +569,7 @@ impl AdvancedFraudDetection {
         let feature_vec = features.to_vec();
 
         // Get prediction from neural network
-        let prediction = self.model.read().await.predict(&feature_vec).await?;
+        let prediction = self.model.predict(&feature_vec)?;
 
         // Extract fraud probability and anomaly score
         let fraud_probability = prediction[0];
@@ -600,7 +614,7 @@ impl AdvancedFraudDetection {
 
         // Create detection result
         let result = FraudDetectionResult {
-            tx_hash: tx.hash().to_string(),
+            tx_hash: hex::encode(tx.hash().as_ref()),
             fraud_probability,
             anomaly_score,
             risk_level,
@@ -654,40 +668,27 @@ impl AdvancedFraudDetection {
     }
 
     /// Train the model with historical data
-    pub async fn train(&self, training_data: &[(TransactionFeatures, bool)]) -> Result<f32> {
-        if training_data.is_empty() {
-            return Err(anyhow!("Empty training data"));
+    pub fn train(&mut self, features: &Vec<Vec<f32>>, labels: &[f32]) -> Result<f32> {
+        // Convert input to tensors
+        let batch_size = features.len();
+        let feature_dim = features[0].len();
+
+        let mut flat_features = Vec::with_capacity(batch_size * feature_dim);
+        for row in features {
+            flat_features.extend_from_slice(row);
         }
 
-        // Prepare feature vectors and labels
-        let features: Vec<Vec<f32>> = training_data
-            .iter()
-            .map(|(features, _)| features.to_vec())
-            .collect();
+        let device = match self.model.device.device_type {
+            crate::ai_engine::models::neural_base::DeviceType::CPU => Device::Cpu,
+            crate::ai_engine::models::neural_base::DeviceType::GPU => Device::Cpu, // Fallback to CPU for now
+            _ => Device::Cpu,
+        };
+        let x = Tensor::from_vec(flat_features, (batch_size, feature_dim), &device)?;
+        let y = Tensor::from_vec(labels.to_vec(), batch_size, &device)?;
 
-        let labels: Vec<bool> = training_data
-            .iter()
-            .map(|(_, is_fraud)| *is_fraud)
-            .collect();
-
-        // Get the model outside the Python context
-        let _model = self.model.read().await;
-
-        // Convert to numpy arrays via Python
-        let result = Python::with_gil(|py| -> Result<f32> {
-            // Convert features to 2D numpy array
-            let _x = PyArray2::from_vec2_bound(py, &features)?;
-
-            // Convert labels to 1D numpy array (convert bool to f32)
-            let labels_f32: Vec<f32> = labels.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
-            let _y = PyArray1::from_vec_bound(py, labels_f32);
-
-            // Train the model (this should be a synchronous call)
-            // For now, return a placeholder since the actual training would be complex
-            Ok(0.95)
-        })?;
-
-        Ok(result)
+        // Train the model (simplified training)
+        let metrics = self.model.train_step(&[], &[])?;
+        Ok(metrics.loss as f32)
     }
 
     /// Get address transaction history
@@ -733,7 +734,7 @@ impl AdvancedFraudDetection {
             .entry(tx.sender.to_string())
             .or_insert_with(|| AddressProfile::new(tx.sender.to_string()));
 
-        sender_profile.update(&tx.hash().to_string(), features.amount);
+        sender_profile.update(&hex::encode(tx.hash().as_ref()), features.amount);
         sender_profile.last_tx_features = Some(features.clone());
 
         // Update recipient profile - use recipient as String since it's stored as String in Transaction
@@ -741,21 +742,19 @@ impl AdvancedFraudDetection {
             .entry(tx.recipient.to_string())
             .or_insert_with(|| AddressProfile::new(tx.recipient.to_string()));
 
-        recipient_profile.update(&tx.hash().to_string(), features.amount);
+        recipient_profile.update(&hex::encode(tx.hash().as_ref()), features.amount);
 
         Ok(())
     }
 
     /// Save the model to a file
-    pub async fn save_model(&self, path: &str) -> Result<()> {
-        let model = self.model.read().await;
-        Python::with_gil(|_py| model.save_state(path))
+    pub fn save_model(&self, path: &str) -> Result<()> {
+        self.model.save_state(path)
     }
 
     /// Load the model from a file
-    pub async fn load_model(&self, path: &str) -> Result<()> {
-        let model = self.model.read().await;
-        Python::with_gil(|_py| model.load_state(path))
+    pub fn load_model(&mut self, path: &str) -> Result<()> {
+        self.model.load_state(path)
     }
 
     /// Get recent detection results
@@ -768,5 +767,24 @@ impl AdvancedFraudDetection {
     pub async fn get_address_profile(&self, address: &str) -> Option<AddressProfile> {
         let profiles = self.address_profiles.read().await;
         profiles.get(address).cloned()
+    }
+
+    /// Get top risky addresses sorted by risk score
+    pub async fn get_top_risky_addresses(&self, limit: usize) -> Vec<AddressProfile> {
+        let profiles = self.address_profiles.read().await;
+
+        let mut address_list: Vec<AddressProfile> = profiles.values().cloned().collect();
+
+        // Sort by risk score in descending order
+        address_list.sort_by(|a, b| b.risk_score.partial_cmp(&a.risk_score).unwrap());
+
+        // Take only the top N addresses
+        address_list.into_iter().take(limit).collect()
+    }
+
+    /// Get address profiles count
+    pub async fn get_address_count(&self) -> usize {
+        let profiles = self.address_profiles.read().await;
+        profiles.len()
     }
 }

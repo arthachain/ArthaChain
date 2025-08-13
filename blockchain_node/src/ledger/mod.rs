@@ -6,16 +6,14 @@ pub mod transaction;
 // Create an alias for State as BlockchainState to maintain compatibility
 pub use state::State as BlockchainState;
 
-// Export BlockExt trait for use by consensus modules
-pub use block::BlockExt;
-
-// Re-export important types
-pub use state::StateStorage;
-pub use transaction::Transaction;
+// Re-export key types from sub-modules
+pub use block::{Block, BlockHeader, Transaction};
+pub use state::State;
+pub use transaction::{Transaction as LedgerTransaction, TransactionType};
 
 use crate::config::Config;
-use crate::ledger::state::State;
 use crate::storage::Storage;
+
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -69,6 +67,9 @@ pub enum TransactionError {
 pub enum ConsensusError {
     #[error("Invalid validator signature")]
     InvalidSignature,
+
+    #[error("Invalid public key")]
+    InvalidPublicKey,
 
     #[error("Insufficient signatures")]
     InsufficientSignatures,

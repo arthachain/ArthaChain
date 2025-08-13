@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 
 use crate::types::{AccountId, BlockHeight};
 use crate::utils::crypto::quantum_resistant_hash;
+use rand::seq::SliceRandom;
 
 /// Cache entry with metadata and expiration
 #[derive(Debug, Clone)]

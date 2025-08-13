@@ -15,14 +15,9 @@ use std::sync::Arc;
  */
 use std::time::{Duration, Instant};
 
-use blockchain_node::execution::executor::TransactionExecutor;
-use blockchain_node::execution::parallel::{
-    ConflictStrategy, ParallelConfig, ParallelExecutionManager,
-};
-use blockchain_node::ledger::state::storage::StateStorage;
+use blockchain_node::execution::executor::{ExecutionResult, TransactionExecutor};
 use blockchain_node::ledger::state::State;
-use blockchain_node::ledger::transaction::TransactionType;
-use blockchain_node::transaction::Transaction;
+use blockchain_node::ledger::transaction::{Transaction, TransactionType};
 
 // Transaction mix configuration
 #[derive(Clone)]
@@ -77,7 +72,7 @@ impl Default for TransactionMixConfig {
 struct SimulationConfig {
     duration_secs: u64,
     batch_size: usize,
-    max_parallel: usize,
+    max_parallel: usize, // Kept for config struct, but not used directly
     num_accounts: usize,
     num_contracts: usize,
     tx_mix: TransactionMixConfig,
@@ -158,24 +153,16 @@ impl TransactionGenerator {
         // Generate gas price within range
         let gas_price = rng.gen_range(self.tx_mix.min_gas_price..self.tx_mix.max_gas_price);
 
-        Transaction {
-            tx_type: TransactionType::Transfer,
+        Transaction::new(
+            TransactionType::Transfer,
             sender,
             recipient,
             amount,
-            nonce: self.next_id as u64,
+            self.next_id as u64,
             gas_price,
-            gas_limit: 21000, // Standard gas limit for transfers
+            21000, // Standard gas limit for transfers
             data,
-            signature: Vec::new(), // Empty for test
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            #[cfg(feature = "bls")]
-            bls_signature: None,
-            status: blockchain_node::ledger::transaction::TransactionStatus::Pending,
-        }
+        )
     }
 
     // Generate a contract deployment transaction
@@ -198,24 +185,16 @@ impl TransactionGenerator {
         // Generate gas price with bias towards higher values for deployments
         let gas_price = rng.gen_range(self.tx_mix.min_gas_price..self.tx_mix.max_gas_price) * 2;
 
-        Transaction {
-            tx_type: TransactionType::ContractCreate,
+        Transaction::new(
+            TransactionType::ContractCreate,
             sender,
-            recipient: "0x0000000000000000000000000000000000000000".to_string(), // Zero address for contract creation
-            amount: 0,
-            nonce: self.next_id as u64,
+            "0x0000000000000000000000000000000000000000".to_string(), // Zero address for contract creation
+            0,
+            self.next_id as u64,
             gas_price,
-            gas_limit: 1000000, // Higher gas limit for deployments
+            1000000, // Higher gas limit for deployments
             data,
-            signature: Vec::new(), // Empty for test
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            #[cfg(feature = "bls")]
-            bls_signature: None,
-            status: blockchain_node::ledger::transaction::TransactionStatus::Pending,
-        }
+        )
     }
 
     // Generate a contract call transaction
@@ -243,24 +222,16 @@ impl TransactionGenerator {
         // Generate gas price
         let gas_price = rng.gen_range(self.tx_mix.min_gas_price..self.tx_mix.max_gas_price);
 
-        Transaction {
-            tx_type: TransactionType::Call,
+        Transaction::new(
+            TransactionType::Call,
             sender,
-            recipient: contract,
-            amount: rng.gen_range(0..100),
-            nonce: self.next_id as u64,
+            contract,
+            rng.gen_range(0..100),
+            self.next_id as u64,
             gas_price,
-            gas_limit: 100000, // Medium gas limit for calls
+            100000, // Medium gas limit for calls
             data,
-            signature: Vec::new(), // Empty for test
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            #[cfg(feature = "bls")]
-            bls_signature: None,
-            status: blockchain_node::ledger::transaction::TransactionStatus::Pending,
-        }
+        )
     }
 
     // Generate a data storage transaction
@@ -279,24 +250,16 @@ impl TransactionGenerator {
         // Generate gas price with bias towards lower values for storage (cost sensitive)
         let gas_price = rng.gen_range(self.tx_mix.min_gas_price..self.tx_mix.max_gas_price) / 2;
 
-        Transaction {
-            tx_type: TransactionType::System, // Using System for data storage
+        Transaction::new(
+            TransactionType::System, // Using System for data storage
             sender,
-            recipient: "0x0000000000000000000000000000000000000001".to_string(), // Data storage address
-            amount: 0,
-            nonce: self.next_id as u64,
+            "0x0000000000000000000000000000000000000001".to_string(), // Data storage address
+            0,
+            self.next_id as u64,
             gas_price,
-            gas_limit: 500000, // Higher gas limit for data storage
+            500000, // Higher gas limit for data storage
             data,
-            signature: Vec::new(), // Empty for test
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            #[cfg(feature = "bls")]
-            bls_signature: None,
-            status: blockchain_node::ledger::transaction::TransactionStatus::Pending,
-        }
+        )
     }
 }
 
@@ -315,7 +278,6 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
              config.tx_mix.data_storage_percent);
 
     // Initialize state
-    let _storage = Arc::new(StateStorage::new());
     let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
 
     // Create transaction generator
@@ -325,27 +287,13 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
         config.num_contracts,
     );
 
-    // Create parallel execution manager
+    // Create transaction executor
     let executor = Arc::new(TransactionExecutor::new(
         None,      // wasm_executor: no WASM for examples
         1.0,       // gas_price_adjustment
         1_000_000, // max_gas_limit
         1,         // min_gas_price
     ));
-    let parallel_config = ParallelConfig {
-        max_parallel: config.max_parallel,
-        max_group_size: 10,
-        conflict_strategy: ConflictStrategy::Retry,
-        execution_timeout: 5000,
-        retry_attempts: 3,
-        enable_work_stealing: true,
-        enable_simd: true,
-        worker_threads: 0, // Auto
-        simd_batch_size: 32,
-        memory_pool_size: 1024 * 1024 * 256, // 256MB pre-allocated memory
-    };
-    let mut execution_manager =
-        ParallelExecutionManager::new(parallel_config, state_tree.clone(), executor.clone());
 
     // Test metrics
     let start_time = Instant::now();
@@ -393,7 +341,20 @@ async fn run_real_world_simulation(config: &SimulationConfig) -> Result<()> {
 
         // Process the batch
         let batch_start = Instant::now();
-        let _results = execution_manager.process_transactions(transactions).await?;
+        let mut _batch_successes = 0;
+        let mut _batch_failures = 0;
+
+        for tx in transactions {
+            let mut mutable_tx = tx.clone(); // Clone and make mutable
+            let result = executor
+                .execute_transaction(&mut mutable_tx, &state_tree)
+                .await; // Corrected method call
+            match result {
+                Ok(ExecutionResult::Success) => _batch_successes += 1,
+                Ok(_) => _batch_failures += 1,
+                Err(_) => _batch_failures += 1,
+            }
+        }
         let batch_duration = batch_start.elapsed();
 
         // Update metrics

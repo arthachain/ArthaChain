@@ -111,9 +111,7 @@ impl Storage for MemoryStorage {
 
     fn put_storage(&self, address: &str, key: &str, value: &[u8]) -> Result<()> {
         let mut storage = self.storage.write().unwrap();
-        let contract_storage = storage
-            .entry(address.to_string())
-            .or_insert_with(HashMap::new);
+        let contract_storage = storage.entry(address.to_string()).or_default();
         contract_storage.insert(key.to_string(), value.to_vec());
         Ok(())
     }

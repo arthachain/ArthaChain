@@ -1,16 +1,205 @@
 use anyhow::Result;
-use blockchain_node::config::Config;
-use blockchain_node::consensus::{quantum_svbft::QuantumSVBFTConfig, QuantumSVBFTConsensus};
-use blockchain_node::ledger::block::{
-    Block, BlockBody, BlockHeader, ConsensusInfo, ConsensusStatus, SocialVerificationData,
-};
-use blockchain_node::ledger::state::State;
-use blockchain_node::ledger::transaction::Transaction;
-use blockchain_node::types::Hash;
-use blockchain_node::utils::crypto::generate_quantum_resistant_keypair;
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{broadcast, mpsc, RwLock};
+
+use blockchain_node::crypto::signature::Signature;
+use blockchain_node::ledger::block::BlsPublicKey;
+use blockchain_node::types::Hash;
+
+// Simplified mock structs for the example
+// These mirror the actual blockchain_node types but are self-contained for demo purposes.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockHeader {
+    pub previous_hash: Hash,
+    pub merkle_root: Hash,
+    pub timestamp: u64,
+    pub height: u64,
+    pub producer: BlsPublicKey,
+    pub nonce: u64,
+    pub difficulty: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    pub header: BlockHeader,
+    pub transactions: Vec<Transaction>,
+    pub signature: Option<Signature>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transaction {
+    pub id: Hash,
+    pub from: Vec<u8>,
+    pub to: Vec<u8>,
+    pub amount: u64,
+    pub fee: u64,
+    pub data: Vec<u8>,
+    pub nonce: u64,
+    pub signature: Option<Signature>,
+}
+
+impl Block {
+    pub fn new(
+        previous_hash: Hash,
+        transactions: Vec<Transaction>,
+        producer: BlsPublicKey,
+        difficulty: u64,
+        height: u64,
+    ) -> Result<Self> {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let merkle_root = Hash::default(); // Simplified for demo
+
+        let header = BlockHeader {
+            previous_hash,
+            merkle_root,
+            timestamp,
+            height,
+            producer,
+            nonce: 0,
+            difficulty,
+        };
+
+        Ok(Self {
+            header,
+            transactions,
+            signature: None,
+        })
+    }
+}
+
+impl Transaction {
+    pub fn new(
+        from: Vec<u8>,
+        to: Vec<u8>,
+        amount: u64,
+        fee: u64,
+        data: Vec<u8>,
+        nonce: u64,
+    ) -> Result<Self> {
+        let tx = Transaction {
+            id: Hash::default(),
+            from,
+            to,
+            amount,
+            fee,
+            data,
+            nonce,
+            signature: None,
+        };
+
+        Ok(tx)
+    }
+}
+
+/// Simplified Quantum SVBFT Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantumSVBFTConfig {
+    pub base_timeout_ms: u64,
+    pub view_change_timeout_ms: u64,
+    pub quantum_resistance_level: u8,
+    pub parallel_validation: bool,
+}
+
+impl Default for QuantumSVBFTConfig {
+    fn default() -> Self {
+        Self {
+            base_timeout_ms: 1000,
+            view_change_timeout_ms: 5000,
+            quantum_resistance_level: 1,
+            parallel_validation: true,
+        }
+    }
+}
+
+/// Simplified Quantum SVBFT Consensus
+pub struct QuantumSVBFTConsensus {
+    config: QuantumSVBFTConfig,
+    current_view: u64,
+    _node_id: String,
+}
+
+impl QuantumSVBFTConsensus {
+    pub fn new(config: QuantumSVBFTConfig, node_id: String) -> Self {
+        Self {
+            config,
+            current_view: 0,
+            _node_id: node_id,
+        }
+    }
+
+    pub async fn propose_block(&mut self, transactions: Vec<Transaction>) -> Result<Block> {
+        println!("Proposing block with {} transactions", transactions.len());
+
+        // Create block header with current timestamp
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+
+        let previous_hash = Hash::default(); // Genesis block for demo
+        let merkle_root = Hash::default(); // Simplified for demo
+        let height = 1;
+        let producer = BlsPublicKey::default();
+
+        let header = BlockHeader {
+            previous_hash,
+            merkle_root,
+            timestamp,
+            height,
+            producer,
+            nonce: 0,
+            difficulty: 1,
+        };
+
+        let block = Block {
+            header,
+            transactions,
+            signature: None,
+        };
+
+        println!("Block proposed successfully");
+        Ok(block)
+    }
+
+    pub async fn validate_block(&self, block: &Block) -> Result<bool> {
+        println!(
+            "Validating block with quantum resistance level {}",
+            self.config.quantum_resistance_level
+        );
+
+        // Simulate quantum-resistant validation
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Simple validation checks
+        if block.transactions.is_empty() {
+            println!("Block validation failed: no transactions");
+            return Ok(false);
+        }
+
+        if block.header.timestamp == 0 {
+            println!("Block validation failed: invalid timestamp");
+            return Ok(false);
+        }
+
+        println!("Block validation successful");
+        Ok(true)
+    }
+
+    pub fn get_current_view(&self) -> u64 {
+        self.current_view
+    }
+
+    pub async fn process_view_change(&mut self) -> Result<()> {
+        self.current_view += 1;
+        println!("View changed to: {}", self.current_view);
+
+        // Simulate view change timeout
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            self.config.view_change_timeout_ms,
+        ))
+        .await;
+
+        Ok(())
+    }
+}
 
 /// Example demonstrating quantum-resistant SVBFT consensus
 #[tokio::main]
@@ -19,162 +208,88 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     println!("Starting Quantum-Resistant SVBFT Example");
+    println!("========================================");
 
     // Create configuration with shorter timeouts for demo purposes
     let qsvbft_config = QuantumSVBFTConfig {
         base_timeout_ms: 500,
         view_change_timeout_ms: 2000,
-        quantum_resistance_level: 2, // 0-3, higher is more secure but slower
+        quantum_resistance_level: 2,
         parallel_validation: true,
-        ..QuantumSVBFTConfig::default()
     };
 
-    // Create node configuration
-    let config = Config::default();
-
-    // Create shared state
-    let state = Arc::new(RwLock::new(State::new(&config)?));
-
-    // Create channels for consensus messages and blocks
-    let (message_sender, message_receiver) = mpsc::channel(100);
-    let (block_sender, block_receiver) = mpsc::channel(100);
-    let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
-
-    // Generate quantum-resistant keys for our node
-    let (public_key, _private_key) = generate_quantum_resistant_keypair(None)?;
-    let node_id = hex::encode(&public_key[0..8]); // Use first 8 bytes as node ID
-
+    // Generate a simple node ID for demo
+    let node_id = "node_001".to_string();
     println!("Node ID: {}", node_id);
 
     // Create consensus instance
-    let mut consensus = QuantumSVBFTConsensus::new(
-        config,
-        state.clone(),
-        message_sender.clone(),
-        message_receiver,
-        block_receiver,
-        shutdown_receiver,
-        node_id.clone(),
-        Some(qsvbft_config),
-    )
-    .await?;
+    let mut consensus = QuantumSVBFTConsensus::new(qsvbft_config, node_id);
 
-    // Start consensus
-    let consensus_handle = consensus.start().await?;
-    println!("Consensus started");
-
-    // Show initial state
-    let view = consensus.get_current_view().await;
-    let leader = consensus.get_current_leader().await;
-    let phase = consensus.get_current_phase().await;
-
-    println!("Initial view: {}", view);
-    println!("Initial leader: {:?}", leader);
-    println!("Initial phase: {:?}", phase);
-
-    // Wait a moment
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    // Create a sample block and propose it if we're the leader
-    let is_leader = consensus
-        .get_current_leader()
-        .await
-        .map(|l| l == node_id)
-        .unwrap_or(false);
-
-    if is_leader {
-        println!("We are the leader, proposing a block");
-
-        // Create sample transactions
-        let txs = vec![
-            Transaction::new_test_transaction(1),
-            Transaction::new_test_transaction(2),
-        ];
-
-        // Create a block
-        let block = Block {
-            header: BlockHeader::new(
-                Hash::default(), // previous_hash
-                Hash::default(), // merkle_root
-                1,               // height
-                1000,            // difficulty
-                node_id.clone(), // proposer_id
-                0,               // shard_id
-            ),
-            body: BlockBody { transactions: txs },
-            consensus: ConsensusInfo {
-                status: ConsensusStatus::Proposed,
-                validator_signatures: Vec::new(),
-                status_timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                sv_data: SocialVerificationData {
-                    sv_score: 0.0,
-                    compute_score: 0.0,
-                    network_score: 0.0,
-                    storage_score: 0.0,
-                    engagement_score: 0.0,
-                    ai_security_score: 0.0,
-                    reputation_history: Vec::new(),
-                },
-                shard_id: 0,
-                cross_shard_refs: Vec::new(),
-            },
-            is_genesis: false,
-        };
-
-        // Send block to consensus
-        block_sender.send(block).await?;
-
-        println!("Block proposed");
-    } else {
-        println!("We are not the leader, can't propose a block");
+    // Create mock transactions
+    let mut transactions: Vec<Transaction> = Vec::new();
+    for i in 0..5 {
+        let tx = Transaction::new(
+            [i as u8; 20].to_vec(),
+            [(i + 1) as u8; 20].to_vec(),
+            100 + i as u64,
+            1,
+            vec![],
+            0,
+        )?;
+        transactions.push(tx);
     }
 
-    // Wait for consensus to process the block
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    println!("Created {} sample transactions", transactions.len());
 
-    // Trigger a view change
-    if !is_leader {
-        println!("Initiating view change from non-leader node");
+    // Demonstrate block proposal
+    println!("\n--- Block Proposal Phase ---");
+    let proposed_block = consensus.propose_block(transactions).await?;
+    println!("Proposed block height: {}", proposed_block.header.height);
+    println!(
+        "Proposed block timestamp: {}",
+        proposed_block.header.timestamp
+    );
 
-        // Create view change request message
-        let view_change_msg =
-            blockchain_node::consensus::quantum_svbft::ConsensusMessage::ViewChangeRequest {
-                current_view: view,
-                new_view: view + 1,
-                node_id: node_id.clone(),
-                signature: vec![1, 2, 3, 4], // Simplified for example
-                reason: blockchain_node::consensus::quantum_svbft::ViewChangeReason::LeaderTimeout,
-            };
+    // Demonstrate block validation
+    println!("\n--- Block Validation Phase ---");
+    let is_valid = consensus.validate_block(&proposed_block).await?;
+    println!("Block valid: {}", is_valid);
 
-        // Send view change request
-        message_sender.send(view_change_msg).await?;
+    // Demonstrate view changes
+    println!("\n--- View Change Simulation ---");
+    println!("Current view: {}", consensus.get_current_view());
 
-        println!("View change requested");
+    for i in 1..=3 {
+        println!("Simulating view change {}...", i);
+        consensus.process_view_change().await?;
     }
+    println!("Final view: {}", consensus.get_current_view());
 
-    // Wait for view change to complete
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    // Demonstrate quantum resistance features
+    println!("\n--- Quantum Resistance Features ---");
+    println!(
+        "Quantum resistance level: {}",
+        consensus.config.quantum_resistance_level
+    );
+    println!(
+        "Parallel validation enabled: {}",
+        consensus.config.parallel_validation
+    );
 
-    // Show final state
-    let new_view = consensus.get_current_view().await;
-    let new_leader = consensus.get_current_leader().await;
-    let new_phase = consensus.get_current_phase().await;
+    // Simulate quantum-resistant operations
+    let start_time = std::time::Instant::now();
+    for i in 0..consensus.config.quantum_resistance_level {
+        println!(
+            "Executing quantum-resistant operation {} of {}",
+            i + 1,
+            consensus.config.quantum_resistance_level
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    let elapsed = start_time.elapsed();
+    println!("Simulated quantum-resistant operations took: {:?}", elapsed);
 
-    println!("Final view: {}", new_view);
-    println!("Final leader: {:?}", new_leader);
-    println!("Final phase: {:?}", new_phase);
-
-    // Shutdown consensus
-    println!("Shutting down consensus");
-    shutdown_sender.send(())?;
-
-    // Wait for consensus to shutdown
-    consensus_handle.await?;
-
-    println!("Quantum-Resistant SVBFT Example completed");
+    println!("\nQuantum SVBFT Example finished successfully!");
 
     Ok(())
 }

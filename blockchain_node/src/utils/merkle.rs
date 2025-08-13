@@ -1,28 +1,26 @@
-use sha2::{Digest, Sha256};
+use blake3;
 
 pub fn verify_merkle_proof(data: &[u8], proof: &[u8]) -> bool {
     if proof.is_empty() {
         return false;
     }
 
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let mut current = hasher.finalize().to_vec();
+    let mut current = blake3::hash(data).as_bytes().to_vec();
 
     // Process each proof element
     for i in (0..proof.len()).step_by(32) {
         let end = std::cmp::min(i + 32, proof.len());
         let proof_element = &proof[i..end];
 
-        let mut hasher = Sha256::new();
         if current <= proof_element.to_vec() {
-            hasher.update(&current);
-            hasher.update(proof_element);
+            let mut combined = current.clone();
+            combined.extend_from_slice(proof_element);
+            current = blake3::hash(&combined).as_bytes().to_vec();
         } else {
-            hasher.update(proof_element);
-            hasher.update(&current);
+            let mut combined = proof_element.to_vec();
+            combined.extend_from_slice(&current);
+            current = blake3::hash(&combined).as_bytes().to_vec();
         }
-        current = hasher.finalize().to_vec();
     }
 
     !current.is_empty()
@@ -40,9 +38,7 @@ mod tests {
         assert!(!verify_merkle_proof(&data, &empty_proof));
 
         // Test valid proof
-        let mut hasher = Sha256::new();
-        hasher.update(&data);
-        let _hash = hasher.finalize();
+        let _hash = blake3::hash(&data);
         let proof = vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
             25, 26, 27, 28, 29, 30, 31, 32,

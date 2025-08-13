@@ -40,16 +40,17 @@ impl From<Block> for BlockResponse {
 
 impl From<&Block> for BlockResponse {
     fn from(block: &Block) -> Self {
+        let block_hash = block.hash().unwrap_or_default();
         Self {
-            hash: hex::encode(block.header.hash.as_bytes()),
+            hash: block_hash.to_hex(),
             height: block.header.height,
-            prev_hash: hex::encode(block.header.previous_hash.as_bytes()),
+            prev_hash: hex::encode(block.header.previous_hash.to_bytes()),
             timestamp: block.header.timestamp,
-            tx_count: block.body.transactions.len(),
+            tx_count: block.transactions.len(),
             merkle_root: hex::encode(block.header.merkle_root.as_bytes()),
-            proposer: block.header.proposer_id.clone(),
+            proposer: hex::encode(block.header.producer.as_bytes()),
             // Approximate size based on transactions
-            size: block.body.transactions.len() * 256 + 1024, // Base header size + approx tx size
+            size: block.transactions.len() * 256 + 1024, // Base header size + approx tx size
         }
     }
 }

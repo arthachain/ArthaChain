@@ -4,7 +4,6 @@
 //! efficient data persistence and retrieval using the Storage trait.
 
 use anyhow::Result;
-use blake3;
 use blockchain_node::storage::{MemMapOptions, MemMapStorage, Storage};
 use blockchain_node::types::Hash;
 use std::time::Instant;
@@ -152,7 +151,7 @@ async fn test_bulk_operations(storage: &MemMapStorage) -> Result<()> {
     let mut retrieved_count = 0;
 
     for hash in &hashes {
-        if let Some(_) = storage.retrieve(hash).await? {
+        if (storage.retrieve(hash).await?).is_some() {
             retrieved_count += 1;
         }
     }
@@ -288,7 +287,7 @@ async fn test_performance(storage: &MemMapStorage) -> Result<()> {
 /// Create a hash from data (utility function for testing)
 fn _create_hash(data: &[u8]) -> Hash {
     let hash_bytes = blake3::hash(data);
-    Hash::from(hash_bytes.as_bytes().to_vec())
+    Hash::from_data(hash_bytes.as_bytes())
 }
 
 #[cfg(test)]
@@ -318,5 +317,16 @@ mod tests {
         storage.delete(&hash).await.unwrap();
         let exists_after_delete = storage.exists(&hash).await.unwrap();
         assert!(!exists_after_delete);
+    }
+
+    // Test Hash conversion
+    #[test]
+    fn test_hash_conversion() {
+        let test_bytes = b"hello world";
+        let blake3_hash = blake3::hash(test_bytes);
+        let hash_bytes = blake3_hash.as_bytes();
+        let hash = Hash::from_data(hash_bytes);
+
+        assert_eq!(hash.as_ref(), hash_bytes);
     }
 }

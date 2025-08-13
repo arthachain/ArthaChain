@@ -1,6 +1,5 @@
 use crate::evm::types::{EvmAddress, EvmError};
 use crate::storage::Storage;
-use crate::types::Hash;
 use ethereum_types::{H256, U256};
 use log::debug;
 
@@ -56,10 +55,11 @@ impl EvmBackend {
         }
 
         // Generate storage key for account
-        let key = format!("evm:account:{}", hex::encode(address.as_bytes()));
-        let hash = Hash::from_slice(key.as_bytes());
+        let key = format!("evm:account:{}", hex::encode(address.as_ref()));
 
-        match self.storage.retrieve_sync(&hash)? {
+        let fetched = futures::executor::block_on(self.storage.get(key.as_bytes()))
+            .map_err(|e| EvmError::StorageError(format!("Failed to get account: {}", e)))?;
+        match fetched {
             Some(data) => {
                 let account: EvmAccount = bincode::deserialize(&data).map_err(|e| {
                     EvmError::StorageError(format!("Failed to deserialize account: {}", e))
@@ -83,11 +83,12 @@ impl EvmBackend {
         address: EvmAddress,
         account: EvmAccount,
     ) -> Result<(), EvmError> {
-        let key = format!("evm:account:{}", hex::encode(address.as_bytes()));
+        let key = format!("evm:account:{}", hex::encode(address.as_ref()));
         let data = bincode::serialize(&account)
             .map_err(|e| EvmError::StorageError(format!("Failed to serialize account: {}", e)))?;
 
-        let hash = self.storage.store_sync(&data)?;
+        futures::executor::block_on(self.storage.put(key.as_bytes(), &data))
+            .map_err(|e| EvmError::StorageError(format!("Failed to store account: {}", e)))?;
         self.account_cache.insert(address, account);
         Ok(())
     }
@@ -101,15 +102,25 @@ impl EvmBackend {
 
         let storage_key = format!(
             "evm:storage:{}:{}",
-            hex::encode(address.as_bytes()),
-            hex::encode(key.as_bytes())
+            hex::encode(address.as_ref()),
+            hex::encode(key.as_ref())
         );
-        let hash = Hash::from_slice(storage_key.as_bytes());
-
-        match self.storage.retrieve_sync(&hash)? {
+        let fetched = futures::executor::block_on(self.storage.get(storage_key.as_bytes()))
+            .map_err(|e| EvmError::StorageError(format!("Failed to get storage: {}", e)))?;
+        match fetched {
             Some(data) => {
                 let mut value = H256::zero();
-                value.as_bytes_mut().copy_from_slice(&data);
+                if data.len() >= 32 {
+                    value
+                        .as_bytes_mut()
+                        .copy_from_slice(&data[data.len() - 32..]);
+                } else {
+                    // Left-pad with zeros if shorter than 32 bytes
+                    let mut padded = vec![0u8; 32];
+                    let start = 32 - data.len();
+                    padded[start..].copy_from_slice(&data);
+                    value.as_bytes_mut().copy_from_slice(&padded);
+                }
                 Ok(value)
             }
             None => Ok(H256::zero()),
@@ -125,10 +136,11 @@ impl EvmBackend {
     ) -> Result<(), EvmError> {
         let storage_key = format!(
             "evm:storage:{}:{}",
-            hex::encode(address.as_bytes()),
-            hex::encode(key.as_bytes())
+            hex::encode(address.as_ref()),
+            hex::encode(key.as_ref())
         );
-        let hash = self.storage.store_sync(value.as_bytes())?;
+        futures::executor::block_on(self.storage.put(storage_key.as_bytes(), value.as_ref()))
+            .map_err(|e| EvmError::StorageError(format!("Failed to set storage: {}", e)))?;
         self.storage_cache.insert((*address, key), value);
         Ok(())
     }
@@ -140,10 +152,10 @@ impl EvmBackend {
             return Ok(code.clone());
         }
 
-        let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
-        let hash = Hash::from_slice(code_key.as_bytes());
-
-        match self.storage.retrieve_sync(&hash)? {
+        let code_key = format!("evm:code:{}", hex::encode(address.as_ref()));
+        let fetched = futures::executor::block_on(self.storage.get(code_key.as_bytes()))
+            .map_err(|e| EvmError::StorageError(format!("Failed to get code: {}", e)))?;
+        match fetched {
             Some(code) => Ok(code),
             None => Ok(Vec::new()),
         }
@@ -151,8 +163,9 @@ impl EvmBackend {
 
     /// Set contract code
     pub fn set_code(&mut self, address: &EvmAddress, code: &[u8]) -> Result<(), EvmError> {
-        let code_key = format!("evm:code:{}", hex::encode(address.as_bytes()));
-        let hash = self.storage.store_sync(code)?;
+        let code_key = format!("evm:code:{}", hex::encode(address.as_ref()));
+        futures::executor::block_on(self.storage.put(code_key.as_bytes(), code))
+            .map_err(|e| EvmError::StorageError(format!("Failed to set code: {}", e)))?;
         self.code_cache.insert(*address, code.to_vec());
         Ok(())
     }

@@ -57,13 +57,16 @@ async fn main() -> Result<()> {
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     // Get transaction status
-    if let Some((phase, complete)) = manager.get_transaction_status(&tx_id) {
-        println!(
-            "Transaction {} status: {:?}, Complete: {}",
-            tx_id, phase, complete
-        );
-    } else {
-        println!("Transaction {} not found", tx_id);
+    match manager.get_transaction_status(&tx_id) {
+        Ok((phase, status)) => {
+            println!(
+                "Transaction {} status: {:?}, Status: {:?}",
+                tx_id, phase, status
+            );
+        }
+        Err(e) => {
+            println!("Failed to get transaction status: {}", e);
+        }
     }
 
     // In a real application, we would wait for the transaction to complete

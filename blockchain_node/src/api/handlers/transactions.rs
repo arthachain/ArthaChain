@@ -49,14 +49,14 @@ impl TransactionResponse {
         confirmations: u64,
     ) -> Self {
         Self {
-            hash: tx.hash().to_string(),
+            hash: hex::encode(tx.hash().as_ref()),
             sender: tx.sender.clone(),
             recipient: Some(tx.recipient.clone()),
             amount: tx.amount,
             fee: tx.gas_price * tx.gas_limit, // Use gas_price * gas_limit as fee
             nonce: tx.nonce,
             timestamp: tx.timestamp,
-            block_hash: block_hash.map(|h| hex::encode(h.as_bytes())),
+            block_hash: block_hash.map(|h| hex::encode(h.as_ref())),
             block_height,
             confirmations,
             tx_type: match tx.tx_type {
@@ -135,10 +135,7 @@ pub async fn get_transaction(
     };
 
     // Create a Hash object from bytes
-    let hash = Hash::from_bytes(&hash_bytes).map_err(|_| ApiError {
-        status: 400,
-        message: "Invalid hash length".to_string(),
-    })?;
+    let hash = Hash::from_slice(&hash_bytes);
 
     let state = state.read().await;
 
@@ -157,7 +154,7 @@ pub async fn get_transaction(
         let block_hash_ref: Option<crate::utils::crypto::Hash> = block_hash
             .as_ref()
             .and_then(|h| crate::types::Hash::from_hex(h.as_str()).ok())
-            .and_then(|h| crate::utils::crypto::Hash::from_bytes(&h.0).ok());
+            .map(|h| crate::utils::crypto::Hash::from_slice(&h.0));
         let response = TransactionResponse::from_tx(
             &ledger_tx,
             block_hash_ref.as_ref(),
@@ -250,7 +247,7 @@ pub async fn submit_transaction(
         })?;
 
     Ok(Json(SubmitTransactionResponse {
-        hash: tx.hash().to_string(),
+        hash: hex::encode(tx.hash().as_ref()),
         success: true,
         message: "Transaction submitted successfully".to_string(),
     }))

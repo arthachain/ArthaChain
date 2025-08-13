@@ -2,14 +2,120 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
+// Import wasmparser types
+// Note: Using full paths to avoid import conflicts
+use crate::wasm::runtime::crate::wasm::runtime::wasmparser::ValType;
 
 use crate::storage::Storage;
+
+
+
+/// Trait for contract standard validation
+pub trait ContractStandard {
+    /// Get the standard type
+    fn standard_type(&self) -> StandardType;
+    
+    /// Validate contract implementation against standard
+    fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError>;
+    
+    /// Get required function names for this standard
+    fn required_functions(&self) -> Vec<String>;
+    
+    /// Get required event names for this standard
+    fn required_events(&self) -> Vec<String>;
+    
+    /// Validate function signatures (optional, can be overridden)
+    fn validate_function_signatures(&self, bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Validate ERC20-specific signatures (optional)
+    fn validate_erc20_signatures(
+        &self,
+        function_types: &[crate::wasm::runtime::wasmparser::FuncType],
+        functions: &[u32],
+        exports: &[crate::wasm::runtime::wasmparser::Export],
+    ) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Get ERC20 function signatures (optional)
+    fn get_erc20_function_signatures(&self) -> Vec<FunctionSignature> {
+        // Default implementation
+        vec![]
+    }
+    
+    /// Check if signature matches expected signature (optional)
+    fn signature_matches(
+        &self,
+        actual: &crate::wasm::runtime::wasmparser::FuncType,
+        expected: &FunctionSignature,
+    ) -> bool {
+        // Default implementation
+        actual.params() == expected.params.as_ref() && actual.results() == expected.results.as_ref()
+    }
+    
+    /// Validate event patterns (optional)
+    fn validate_event_patterns(&self, bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Run compliance tests (optional)
+    fn run_compliance_tests(&self, bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Test supply balance consistency (optional)
+    fn test_supply_balance_consistency(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Test transfer behavior (optional)
+    fn test_transfer_behavior(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Test approval mechanism (optional)
+    fn test_approval_mechanism(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Test edge cases (optional)
+    fn test_edge_cases(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Validate ERC721-specific signatures (optional)
+    fn validate_erc721_signatures(
+        &self,
+        function_types: &[crate::wasm::runtime::wasmparser::FuncType],
+        functions: &[u32],
+        exports: &[crate::wasm::runtime::wasmparser::Export],
+    ) -> Result<(), StandardError> {
+        // Default implementation
+        Ok(())
+    }
+    
+    /// Get ERC721 function signatures (optional)
+    fn get_erc721_function_signatures(&self) -> Vec<FunctionSignature> {
+        // Default implementation
+        vec![]
+    }
+}
 
 /// Function signature for validation
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
-    pub params: Vec<wasmparser::ValType>,
-    pub results: Vec<wasmparser::ValType>,
+    pub params: Vec<crate::wasm::runtime::wasmparser::ValType>,
+    pub results: Vec<crate::wasm::runtime::wasmparser::ValType>,
 }
 
 /// Contract standard error
@@ -67,20 +173,7 @@ pub enum SecurityStandard {
     ReentrancyGuard,
 }
 
-/// Contract standard interface
-pub trait ContractStandard: Send + Sync {
-    /// Get standard type
-    fn standard_type(&self) -> StandardType;
-
-    /// Validate contract implementation
-    fn validate_implementation(&self, bytecode: &[u8]) -> Result<(), StandardError>;
-
-    /// Get required functions
-    fn required_functions(&self) -> Vec<String>;
-
-    /// Get required events
-    fn required_events(&self) -> Vec<String>;
-}
+/// Functions for contract standard validation
 
 /// ERC20 token standard implementation
 pub struct ERC20Standard {
@@ -104,7 +197,7 @@ impl ContractStandard for ERC20Standard {
         log::debug!("Validating ERC20 implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -118,10 +211,10 @@ impl ContractStandard for ERC20Standard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -175,7 +268,7 @@ impl ContractStandard for ERC20Standard {
     fn validate_function_signatures(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         log::debug!("Validating ERC20 function signatures");
 
-        let parser = wasmparser::Parser::new(0);
+        let parser = crate::wasm::runtime::wasmparser::Parser::new(0);
         let module = parser.parse_all(bytecode);
 
         let mut function_types = Vec::new();
@@ -185,24 +278,24 @@ impl ContractStandard for ERC20Standard {
         // Collect module information
         for payload in module {
             match payload {
-                Ok(wasmparser::Payload::TypeSection(types)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::TypeSection(types)) => {
                     for ty in types {
-                        if let Ok(wasmparser::Type::Func(func_type)) = ty {
+                        if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Type::Func(func_type)) = ty {
                             function_types.push(func_type);
                         }
                     }
                 }
-                Ok(wasmparser::Payload::FunctionSection(funcs)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::FunctionSection(funcs)) => {
                     for func in funcs {
                         if let Ok(type_index) = func {
                             functions.push(type_index);
                         }
                     }
                 }
-                Ok(wasmparser::Payload::ExportSection(export_section)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(export_section)) => {
                     for export in export_section {
                         if let Ok(export) = export {
-                            if export.kind == wasmparser::ExternalKind::Function {
+                            if export.kind == crate::wasm::runtime::wasmparser::ExternalKind::Function {
                                 exports.push((export.name.to_string(), export.index));
                             }
                         }
@@ -221,7 +314,7 @@ impl ContractStandard for ERC20Standard {
     /// Validate specific ERC20 function signatures
     fn validate_erc20_signatures(
         &self,
-        function_types: &[wasmparser::FuncType],
+        function_types: &[crate::wasm::runtime::wasmparser::FuncType],
         functions: &[u32],
         exports: &[(String, u32)],
     ) -> Result<(), StandardError> {
@@ -263,46 +356,46 @@ impl ContractStandard for ERC20Standard {
                 "totalSupply".to_string(),
                 FunctionSignature {
                     params: vec![],
-                    results: vec![wasmparser::ValType::I64], // uint256 as i64
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I64], // uint256 as i64
                 },
             ),
             (
                 "balanceOf".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32],  // address pointer
-                    results: vec![wasmparser::ValType::I64], // uint256 as i64
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32],  // address pointer
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I64], // uint256 as i64
                 },
             ),
             (
                 "transfer".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I64], // address, amount
-                    results: vec![wasmparser::ValType::I32],                          // bool as i32
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I64], // address, amount
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32],                          // bool as i32
                 },
             ),
             (
                 "transferFrom".to_string(),
                 FunctionSignature {
                     params: vec![
-                        wasmparser::ValType::I32, // from
-                        wasmparser::ValType::I32, // to
-                        wasmparser::ValType::I64, // amount
+                        crate::wasm::runtime::wasmparser::ValType::I32, // from
+                        crate::wasm::runtime::wasmparser::ValType::I32, // to
+                        crate::wasm::runtime::wasmparser::ValType::I64, // amount
                     ],
-                    results: vec![wasmparser::ValType::I32], // bool as i32
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32], // bool as i32
                 },
             ),
             (
                 "approve".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I64], // spender, amount
-                    results: vec![wasmparser::ValType::I32],                          // bool as i32
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I64], // spender, amount
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32],                          // bool as i32
                 },
             ),
             (
                 "allowance".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I32], // owner, spender
-                    results: vec![wasmparser::ValType::I64], // uint256 as i64
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I32], // owner, spender
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I64], // uint256 as i64
                 },
             ),
         ]
@@ -311,18 +404,17 @@ impl ContractStandard for ERC20Standard {
     /// Check if function signature matches expected signature
     fn signature_matches(
         &self,
-        actual: &wasmparser::FuncType,
+        actual: &crate::wasm::runtime::wasmparser::FuncType,
         expected: &FunctionSignature,
     ) -> bool {
-        actual.params() == expected.params.as_slice()
-            && actual.results() == expected.results.as_slice()
+        actual.params() == expected.params.as_ref() && actual.results() == expected.results.as_ref()
     }
 
     /// Validate event emission patterns
     fn validate_event_patterns(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         log::debug!("Validating ERC20 event emission patterns");
 
-        let parser = wasmparser::Parser::new(0);
+        let parser = crate::wasm::runtime::wasmparser::Parser::new(0);
         let module = parser.parse_all(bytecode);
 
         // Look for event emission calls in the code
@@ -330,13 +422,13 @@ impl ContractStandard for ERC20Standard {
         let mut has_approval_event = false;
 
         for payload in module {
-            if let Ok(wasmparser::Payload::CodeSection(code)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::CodeSection(code)) = payload {
                 for func_body in code {
                     if let Ok(body) = func_body {
                         let operators = body.get_operators_reader();
                         if let Ok(ops) = operators {
                             for op in ops {
-                                if let Ok(wasmparser::Operator::Call { function_index }) = op {
+                                if let Ok(crate::wasm::runtime::wasmparser::Operator::Call { function_index }) = op {
                                     // In a real implementation, we would check if this call
                                     // corresponds to event emission functions
                                     // For now, we'll assume events are properly implemented
@@ -465,7 +557,7 @@ impl ContractStandard for ERC721Standard {
         log::debug!("Validating ERC721 implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -479,10 +571,10 @@ impl ContractStandard for ERC721Standard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -543,7 +635,7 @@ impl ContractStandard for ERC721Standard {
     fn validate_function_signatures(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         log::debug!("Validating ERC721 function signatures");
 
-        let parser = wasmparser::Parser::new(0);
+        let parser = crate::wasm::runtime::wasmparser::Parser::new(0);
         let module = parser.parse_all(bytecode);
 
         let mut function_types = Vec::new();
@@ -553,24 +645,24 @@ impl ContractStandard for ERC721Standard {
         // Collect module information
         for payload in module {
             match payload {
-                Ok(wasmparser::Payload::TypeSection(types)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::TypeSection(types)) => {
                     for ty in types {
-                        if let Ok(wasmparser::Type::Func(func_type)) = ty {
+                        if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Type::Func(func_type)) = ty {
                             function_types.push(func_type);
                         }
                     }
                 }
-                Ok(wasmparser::Payload::FunctionSection(funcs)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::FunctionSection(funcs)) => {
                     for func in funcs {
                         if let Ok(type_index) = func {
                             functions.push(type_index);
                         }
                     }
                 }
-                Ok(wasmparser::Payload::ExportSection(export_section)) => {
+                Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(export_section)) => {
                     for export in export_section {
                         if let Ok(export) = export {
-                            if export.kind == wasmparser::ExternalKind::Function {
+                            if export.kind == crate::wasm::runtime::wasmparser::ExternalKind::Function {
                                 exports.push((export.name.to_string(), export.index));
                             }
                         }
@@ -589,7 +681,7 @@ impl ContractStandard for ERC721Standard {
     /// Validate specific ERC721 function signatures
     fn validate_erc721_signatures(
         &self,
-        function_types: &[wasmparser::FuncType],
+        function_types: &[crate::wasm::runtime::wasmparser::FuncType],
         functions: &[u32],
         exports: &[(String, u32)],
     ) -> Result<(), StandardError> {
@@ -630,24 +722,24 @@ impl ContractStandard for ERC721Standard {
             (
                 "balanceOf".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32],  // address pointer
-                    results: vec![wasmparser::ValType::I64], // uint256 as i64
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32],  // address pointer
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I64], // uint256 as i64
                 },
             ),
             (
                 "ownerOf".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32],  // token ID
-                    results: vec![wasmparser::ValType::I32], // address pointer
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32],  // token ID
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32], // address pointer
                 },
             ),
             (
                 "safeTransferFrom".to_string(),
                 FunctionSignature {
                     params: vec![
-                        wasmparser::ValType::I32, // from
-                        wasmparser::ValType::I32, // to
-                        wasmparser::ValType::I32, // token ID
+                        crate::wasm::runtime::wasmparser::ValType::I32, // from
+                        crate::wasm::runtime::wasmparser::ValType::I32, // to
+                        crate::wasm::runtime::wasmparser::ValType::I32, // token ID
                     ],
                     results: vec![],
                 },
@@ -656,9 +748,9 @@ impl ContractStandard for ERC721Standard {
                 "transferFrom".to_string(),
                 FunctionSignature {
                     params: vec![
-                        wasmparser::ValType::I32, // from
-                        wasmparser::ValType::I32, // to
-                        wasmparser::ValType::I32, // token ID
+                        crate::wasm::runtime::wasmparser::ValType::I32, // from
+                        crate::wasm::runtime::wasmparser::ValType::I32, // to
+                        crate::wasm::runtime::wasmparser::ValType::I32, // token ID
                     ],
                     results: vec![],
                 },
@@ -666,29 +758,29 @@ impl ContractStandard for ERC721Standard {
             (
                 "approve".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I32], // token ID, spender
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I32], // token ID, spender
                     results: vec![],
                 },
             ),
             (
                 "getApproved".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32],  // token ID
-                    results: vec![wasmparser::ValType::I32], // address pointer
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32],  // token ID
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32], // address pointer
                 },
             ),
             (
                 "setApprovalForAll".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I32], // operator, approved
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I32], // operator, approved
                     results: vec![],
                 },
             ),
             (
                 "isApprovedForAll".to_string(),
                 FunctionSignature {
-                    params: vec![wasmparser::ValType::I32, wasmparser::ValType::I32], // owner, operator
-                    results: vec![wasmparser::ValType::I32],                          // bool as i32
+                    params: vec![crate::wasm::runtime::wasmparser::ValType::I32, crate::wasm::runtime::wasmparser::ValType::I32], // owner, operator
+                    results: vec![crate::wasm::runtime::wasmparser::ValType::I32],                          // bool as i32
                 },
             ),
         ]
@@ -697,18 +789,17 @@ impl ContractStandard for ERC721Standard {
     /// Check if function signature matches expected signature
     fn signature_matches(
         &self,
-        actual: &wasmparser::FuncType,
+        actual: &crate::wasm::runtime::wasmparser::FuncType,
         expected: &FunctionSignature,
     ) -> bool {
-        actual.params() == expected.params.as_slice()
-            && actual.results() == expected.results.as_slice()
+        actual.params() == expected.params.as_ref() && actual.results() == expected.results.as_ref()
     }
 
     /// Validate event emission patterns
     fn validate_event_patterns(&self, bytecode: &[u8]) -> Result<(), StandardError> {
         log::debug!("Validating ERC721 event emission patterns");
 
-        let parser = wasmparser::Parser::new(0);
+        let parser = crate::wasm::runtime::wasmparser::Parser::new(0);
         let module = parser.parse_all(bytecode);
 
         // Look for event emission calls in the code
@@ -716,13 +807,13 @@ impl ContractStandard for ERC721Standard {
         let mut has_approval_event = false;
 
         for payload in module {
-            if let Ok(wasmparser::Payload::CodeSection(code)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::CodeSection(code)) = payload {
                 for func_body in code {
                     if let Ok(body) = func_body {
                         let operators = body.get_operators_reader();
                         if let Ok(ops) = operators {
                             for op in ops {
-                                if let Ok(wasmparser::Operator::Call { function_index }) = op {
+                                if let Ok(crate::wasm::runtime::wasmparser::Operator::Call { function_index }) = op {
                                     // In a real implementation, we would check if this call
                                     // corresponds to event emission functions
                                     // For now, we'll assume events are properly implemented
@@ -756,14 +847,8 @@ impl ContractStandard for ERC721Standard {
         // Test 1: Basic supply and balance consistency
         self.test_supply_balance_consistency(bytecode)?;
 
-        // Test 2: Transfer behavior
-        self.test_transfer_behavior(bytecode)?;
-
-        // Test 3: Approval mechanism
-        self.test_approval_mechanism(bytecode)?;
-
-        // Test 4: Edge cases
-        self.test_edge_cases(bytecode)?;
+        // Note: Additional detailed tests are not yet implemented
+        // TODO: Add transfer behavior, approval mechanism, and edge case tests
 
         Ok(())
     }
@@ -783,50 +868,8 @@ impl ContractStandard for ERC721Standard {
         Ok(())
     }
 
-    /// Test transfer behavior
-    fn test_transfer_behavior(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
-        log::debug!("Testing transfer behavior");
-
-        // In a real implementation, this would:
-        // 1. Test successful transfers between accounts
-        // 2. Test transfer failure when insufficient balance
-        // 3. Test transfer to zero address (should fail)
-        // 4. Test transfer events are emitted correctly
-        // 5. Test transfer updates balances correctly
-
-        log::debug!("Transfer behavior test passed (static analysis)");
-        Ok(())
-    }
-
-    /// Test approval mechanism
-    fn test_approval_mechanism(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
-        log::debug!("Testing approval mechanism");
-
-        // In a real implementation, this would:
-        // 1. Test approve() sets allowance correctly
-        // 2. Test transferFrom() respects allowances
-        // 3. Test transferFrom() decreases allowance
-        // 4. Test approval events are emitted
-        // 5. Test edge cases like infinite approval
-
-        log::debug!("Approval mechanism test passed (static analysis)");
-        Ok(())
-    }
-
-    /// Test edge cases
-    fn test_edge_cases(&self, _bytecode: &[u8]) -> Result<(), StandardError> {
-        log::debug!("Testing edge cases");
-
-        // In a real implementation, this would test:
-        // 1. Zero value transfers
-        // 2. Self-transfers
-        // 3. Maximum value handling
-        // 4. Overflow protection
-        // 5. Reentrancy protection
-
-        log::debug!("Edge cases test passed (static analysis)");
-        Ok(())
-    }
+    // TODO: Implement detailed test methods when proper test framework is available
+    // These methods would test transfer behavior, approval mechanism, and edge cases
 }
 
 /// ERC1155 token standard implementation
@@ -851,7 +894,7 @@ impl ContractStandard for ERC1155Standard {
         log::debug!("Validating ERC1155 implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -865,10 +908,10 @@ impl ContractStandard for ERC1155Standard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -938,7 +981,7 @@ impl ContractStandard for DAOStandard {
         log::debug!("Validating DAO implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -952,10 +995,10 @@ impl ContractStandard for DAOStandard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -1023,7 +1066,7 @@ impl ContractStandard for AccessControlStandard {
         log::debug!("Validating AccessControl implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -1037,10 +1080,10 @@ impl ContractStandard for AccessControlStandard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -1108,7 +1151,7 @@ impl ContractStandard for PausableStandard {
         log::debug!("Validating Pausable implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -1122,10 +1165,10 @@ impl ContractStandard for PausableStandard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }
@@ -1187,7 +1230,7 @@ impl ContractStandard for ReentrancyGuardStandard {
         log::debug!("Validating ReentrancyGuard implementation");
 
         // Parse the module
-        let module = match wasmparser::Parser::new(0).parse_all(bytecode) {
+        let module = match crate::wasm::runtime::wasmparser::Parser::new(0).parse_all(bytecode) {
             Ok(module) => module,
             Err(e) => {
                 return Err(StandardError::ValidationFailed(format!(
@@ -1201,10 +1244,10 @@ impl ContractStandard for ReentrancyGuardStandard {
         let mut exported_functions = Vec::new();
 
         for payload in module {
-            if let Ok(wasmparser::Payload::ExportSection(exports)) = payload {
+            if let Ok(crate::wasm::runtime::crate::wasm::runtime::wasmparser::Payload::ExportSection(exports)) = payload {
                 for export in exports {
                     if let Ok(export) = export {
-                        if let wasmparser::ExternalKind::Function = export.kind {
+                        if let crate::wasm::runtime::wasmparser::ExternalKind::Function = export.kind {
                             exported_functions.push(export.name.to_string());
                         }
                     }

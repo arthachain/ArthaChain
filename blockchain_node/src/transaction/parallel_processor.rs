@@ -128,7 +128,7 @@ impl ParallelProcessor {
         let tx_hash = tx.hash();
 
         // Execute transaction
-        let result = tx.clone().execute(block_height).await?;
+        let _result = tx.clone().execute(block_height).await?;
 
         // Update mempool and dependency graph
         let mut mempool = self.mempool.write().await;
@@ -141,7 +141,7 @@ impl ParallelProcessor {
         if let Ok(mut metrics) = self.metrics.try_write() {
             metrics.record_transaction_processed(tx_hash);
         }
-        Ok(result)
+        Ok(tx)
     }
 
     async fn get_ready_transactions(&self) -> anyhow::Result<Vec<Transaction>> {

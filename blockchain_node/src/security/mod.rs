@@ -1,112 +1,177 @@
+// Security module for comprehensive blockchain security
+
+pub mod access_control;
+pub mod advanced_monitoring;
+pub mod encryption;
+
+// Re-export main types for convenience
+pub use access_control::{
+    AccessControlManager, ApiKey, AuthRequest, AuthResult, Operation, Permission, ResourceType,
+    Role, SecurityPolicies, UserSession,
+};
+pub use advanced_monitoring::{
+    AdvancedSecurityMonitor, MonitoringConfig, SecurityIncident, SecurityMetrics, ThreatLevel,
+    ThreatType,
+};
+pub use encryption::{
+    AnonymizationLevel, DataType, DecryptedData, EncryptedData, EncryptionAlgorithm,
+    EncryptionContext, EncryptionManager, EncryptionRequirements, KeyType,
+};
+
+use anyhow::Result;
 use log::info;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::SystemTime;
-use tokio::sync::Mutex;
 
-use crate::ai_engine::security::NodeScore;
-
-/// SecurityManager handles validation and security checks
+/// Central security manager that orchestrates all security components
 pub struct SecurityManager {
-    /// Node scores by node ID
-    node_scores: Arc<Mutex<HashMap<String, NodeScore>>>,
-    /// Security policies
-    security_policies: SecurityPolicies,
-    /// Last update time
-    last_update: SystemTime,
-}
-
-/// Security policies for the node
-pub struct SecurityPolicies {
-    /// Minimum score required for transaction validation
-    min_score_for_validation: f32,
-    /// Minimum score required for consensus participation
-    min_score_for_consensus: f32,
-    /// Minimum score required for block production
-    min_score_for_block_production: f32,
-    /// Ban threshold score
-    ban_threshold: f32,
-}
-
-impl Default for SecurityPolicies {
-    fn default() -> Self {
-        Self {
-            min_score_for_validation: 0.5,
-            min_score_for_consensus: 0.6,
-            min_score_for_block_production: 0.7,
-            ban_threshold: 0.3,
-        }
-    }
+    /// Access control manager
+    pub access_control: Arc<AccessControlManager>,
+    /// Encryption manager
+    pub encryption: Arc<EncryptionManager>,
+    /// Advanced security monitoring
+    pub monitoring: Arc<AdvancedSecurityMonitor>,
+    /// Security initialization status
+    initialized: bool,
 }
 
 impl SecurityManager {
-    /// Create a new security manager
-    pub fn new(node_scores: Arc<Mutex<HashMap<String, NodeScore>>>) -> Self {
+    /// Create new security manager
+    pub fn new() -> Self {
+        let monitoring_config = MonitoringConfig::default();
         Self {
-            node_scores,
-            security_policies: SecurityPolicies::default(),
-            last_update: SystemTime::now(),
+            access_control: Arc::new(AccessControlManager::new()),
+            encryption: Arc::new(EncryptionManager::new()),
+            monitoring: Arc::new(AdvancedSecurityMonitor::new(monitoring_config)),
+            initialized: false,
         }
     }
 
-    /// Check if a node is allowed to participate in validation
-    pub async fn is_allowed_validator(&self, node_id: &str) -> bool {
-        let scores = self.node_scores.lock().await;
-        if let Some(score) = scores.get(node_id) {
-            score.overall_score >= self.security_policies.min_score_for_validation
-        } else {
-            false
-        }
-    }
-
-    /// Check if a node is allowed to participate in consensus
-    pub async fn is_allowed_consensus_participant(&self, node_id: &str) -> bool {
-        let scores = self.node_scores.lock().await;
-        if let Some(score) = scores.get(node_id) {
-            score.overall_score >= self.security_policies.min_score_for_consensus
-        } else {
-            false
-        }
-    }
-
-    /// Check if a node is allowed to produce blocks
-    pub async fn is_allowed_block_producer(&self, node_id: &str) -> bool {
-        let scores = self.node_scores.lock().await;
-        if let Some(score) = scores.get(node_id) {
-            score.overall_score >= self.security_policies.min_score_for_block_production
-        } else {
-            false
-        }
-    }
-
-    /// Get security status for all nodes
-    pub async fn get_security_status(&self) -> HashMap<String, String> {
-        let scores = self.node_scores.lock().await;
-        let mut status = HashMap::new();
-
-        for (node_id, score) in scores.iter() {
-            let status_str = if score.overall_score < self.security_policies.ban_threshold {
-                "banned"
-            } else if score.overall_score < self.security_policies.min_score_for_validation {
-                "restricted"
-            } else if score.overall_score < self.security_policies.min_score_for_consensus {
-                "validation_only"
-            } else if score.overall_score < self.security_policies.min_score_for_block_production {
-                "consensus_only"
-            } else {
-                "full_access"
-            };
-
-            status.insert(node_id.clone(), status_str.to_string());
+    /// Initialize security manager with master credentials
+    pub async fn initialize(&mut self, master_password: &str) -> Result<()> {
+        if self.initialized {
+            return Ok(());
         }
 
-        status
+        info!("Initializing blockchain security systems...");
+
+        // Initialize encryption
+        self.encryption.initialize(master_password).await?;
+
+        // Initialize access control (already initialized in constructor)
+        // The access control system initializes itself with default roles
+
+        self.initialized = true;
+        info!("Security systems initialized successfully");
+
+        Ok(())
     }
 
-    /// Update security policies
-    pub fn update_policies(&mut self, policies: SecurityPolicies) {
-        self.security_policies = policies;
-        self.last_update = SystemTime::now();
-        info!("Security policies updated");
+    /// Check if security manager is initialized
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    /// Get access control manager
+    pub fn get_access_control(&self) -> Arc<AccessControlManager> {
+        self.access_control.clone()
+    }
+
+    /// Get encryption manager
+    pub fn get_encryption(&self) -> Arc<EncryptionManager> {
+        self.encryption.clone()
+    }
+
+    /// Get security monitoring system
+    pub fn get_monitoring(&self) -> Arc<AdvancedSecurityMonitor> {
+        self.monitoring.clone()
+    }
+
+    /// Perform security maintenance tasks
+    pub async fn perform_maintenance(&self) -> Result<()> {
+        if !self.initialized {
+            return Ok(());
+        }
+
+        // Clean up expired sessions and API keys
+        self.access_control.cleanup_expired().await?;
+
+        // Rotate encryption keys if needed
+        let rotated_count = self.encryption.rotate_keys().await?;
+        if rotated_count > 0 {
+            info!(
+                "Rotated {} encryption keys during maintenance",
+                rotated_count
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Get security health status
+    pub async fn get_health_status(&self) -> SecurityHealthStatus {
+        let monitoring_metrics = self.monitoring.get_metrics();
+        SecurityHealthStatus {
+            initialized: self.initialized,
+            encryption_active: self.initialized,
+            access_control_active: true,
+            monitoring_active: true,
+            pending_key_rotations: 0, // Would be implemented in a real system
+            active_sessions: 0,       // Would be implemented in a real system
+            total_incidents: monitoring_metrics.total_incidents,
+            avg_response_time_ms: monitoring_metrics.avg_response_time_ms,
+        }
+    }
+}
+
+/// Security health status
+#[derive(Debug, Clone)]
+pub struct SecurityHealthStatus {
+    /// Security manager initialized
+    pub initialized: bool,
+    /// Encryption system active
+    pub encryption_active: bool,
+    /// Access control system active
+    pub access_control_active: bool,
+    /// Security monitoring active
+    pub monitoring_active: bool,
+    /// Number of pending key rotations
+    pub pending_key_rotations: usize,
+    /// Number of active sessions
+    pub active_sessions: usize,
+    /// Total security incidents detected
+    pub total_incidents: u64,
+    /// Average response time for threat analysis
+    pub avg_response_time_ms: f64,
+}
+
+impl Default for SecurityManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_security_manager() {
+        let mut security_manager = SecurityManager::new();
+        assert!(!security_manager.is_initialized());
+
+        // Initialize with test password
+        security_manager
+            .initialize("test_password_123")
+            .await
+            .unwrap();
+        assert!(security_manager.is_initialized());
+
+        // Test maintenance
+        security_manager.perform_maintenance().await.unwrap();
+
+        // Test health status
+        let health = security_manager.get_health_status().await;
+        assert!(health.initialized);
+        assert!(health.monitoring_active);
     }
 }

@@ -966,7 +966,7 @@ impl TransactionGraph {
 
         let mut conflicts = Vec::new();
         for (other_hash, other_vertex) in &self.vertices {
-            if other_hash.as_slice() == tx_hash {
+            if other_hash.as_ref() == tx_hash {
                 continue;
             }
 

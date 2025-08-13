@@ -341,22 +341,22 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Storage for MockStorage {
-        async fn store(&self, _data: &[u8]) -> std::result::Result<Hash, StorageError> {
+        async fn store(&self, _data: &[u8]) -> std::result::Result<Hash, anyhow::Error> {
             Ok(Hash::new(vec![0; 32]))
         }
 
         async fn retrieve(
             &self,
             _hash: &Hash,
-        ) -> std::result::Result<Option<Vec<u8>>, StorageError> {
+        ) -> std::result::Result<Option<Vec<u8>>, anyhow::Error> {
             Ok(None)
         }
 
-        async fn exists(&self, _hash: &Hash) -> std::result::Result<bool, StorageError> {
+        async fn exists(&self, _hash: &Hash) -> std::result::Result<bool, anyhow::Error> {
             Ok(false)
         }
 
-        async fn delete(&self, _hash: &Hash) -> std::result::Result<(), StorageError> {
+        async fn delete(&self, _hash: &Hash) -> std::result::Result<(), anyhow::Error> {
             Ok(())
         }
 
@@ -364,12 +364,16 @@ mod tests {
             &self,
             _hash: &Hash,
             _data: &[u8],
-        ) -> std::result::Result<bool, StorageError> {
+        ) -> std::result::Result<bool, anyhow::Error> {
             Ok(true)
         }
 
-        async fn close(&self) -> std::result::Result<(), StorageError> {
+        async fn close(&self) -> Result<(), anyhow::Error> {
             Ok(())
+        }
+
+        async fn get_stats(&self) -> Result<crate::storage::StorageStats, anyhow::Error> {
+            Ok(crate::storage::StorageStats::default())
         }
 
         fn as_any(&self) -> &dyn std::any::Any {

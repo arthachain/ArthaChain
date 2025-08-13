@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  node:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: arthachain-node
+    restart: always
+    environment:
+      - RUST_LOG=info
+    volumes:
+      # Use the global testnet config (bind to 0.0.0.0) that exists in the repo
+      - ../blockchain_node/testnet_config_global.toml:/app/blockchain_node/testnet_config.toml:ro
+      - node_data:/app/testnet_data
+    ports:
+      - "30303:30303"   # P2P (libp2p)
+    expose:
+      - "3000"          # REST API
+      - "8545"          # JSON-RPC
+      - "8546"          # WebSocket
+      - "9090"          # Metrics
+    command: ["/bin/sh","-lc","[ -x /app/real_time_api_server ] && exec /app/real_time_api_server || ([ -x /app/api_server ] && exec /app/api_server) || ([ -x /app/testnet_api_server ] && exec /app/testnet_api_server) || exec /app/arthachain run --config blockchain_node/testnet_config.toml"]
+
+  caddy:
+    image: caddy:2.7
+    container_name: arthachain-caddy
+    restart: always
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - node
+
+volumes:
+  node_data: {}
+  caddy_data: {}
+  caddy_config: {}
+
+

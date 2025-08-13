@@ -633,7 +633,7 @@ impl DagManager {
         let mut hasher = sha2::Sha256::new();
         use sha2::Digest;
 
-        hasher.update(&creator.as_bytes());
+        hasher.update(&creator.as_ref());
         for parent in &parents {
             hasher.update(parent);
         }

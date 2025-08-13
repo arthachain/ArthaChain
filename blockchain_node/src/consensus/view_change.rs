@@ -3,6 +3,7 @@ use crate::types::Address;
 use crate::utils::crypto::verify_signature;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -116,14 +117,15 @@ impl ViewChangeMessage {
     /// Verify message signature
     pub fn verify(&self, validator: &[u8]) -> Result<bool, ViewChangeError> {
         let msg = self.get_message_bytes();
-        verify_signature(validator, &msg, &self.signature)
+        let validator_hex = hex::encode(validator);
+        verify_signature(&validator_hex, &msg, &self.signature)
             .map_err(|e| ViewChangeError::Internal(e.to_string()))
     }
 
     fn get_message_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.view.to_le_bytes());
-        bytes.extend_from_slice(self.new_leader.as_bytes());
+        bytes.extend_from_slice(self.new_leader.as_ref());
         bytes
     }
 }
@@ -141,8 +143,7 @@ pub enum ViewChangeReason {
     ValidatorSetChange,
 }
 
-/// View change manager
-#[allow(dead_code)]
+/// View change manager with enhanced timeout and Byzantine fault tolerance
 pub struct ViewChangeManager {
     /// Current view
     current_view: u64,
@@ -152,19 +153,33 @@ pub struct ViewChangeManager {
     quorum_size: usize,
     state: Arc<RwLock<ViewState>>,
     config: ViewChangeConfig,
-    _message_timeout: StdDuration,
+    /// Message timeout
+    message_timeout: StdDuration,
+    /// Timer handle for view timeouts
+    timeout_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
+    /// Byzantine fault tolerance - maximum faulty nodes
+    max_faulty_nodes: usize,
 }
 
 impl ViewChangeManager {
     /// Create a new view change manager
     pub fn new(quorum_size: usize, config: ViewChangeConfig) -> Self {
+        // Calculate Byzantine fault tolerance: can handle up to (n-1)/3 faulty nodes
+        let max_faulty_nodes = if quorum_size >= 4 {
+            (quorum_size - 1) / 3
+        } else {
+            0
+        };
+
         Self {
             current_view: 0,
             messages: HashMap::new(),
             quorum_size,
             state: Arc::new(RwLock::new(ViewState::default())),
-            config,
-            _message_timeout: StdDuration::from_secs(30), // Default 30 second timeout
+            config: config.clone(),
+            message_timeout: StdDuration::from_secs(30),
+            timeout_handle: Arc::new(RwLock::new(None)),
+            max_faulty_nodes,
         }
     }
 
@@ -176,6 +191,166 @@ impl ViewChangeManager {
             .map(|v| Address::from_bytes(&v).unwrap())
             .collect();
         self.elect_leader().await?;
+        Ok(())
+    }
+
+    /// Start timeout for current view
+    pub async fn start_view_timeout(&self) -> Result<()> {
+        let timeout_duration = self.config.view_timeout;
+        let state = self.state.clone();
+        let current_view = self.current_view;
+
+        // Cancel any existing timeout
+        {
+            let mut handle = self.timeout_handle.write().await;
+            if let Some(h) = handle.take() {
+                h.abort();
+            }
+        }
+
+        // Start new timeout
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(timeout_duration).await;
+
+            // Trigger view change if still in same view
+            let mut view_state = state.write().await;
+            if view_state.view_number == current_view {
+                warn!(
+                    "View {} timeout triggered, initiating view change",
+                    current_view
+                );
+                view_state.change_attempts += 1;
+                // In real implementation, would trigger view change protocol
+            }
+        });
+
+        {
+            let mut timeout_handle = self.timeout_handle.write().await;
+            *timeout_handle = Some(handle);
+        }
+
+        Ok(())
+    }
+
+    /// Validate view change message for Byzantine fault tolerance
+    async fn validate_view_change_message(
+        &self,
+        message: &ViewChangeMessage,
+        validator: &Address,
+    ) -> Result<bool, ViewChangeError> {
+        let state = self.state.read().await;
+
+        // Check if validator is in validator set
+        if !state.validators.contains(validator) {
+            return Err(ViewChangeError::InvalidValidator);
+        }
+
+        // Check if new view is higher than current
+        if message.view <= state.view_number {
+            return Err(ViewChangeError::InvalidView);
+        }
+
+        // Verify message signature
+        let validator_bytes = validator.as_ref();
+        message.verify(&validator_bytes)?;
+
+        Ok(true)
+    }
+
+    /// Process view change messages and check for quorum
+    pub async fn process_view_change_message(
+        &mut self,
+        message: ViewChangeMessage,
+        validator: Address,
+    ) -> Result<bool, ViewChangeError> {
+        // Validate the message
+        self.validate_view_change_message(&message, &validator)
+            .await?;
+
+        let view_number = message.view;
+
+        // Add message to collection
+        self.messages
+            .entry(view_number)
+            .or_insert_with(Vec::new)
+            .push(message);
+
+        // Check if we have sufficient view change messages for this view
+        let view_change_count = self
+            .messages
+            .get(&view_number)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // Need 2f+1 view change messages for Byzantine fault tolerance
+        let required_count = 2 * self.max_faulty_nodes + 1;
+
+        if view_change_count >= required_count {
+            info!(
+                "View change quorum reached for view {}, executing view change",
+                view_number
+            );
+            self.execute_view_change(view_number).await?;
+            return Ok(true);
+        }
+
+        debug!(
+            "View change message processed for view {}, need {} more messages",
+            view_number,
+            required_count - view_change_count
+        );
+
+        Ok(false)
+    }
+
+    /// Execute view change to new view
+    async fn execute_view_change(&mut self, new_view: u64) -> Result<()> {
+        let mut state = self.state.write().await;
+
+        // Update view number
+        let old_view = state.view_number;
+        state.view_number = new_view;
+        state.start_time = Some(SerializableInstant::now());
+        state.change_attempts = 0;
+        state.votes.clear();
+
+        // Cancel current timeout
+        {
+            let mut handle = self.timeout_handle.write().await;
+            if let Some(h) = handle.take() {
+                h.abort();
+            }
+        }
+
+        info!("View change executed: {} -> {}", old_view, new_view);
+
+        // Elect new leader for this view
+        drop(state); // Release lock before calling other methods
+        self.elect_leader_for_view(new_view).await?;
+
+        // Start timeout for new view
+        self.start_view_timeout().await?;
+
+        Ok(())
+    }
+
+    /// Elect leader for specific view using round-robin
+    async fn elect_leader_for_view(&self, view: u64) -> Result<()> {
+        let mut state = self.state.write().await;
+
+        if state.validators.is_empty() {
+            return Err(anyhow!("No validators available"));
+        }
+
+        // Round-robin leader selection based on view number
+        let validators: Vec<_> = state.validators.iter().collect();
+        let leader_index = (view as usize) % validators.len();
+        let new_leader = validators[leader_index].clone();
+
+        state.leader = Some(new_leader.clone());
+
+        info!("New leader elected for view {}: {:?}", view, new_leader);
+
         Ok(())
     }
 
@@ -246,7 +421,8 @@ impl ViewChangeManager {
 
         // Verify signature
         let msg = self.get_vote_message(&new_leader_address, new_view);
-        verify_signature(&validator, &msg, &signature)?;
+        let validator_hex = hex::encode(&validator);
+        verify_signature(&validator_hex, &msg, &signature)?;
 
         let vote = ViewChangeVote {
             view: new_view,
@@ -313,7 +489,7 @@ impl ViewChangeManager {
     fn get_vote_message(&self, new_leader: &Address, new_view: u64) -> Vec<u8> {
         let mut msg = Vec::new();
         msg.extend_from_slice(&new_view.to_le_bytes());
-        msg.extend_from_slice(new_leader.as_bytes());
+        msg.extend_from_slice(new_leader.as_ref());
         msg
     }
 
@@ -327,7 +503,8 @@ impl ViewChangeManager {
         signature: &[u8],
     ) -> Result<bool, ViewChangeError> {
         let msg = self.get_vote_message(new_leader, new_view);
-        verify_signature(validator, &msg, signature)
+        let validator_hex = hex::encode(validator);
+        verify_signature(&validator_hex, &msg, signature)
             .map_err(|e| ViewChangeError::CryptoError(e.to_string()))
     }
 
@@ -483,13 +660,14 @@ impl ViewChangeManager {
     /// Verify a message from a validator
     pub async fn verify_message(&self, msg: &ViewChangeMessage, validator: &[u8]) -> Result<bool> {
         // Verify the message signature
-        verify_signature(validator, &msg.get_message_bytes(), &msg.signature)
+        let validator_hex = hex::encode(validator);
+        verify_signature(&validator_hex, &msg.get_message_bytes(), &msg.signature)
     }
 
     /// Handle a view change
     pub async fn handle_view_change(&mut self, msg: ViewChangeMessage) -> Result<()> {
         // Process the message - clone new_leader before moving msg
-        let leader_bytes = msg.new_leader.clone().as_bytes().to_vec();
+        let leader_bytes = msg.new_leader.as_ref().to_vec();
         self.process_message(&leader_bytes, msg).await?;
 
         Ok(())

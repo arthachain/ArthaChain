@@ -9,7 +9,6 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::ledger::block::Block;
-use crate::ledger::block::BlockExt;
 use crate::ledger::state::State;
 use crate::ledger::transaction::Transaction;
 
@@ -133,7 +132,7 @@ impl EventManager {
         let event = BlockEvent {
             hash: hex::encode(block.hash_bytes()),
             height: block.header.height,
-            tx_count: block.body.transactions.len(),
+            tx_count: block.transactions.len(),
             timestamp: block.header.timestamp,
         };
 
@@ -143,7 +142,7 @@ impl EventManager {
     /// Publish a new transaction event
     pub fn publish_new_transaction(&self, tx: &Transaction) {
         let event = TransactionEvent {
-            hash: hex::encode(tx.hash().as_bytes()),
+            hash: hex::encode(tx.hash().as_ref()),
             sender: tx.sender.clone(),
             recipient: tx.recipient.clone().into(),
             amount: tx.amount,

@@ -4,7 +4,7 @@ ArthaChain is a high-performance, quantum-resistant blockchain platform designed
 
 ## Key Features
 
-- **Ultra-High Performance**: Up to 500,000 TPS through innovative sharding and parallel execution
+- **High Performance**: Up to 400,000 TPS through innovative sharding and parallel execution
 - **Quantum Resistance**: Comprehensive post-quantum cryptography protecting against future quantum threats:
   - Quantum SVBFT consensus mechanism
   - Dilithium signature scheme for transaction verification
@@ -76,24 +76,10 @@ cargo build --release
 
 ### Running a Node
 
-Start a single node with:
+Start a node with:
 
 ```bash
 ./target/release/blockchain_node --config config/local.toml
-```
-
-### Running a Testnet
-
-Launch a local testnet with:
-
-```bash
-./testnet.sh --validators 4
-```
-
-For a simpler single-node testnet:
-
-```bash
-./testnet-single.sh
 ```
 
 ## Documentation
@@ -173,25 +159,26 @@ See [ROADMAP.md](ROADMAP.md) for our development roadmap and upcoming features.
 
 ## Performance
 
-ArthaChain achieves industry-leading performance metrics based on our latest benchmarks:
+ArthaChain achieves high performance metrics based on our latest benchmarks:
 
-- **Small transactions (100 bytes)**: 
-  - Single-threaded: Up to 22,680,876 TPS
-  - Multi-threaded (16 threads): Up to 8,796,217 TPS
-  - Large batches (500,000 tx): Up to 19,507,740 TPS
+- **Single Shard Performance**:
+  - Validation: Up to 15,000 signatures/second
+  - Execution: Up to 18,000 state updates/second
+  - Full Pipeline: 8,500-12,000 TPS (validate → execute → hash)
 
-- **Medium transactions (1000 bytes)**:
-  - Multi-threaded (16 threads): Up to 4,694,896 TPS
-  - Large batches (500,000 tx): Up to 4,336,373 TPS
+- **Multi-Shard Network**:
+  - 96 Shards theoretical capacity: 768,000 TPS
+  - Real-world with overhead: 400,000-500,000 TPS
+  - Cross-shard transactions: 300,000-400,000 TPS
 
-- **Large transactions (10000 bytes)**:
-  - Multi-threaded (32 threads): Up to 608,799 TPS
+- **Transaction Confirmation**:
+  - Block time: 2.3 seconds average
+  - Finality: Immediate (single confirmation)
+  - Cross-shard consensus: Sub-millisecond coordination
 
-- **Data operations**:
+- **Data Operations**:
   - Chunking: 1.2ms for small data, 226ms for large data
   - Reconstruction: 0.75ms for small data, 43.6ms for large data
-
-- **Cross-shard consensus**: 731.5 nanoseconds per operation
 
 ## License
 

@@ -115,7 +115,7 @@ pub fn get_caller(env: &mut WasmEnv, result_ptr: u32) -> Result<u32, WasmError> 
     env.gas_meter.consume(10)?;
 
     // Get caller address as string
-    let caller = env.caller_str.as_bytes();
+    let caller = env.caller_str.as_ref();
 
     // Write to memory
     env.write_memory(result_ptr, caller)?;
@@ -160,7 +160,7 @@ pub fn get_contract_address(env: &mut WasmEnv, result_ptr: u32) -> Result<u32, W
     env.gas_meter.consume(10)?;
 
     // Get contract address as string
-    let address = env.contract_address_str.as_bytes();
+    let address = env.contract_address_str.as_ref();
 
     // Write to memory
     env.write_memory(result_ptr, address)?;
@@ -235,7 +235,7 @@ pub fn crypto_verify(
     let public_key = env.read_memory(public_key_ptr, public_key_len)?;
 
     // Verify signature using the blockchain's crypto utilities
-    match crate::utils::crypto::verify(&public_key, &message, &signature) {
+    match crate::utils::crypto::dilithium_verify(&public_key, &message, &signature) {
         Ok(true) => Ok(1), // Valid signature
         _ => Ok(0),        // Invalid signature
     }
@@ -277,10 +277,12 @@ pub fn log_event(
 }
 
 /// Register all host functions for a WASM module
-pub fn register_host_functions(
-    instance: &mut wasmer::Instance,
-    env: Arc<Mutex<WasmEnv>>,
+/// TODO: Temporarily commented out due to wasmer/wasmtime conflict
+pub fn register_host_functions(// instance: &mut wasmer::Instance,
+    // env: Arc<Mutex<WasmEnv>>,
 ) -> Result<(), WasmError> {
+    // TODO: Temporarily commented out due to wasmer/wasmtime conflict
+    /*
     // Define function signatures
 
     // Storage functions
@@ -379,6 +381,7 @@ pub fn register_host_functions(
             let _ = log_event(env_ref, topic_ptr, topic_len, data_ptr, data_len);
         },
     )?;
+    */
 
     Ok(())
 }

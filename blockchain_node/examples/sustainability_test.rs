@@ -1,32 +1,17 @@
 use anyhow::Result;
 use std::sync::Arc;
 use std::thread;
-/**
- * Sustainability Testing for the Blockchain Node
- *
- * This test runs transactions continuously for a set duration (5-10 minutes) to:
- * 1. Detect performance degradation over time
- * 2. Monitor memory usage for potential leaks
- * 3. Ensure the system maintains consistent throughput
- *
- * It reports periodic statistics and final summary metrics to evaluate
- * the long-term stability of the system.
- */
 use std::time::{Duration, Instant};
 
-use blockchain_node::execution::executor::TransactionExecutor;
-use blockchain_node::execution::parallel::{
-    ConflictStrategy, ParallelConfig, ParallelExecutionManager,
-};
-use blockchain_node::ledger::state::storage::StateStorage;
+use blockchain_node::execution::executor::{ExecutionResult, TransactionExecutor};
 use blockchain_node::ledger::state::State;
-use blockchain_node::transaction::Transaction;
+use blockchain_node::ledger::transaction::{Transaction, TransactionType};
 
 // Test configuration
 struct SustainabilityConfig {
     duration_secs: u64,        // How long to run the test
     batch_size: usize,         // Transactions per batch
-    max_parallel: usize,       // Max parallel transaction executions
+    max_parallel: usize, // Max parallel transaction executions (kept for config struct, but not used)
     report_interval_secs: u64, // How often to report stats
 }
 
@@ -41,30 +26,15 @@ async fn run_sustainability_test(config: &SustainabilityConfig) -> Result<()> {
     );
 
     // Initialize state
-    let _storage = Arc::new(StateStorage::new());
     let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
 
-    // Create parallel execution manager
+    // Create transaction executor
     let executor = Arc::new(TransactionExecutor::new(
         None,      // wasm_executor: no WASM for examples
         1.0,       // gas_price_adjustment
         1_000_000, // max_gas_limit
         1,         // min_gas_price
     ));
-    let parallel_config = ParallelConfig {
-        max_parallel: config.max_parallel,
-        max_group_size: 10,
-        conflict_strategy: ConflictStrategy::Retry,
-        execution_timeout: 5000,
-        retry_attempts: 3,
-        enable_work_stealing: true,
-        enable_simd: true,
-        worker_threads: 0, // Auto
-        simd_batch_size: 32,
-        memory_pool_size: 1024 * 1024 * 256, // 256MB pre-allocated memory
-    };
-    let mut execution_manager =
-        ParallelExecutionManager::new(parallel_config, state_tree.clone(), executor.clone());
 
     // Test metrics
     let start_time = Instant::now();
@@ -96,7 +66,20 @@ async fn run_sustainability_test(config: &SustainabilityConfig) -> Result<()> {
 
         // Process the batch
         let batch_start = Instant::now();
-        let results = execution_manager.process_transactions(transactions).await?;
+        let mut _batch_successes = 0;
+        let mut _batch_failures = 0;
+
+        for tx in transactions {
+            let mut mutable_tx = tx.clone(); // Clone and make mutable
+            let result = executor
+                .execute_transaction(&mut mutable_tx, &state_tree)
+                .await;
+            match result {
+                Ok(ExecutionResult::Success) => _batch_successes += 1,
+                Ok(_) => _batch_failures += 1,
+                Err(_) => _batch_failures += 1,
+            }
+        }
         let batch_duration = batch_start.elapsed();
 
         // Update metrics
@@ -116,10 +99,6 @@ async fn run_sustainability_test(config: &SustainabilityConfig) -> Result<()> {
 
         // Calculate batch TPS
         let batch_tps = batch_len as f64 / batch_duration.as_secs_f64();
-
-        // Count successes and failures
-        let _successes = results.values().filter(|r| r.is_ok()).count();
-        let _failures = results.values().filter(|r| r.is_err()).count();
 
         // Report periodically
         let now = Instant::now();
@@ -225,10 +204,25 @@ async fn run_sustainability_test(config: &SustainabilityConfig) -> Result<()> {
 fn generate_batch(count: usize, batch_id: usize) -> Vec<Transaction> {
     let mut transactions = Vec::with_capacity(count);
 
+    let sender_prefix = "sender_";
+    let recipient_prefix = "recipient_";
+
     for i in 0..count {
+        let tx_index = batch_id * count + i;
+        let sender = format!("{}{}", sender_prefix, tx_index);
+        let recipient = format!("{}{}", recipient_prefix, tx_index + 1);
+
         // Create a transaction with a unique ID based on batch and index
-        let tx_id = batch_id * count + i;
-        let tx = Transaction::new_test_transaction(tx_id);
+        let tx = Transaction::new(
+            TransactionType::Transfer,
+            sender,
+            recipient,
+            100 + tx_index as u64,
+            tx_index as u64,
+            10,
+            21000,
+            vec![],
+        );
         transactions.push(tx);
     }
 
@@ -241,7 +235,7 @@ async fn main() -> Result<()> {
     println!("================================\n");
 
     // Different test durations for different needs
-    let configs = vec![
+    let configs = [
         // Short test (30 seconds) for quick verification
         SustainabilityConfig {
             duration_secs: 30,

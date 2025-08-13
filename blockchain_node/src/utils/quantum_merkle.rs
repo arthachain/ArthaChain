@@ -20,10 +20,10 @@ pub struct MerkleNode {
 impl MerkleNode {
     /// Create a new leaf node
     pub fn new_leaf(data: Vec<u8>) -> Result<Self> {
-        let hash = quantum_resistant_hash(&data)?;
+        let hash = quantum_resistant_hash(&data);
 
         Ok(Self {
-            hash,
+            hash: hash?,
             left: None,
             right: None,
             is_leaf: true,
@@ -37,10 +37,10 @@ impl MerkleNode {
         combined.extend_from_slice(&left.hash);
         combined.extend_from_slice(&right.hash);
 
-        let hash = quantum_resistant_hash(&combined)?;
+        let hash = quantum_resistant_hash(&combined);
 
         Ok(Self {
-            hash,
+            hash: hash?,
             left: Some(Box::new(left)),
             right: Some(Box::new(right)),
             is_leaf: false,
@@ -113,11 +113,11 @@ impl QuantumMerkleTree {
 
     /// Generate a Merkle proof for a data item
     pub fn generate_proof(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        let target_hash = quantum_resistant_hash(data)?;
+        let target_hash = quantum_resistant_hash(data);
 
         if let Some(root) = &self.root {
             let mut proof = Vec::new();
-            if self.generate_proof_recursive(root, &target_hash, &mut proof) {
+            if self.generate_proof_recursive(root, &target_hash?, &mut proof) {
                 Ok(proof)
             } else {
                 Err(anyhow::anyhow!("Data not found in tree"))

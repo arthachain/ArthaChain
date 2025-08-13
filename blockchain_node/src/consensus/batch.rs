@@ -77,7 +77,7 @@ mod tests {
     use crate::sharding::CrossShardStatus;
 
     fn create_test_transaction(priority: u8) -> CrossShardReference {
-        // Create a test hash using a placeholder value
+        // Create a deterministic test hash based on priority for consistent testing
         let tx_hash = Hash::new([priority; 32]);
         let involved_shards = vec![priority as u32, 1, 2];
 

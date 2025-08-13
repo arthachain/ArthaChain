@@ -24,7 +24,12 @@ impl IdentityManager {
 
         Ok(Self {
             node_id: node_id.to_string(),
-            address,
+            address: Address(
+                hex::decode(&address)
+                    .unwrap_or_default()
+                    .try_into()
+                    .unwrap_or_default(),
+            ),
             private_key,
         })
     }
@@ -43,6 +48,6 @@ impl IdentityManager {
 
     /// Verify signature
     pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<bool> {
-        crypto::verify_signature(self.address.as_bytes(), data, signature)
+        crypto::verify_signature(&hex::encode(self.address.0), data, signature)
     }
 }

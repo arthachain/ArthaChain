@@ -47,9 +47,8 @@ impl WasmStorage {
 
     /// Create a deterministic storage key prefix for a contract to isolate storage
     fn prefixed_key(&self, contract_address: &Address, key: &[u8]) -> Vec<u8> {
-        let mut prefixed_key =
-            Vec::with_capacity(contract_address.as_bytes().len() + 1 + key.len());
-        prefixed_key.extend_from_slice(contract_address.as_bytes());
+        let mut prefixed_key = Vec::with_capacity(contract_address.as_ref().len() + 1 + key.len());
+        prefixed_key.extend_from_slice(contract_address.as_ref());
         prefixed_key.push(b':');
         prefixed_key.extend_from_slice(key);
         prefixed_key
@@ -81,17 +80,17 @@ impl WasmStorage {
 
     /// Create the key for storing contract code
     fn code_key(&self, contract_address: &Address) -> Vec<u8> {
-        let mut code_key = Vec::with_capacity(contract_address.as_bytes().len() + 6);
+        let mut code_key = Vec::with_capacity(contract_address.as_ref().len() + 6);
         code_key.extend_from_slice(b"code:");
-        code_key.extend_from_slice(contract_address.as_bytes());
+        code_key.extend_from_slice(contract_address.as_ref());
         code_key
     }
 
     /// Create the key for storing contract metadata
     fn metadata_key(&self, contract_address: &Address) -> Vec<u8> {
-        let mut metadata_key = Vec::with_capacity(contract_address.as_bytes().len() + 9);
+        let mut metadata_key = Vec::with_capacity(contract_address.as_ref().len() + 9);
         metadata_key.extend_from_slice(b"metadata:");
-        metadata_key.extend_from_slice(contract_address.as_bytes());
+        metadata_key.extend_from_slice(contract_address.as_ref());
         metadata_key
     }
 }

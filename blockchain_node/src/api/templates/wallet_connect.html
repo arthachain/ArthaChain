@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArthaChain Wallet Connect - Top 50 Wallets</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; color: white; }
+        .header h1 { font-size: 3rem; margin-bottom: 10px; }
+        .header p { font-size: 1.2rem; opacity: 0.9; }
+        .wallet-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 40px; 
+        }
+        .wallet-section { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 30px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+        }
+        .wallet-section h2 { 
+            color: #667eea; 
+            margin-bottom: 20px; 
+            font-size: 1.5rem; 
+            display: flex; 
+            align-items: center; 
+        }
+        .wallet-section h2::before { 
+            content: '🔗'; 
+            margin-right: 10px; 
+            font-size: 1.8rem; 
+        }
+        .wallet-list { list-style: none; }
+        .wallet-item { 
+            display: flex; 
+            align-items: center; 
+            padding: 12px; 
+            margin-bottom: 10px; 
+            border: 2px solid #f0f0f0; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            transition: all 0.3s ease; 
+        }
+        .wallet-item:hover { 
+            border-color: #667eea; 
+            background: #f8f9ff; 
+            transform: translateY(-2px); 
+        }
+        .wallet-icon { 
+            width: 40px; 
+            height: 40px; 
+            margin-right: 15px; 
+            border-radius: 8px; 
+        }
+        .wallet-info h3 { font-size: 1.1rem; margin-bottom: 5px; }
+        .wallet-info p { font-size: 0.9rem; color: #666; }
+        .connect-btn { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            border: none; 
+            padding: 12px 25px; 
+            border-radius: 25px; 
+            cursor: pointer; 
+            margin-left: auto; 
+            font-weight: 600; 
+            transition: transform 0.2s ease; 
+        }
+        .connect-btn:hover { transform: scale(1.05); }
+        .network-info { 
+            background: #f8f9ff; 
+            border: 2px solid #667eea; 
+            border-radius: 15px; 
+            padding: 20px; 
+            margin-top: 30px; 
+        }
+        .network-info h3 { color: #667eea; margin-bottom: 15px; }
+        .config-item { margin-bottom: 10px; }
+        .config-item strong { color: #333; }
+        .status { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: white; 
+            padding: 15px 20px; 
+            border-radius: 10px; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
+            display: none; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 ArthaChain Wallet Connect</h1>
+            <p>Connect with 50+ EVM & WASM Wallets - Dual VM Support</p>
+        </div>
+
+        <div class="wallet-grid">
+            <!-- EVM Wallets Section -->
+            <div class="wallet-section">
+                <h2>EVM Wallets (30+)</h2>
+                <ul class="wallet-list" id="evm-wallets">
+                    <li class="wallet-item" onclick="connectWallet('metamask', 'EVM')">
+                        <img src="https://github.com/MetaMask/brand-resources/raw/master/SVG/metamask-fox.svg" alt="MetaMask" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>MetaMask</h3>
+                            <p>Most popular Ethereum wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('trustwallet', 'EVM')">
+                        <img src="https://trustwallet.com/assets/images/media/assets/trust_platform.svg" alt="Trust Wallet" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Trust Wallet</h3>
+                            <p>Secure mobile crypto wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('coinbase', 'EVM')">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEuNDkyIDEwLjQxOWE4LjkzIDguOTMgMCAwMTguOTMtOC45M2gxMS4xNjNhOC45MyA4LjkzIDAgMDE4LjkzIDguOTN2MTEuMTYzYTguOTMgOC45MyAwMS04LjkzIDguOTNIOS40MjJhOC45MyA4LjkzIDAgMDEtOC45My04LjkzVjEwLjQxOXoiIGZpbGw9IiMwMDUyRkYiLz48cGF0aCBkPSJtMTAuNjggMTkuNDc3IDUuNjI3LTUuNjI0YTQuNjc4IDQuNjc4IDAgMDE2LjYzOSAwbDUuNjI0IDUuNjI0YTQuNjc4IDQuNjc4IDAgMDEwIDYuNjM5bC01LjYyNCA1LjYyNGE0LjY3OCA0LjY3OCAwIDAxLTYuNjM5IDBsLTUuNjI3LTUuNjI0YTQuNjc4IDQuNjc4IDAgMDEwLTYuNjM5eiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==" alt="Coinbase" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Coinbase Wallet</h3>
+                            <p>Easy and secure crypto wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('rainbow', 'EVM')">
+                        <img src="https://rainbow.me/favicon.ico" alt="Rainbow" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Rainbow Wallet</h3>
+                            <p>Beautiful Ethereum wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('brave', 'EVM')">
+                        <img src="https://brave.com/favicon.ico" alt="Brave" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Brave Wallet</h3>
+                            <p>Built-in browser wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                </ul>
+                <p style="text-align: center; margin-top: 15px; color: #666;">
+                    + 25 more EVM wallets supported
+                </p>
+            </div>
+
+            <!-- WASM Wallets Section -->
+            <div class="wallet-section">
+                <h2>WASM Wallets (20+)</h2>
+                <ul class="wallet-list" id="wasm-wallets">
+                    <li class="wallet-item" onclick="connectWallet('phantom', 'WASM')">
+                        <img src="https://phantom.app/img/phantom-icon-purple.svg" alt="Phantom" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Phantom</h3>
+                            <p>Leading Solana wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('solflare', 'WASM')">
+                        <img src="https://solflare.com/favicon.ico" alt="Solflare" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Solflare</h3>
+                            <p>Secure Solana wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('backpack', 'WASM')">
+                        <img src="https://backpack.app/favicon.ico" alt="Backpack" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Backpack</h3>
+                            <p>Modern crypto experience</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('slope', 'WASM')">
+                        <img src="https://slope.finance/favicon.ico" alt="Slope" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Slope</h3>
+                            <p>Mobile-first Solana wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                    <li class="wallet-item" onclick="connectWallet('glow', 'WASM')">
+                        <img src="https://glow.app/favicon.ico" alt="Glow" class="wallet-icon">
+                        <div class="wallet-info">
+                            <h3>Glow</h3>
+                            <p>Fast browser wallet</p>
+                        </div>
+                        <button class="connect-btn">Connect</button>
+                    </li>
+                </ul>
+                <p style="text-align: center; margin-top: 15px; color: #666;">
+                    + 15 more WASM wallets supported
+                </p>
+            </div>
+        </div>
+
+        <!-- Network Configuration -->
+        <div class="network-info">
+            <h3>🔧 ArthaChain Network Configuration</h3>
+            <div class="config-item"><strong>Network Name:</strong> ArthaChain Mainnet</div>
+            <div class="config-item"><strong>RPC URL:</strong> https://rpc.arthachain.online</div>
+            <div class="config-item"><strong>Chain ID:</strong> 4919 (0x1337)</div>
+            <div class="config-item"><strong>Currency:</strong> ARTHA</div>
+            <div class="config-item"><strong>Explorer:</strong> https://explorer.arthachain.online</div>
+            <div class="config-item"><strong>VM Support:</strong> EVM + WASM (Dual VM)</div>
+        </div>
+    </div>
+
+    <!-- Status Display -->
+    <div id="status" class="status">
+        <div id="status-text">Connecting...</div>
+    </div>
+
+    <script>
+        // Wallet connection logic
+        async function connectWallet(walletType, vmType) {
+            showStatus(`Connecting to ${walletType} (${vmType})...`);
+            
+            try {
+                if (vmType === 'EVM') {
+                    await connectEVMWallet(walletType);
+                } else if (vmType === 'WASM') {
+                    await connectWASMWallet(walletType);
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function connectEVMWallet(walletType) {
+            let provider;
+            
+            switch (walletType) {
+                case 'metamask':
+                    if (typeof window.ethereum !== 'undefined') {
+                        provider = window.ethereum;
+                    }
+                    break;
+                case 'trustwallet':
+                    if (typeof window.trustwallet !== 'undefined') {
+                        provider = window.trustwallet;
+                    }
+                    break;
+                case 'coinbase':
+                    if (typeof window.coinbaseWallet !== 'undefined') {
+                        provider = window.coinbaseWallet;
+                    }
+                    break;
+                case 'brave':
+                    if (typeof window.ethereum !== 'undefined' && window.ethereum.isBrave) {
+                        provider = window.ethereum;
+                    }
+                    break;
+                default:
+                    if (typeof window.ethereum !== 'undefined') {
+                        provider = window.ethereum;
+                    }
+            }
+
+            if (!provider) {
+                throw new Error(`${walletType} not detected. Please install it first.`);
+            }
+
+            // Request account access
+            const accounts = await provider.request({ method: 'eth_requestAccounts' });
+            
+            // Add ArthaChain network
+            try {
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: '0x1337' }],
+                });
+            } catch (switchError) {
+                // Network doesn't exist, add it
+                if (switchError.code === 4902) {
+                                            await provider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: '0x1337',
+                                chainName: 'ArthaChain Mainnet',
+                                nativeCurrency: {
+                                    name: 'ARTHA',
+                                    symbol: 'ARTHA',
+                                    decimals: 18
+                                },
+                                rpcUrls: ['https://rpc.arthachain.online'],
+                                blockExplorerUrls: ['https://explorer.arthachain.online']
+                            }]
+                        });
+                }
+            }
+
+            showStatus(`✅ Connected to ${walletType}! Address: ${accounts[0].slice(0, 10)}...`, 'success');
+        }
+
+        async function connectWASMWallet(walletType) {
+            let provider;
+            
+            switch (walletType) {
+                case 'phantom':
+                    if (typeof window.phantom !== 'undefined') {
+                        provider = window.phantom.solana;
+                    }
+                    break;
+                case 'solflare':
+                    if (typeof window.solflare !== 'undefined') {
+                        provider = window.solflare;
+                    }
+                    break;
+                case 'backpack':
+                    if (typeof window.backpack !== 'undefined') {
+                        provider = window.backpack;
+                    }
+                    break;
+                default:
+                    if (typeof window.phantom !== 'undefined') {
+                        provider = window.phantom.solana;
+                    }
+            }
+
+            if (!provider) {
+                throw new Error(`${walletType} not detected. Please install it first.`);
+            }
+
+            // Connect to wallet
+            const response = await provider.connect();
+            const publicKey = response.publicKey.toString();
+
+            showStatus(`✅ Connected to ${walletType}! Address: ${publicKey.slice(0, 10)}...`, 'success');
+        }
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            const statusText = document.getElementById('status-text');
+            
+            statusText.textContent = message;
+            status.style.display = 'block';
+            
+            if (type === 'success') {
+                status.style.background = '#d4edda';
+                status.style.borderColor = '#c3e6cb';
+                status.style.color = '#155724';
+            } else if (type === 'error') {
+                status.style.background = '#f8d7da';
+                status.style.borderColor = '#f5c6cb';
+                status.style.color = '#721c24';
+            } else {
+                status.style.background = 'white';
+                status.style.color = '#333';
+            }
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 5000);
+        }
+
+        // Load wallet list dynamically
+        async function loadWallets() {
+            try {
+                const response = await fetch('/api/wallets');
+                const data = await response.json();
+                
+                // Update wallet counts
+                document.querySelector('.wallet-section h2').textContent = `EVM Wallets (${data.evm_wallets.length})`;
+                document.querySelectorAll('.wallet-section h2')[1].textContent = `WASM Wallets (${data.wasm_wallets.length})`;
+                
+            } catch (error) {
+                console.error('Failed to load wallet data:', error);
+            }
+        }
+
+        // Initialize
+        loadWallets();
+    </script>
+</body>
+</html>

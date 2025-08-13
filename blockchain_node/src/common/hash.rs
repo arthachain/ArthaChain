@@ -74,7 +74,7 @@ impl TryFrom<Vec<u8>> for Hash {
 // Add conversion to Vec<u8> for compatibility with old code
 impl From<Hash> for Vec<u8> {
     fn from(hash: Hash) -> Self {
-        hash.0.to_vec()
+        hash.as_ref().to_vec()
     }
 }
 
@@ -86,14 +86,14 @@ mod tests {
     fn test_hash_creation() {
         let bytes = [0u8; 32];
         let hash = Hash::new(bytes);
-        assert_eq!(hash.as_bytes(), &bytes);
+        assert_eq!(hash.as_ref(), &bytes);
     }
 
     #[test]
     fn test_hash_from_bytes() {
         let bytes = [1u8; 32];
         let hash = Hash::from_bytes(&bytes).unwrap();
-        assert_eq!(hash.as_bytes(), &bytes);
+        assert_eq!(hash.as_ref(), &bytes);
     }
 
     #[test]

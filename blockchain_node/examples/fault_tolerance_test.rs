@@ -14,22 +14,19 @@ use std::sync::{Arc, Mutex};
  */
 use std::time::{Duration, Instant};
 
-use blockchain_node::execution::executor::TransactionExecutor;
-use blockchain_node::execution::parallel::{
-    ConflictStrategy, ParallelConfig, ParallelExecutionManager,
-};
+use blockchain_node::execution::executor::{ExecutionResult, TransactionExecutor};
 use blockchain_node::ledger::state::State;
-use blockchain_node::transaction::Transaction;
+use blockchain_node::ledger::transaction::{Transaction, TransactionType};
 
 // Test configuration
 struct FaultToleranceConfig {
     duration_secs: u64,             // Test duration
     batch_size: usize,              // Transactions per batch
-    max_parallel: usize,            // Max parallel executions
-    failure_probability: f64,       // Probability of introducing a failure
+    max_parallel: usize, // Max parallel executions (kept for config struct, but not used)
+    failure_probability: f64, // Probability of introducing a failure
     network_delay_probability: f64, // Probability of network delay
-    recovery_time_ms: u64,          // Time to recover from failure (milliseconds)
-    num_nodes: usize,               // Number of simulated nodes
+    recovery_time_ms: u64, // Time to recover from failure (milliseconds)
+    num_nodes: usize,    // Number of simulated nodes
 }
 
 // Types of failures to simulate
@@ -47,7 +44,7 @@ struct Node {
     failed: bool,
     partitioned: bool,
     resource_exhausted: bool,
-    execution_manager: ParallelExecutionManager,
+    executor: Arc<TransactionExecutor>,
     transactions_processed: usize,
     failures_recovered: usize,
     processing_time: Duration,
@@ -56,7 +53,7 @@ struct Node {
 }
 
 impl Node {
-    fn new(id: usize, max_parallel: usize) -> Self {
+    fn new(id: usize, _max_parallel: usize) -> Self {
         let state_tree = Arc::new(State::new(&blockchain_node::config::Config::default()).unwrap());
         let executor = Arc::new(TransactionExecutor::new(
             None,      // wasm_executor: no WASM for examples
@@ -65,28 +62,12 @@ impl Node {
             1,         // min_gas_price
         ));
 
-        let parallel_config = ParallelConfig {
-            max_parallel,
-            max_group_size: 10,
-            conflict_strategy: ConflictStrategy::Retry,
-            execution_timeout: 5000,
-            retry_attempts: 3,
-            enable_work_stealing: true,
-            enable_simd: true,
-            worker_threads: 0, // Auto
-            simd_batch_size: 32,
-            memory_pool_size: 1024 * 1024 * 256, // 256MB pre-allocated memory
-        };
-
-        let execution_manager =
-            ParallelExecutionManager::new(parallel_config, Arc::clone(&state_tree), executor);
-
         Self {
             id,
             failed: false,
             partitioned: false,
             resource_exhausted: false,
-            execution_manager,
+            executor,
             transactions_processed: 0,
             failures_recovered: 0,
             processing_time: Duration::new(0, 0),
@@ -104,31 +85,33 @@ impl Node {
             return Err(anyhow!("Node {} is network partitioned", self.id));
         }
 
-        let batch_len = batch.len();
-
+        let mut processed_count = 0;
         let start = Instant::now();
-        let result = if self.resource_exhausted {
+
+        let transactions_to_process = if self.resource_exhausted {
             // Simulate resource exhaustion by processing only half the batch
-            let half_size = batch_len / 2;
-            let half_batch = batch.into_iter().take(half_size).collect();
-            self.execution_manager
-                .process_transactions(half_batch)
-                .await
+            let half_size = batch.len() / 2;
+            batch.into_iter().take(half_size).collect()
         } else {
-            self.execution_manager.process_transactions(batch).await
+            batch
         };
 
-        let duration = start.elapsed();
-        self.processing_time += duration;
-
-        match result {
-            Ok(tx_results) => {
-                let successes = tx_results.values().filter(|r| r.is_ok()).count();
-                self.transactions_processed += successes;
-                Ok(successes)
+        for tx in transactions_to_process {
+            let mut mutable_tx = tx.clone(); // Make transaction mutable
+            let result = self
+                .executor
+                .execute_transaction(&mut mutable_tx, &self.state_tree)
+                .await; // Corrected method call
+            match result {
+                Ok(ExecutionResult::Success) => processed_count += 1,
+                Ok(_) => { /* log failures if needed */ }
+                Err(_) => { /* log errors if needed */ }
             }
-            Err(e) => Err(anyhow!("Node {} failed to process batch: {}", self.id, e)),
         }
+
+        self.processing_time += start.elapsed();
+        self.transactions_processed += processed_count;
+        Ok(processed_count)
     }
 
     // Introduce a failure to this node
@@ -209,8 +192,8 @@ async fn run_fault_tolerance_test(config: &FaultToleranceConfig) -> Result<()> {
         .collect();
 
     // Create shared state for test metrics
-    let _total_txs = Arc::new(Mutex::new(0usize));
-    let _total_failures = Arc::new(Mutex::new(0usize));
+    let _total_txs = Arc::new(Mutex::new(0usize)); // Still here, but not used directly in current flow
+    let _total_failures = Arc::new(Mutex::new(0usize)); // Still here, but not used directly in current flow
 
     println!("\nStarting test with fault injection...");
     println!("---------------------------------------");
@@ -262,15 +245,17 @@ async fn run_fault_tolerance_test(config: &FaultToleranceConfig) -> Result<()> {
         }
 
         // Process batch on each node (with potential network delays)
-        let _futures: Vec<tokio::task::JoinHandle<()>> = Vec::new();
-        for (i, node) in nodes.iter_mut().enumerate() {
+        for node in nodes.iter_mut() {
             // Clone the batch for each node
             let node_batch = batch.clone();
 
             // Introduce network delay if applicable
             let delay = if rng.gen::<f64>() < config.network_delay_probability {
                 let delay_ms = rng.gen_range(50..300);
-                println!("Network delay of {}ms introduced for Node {}", delay_ms, i);
+                println!(
+                    "Network delay of {}ms introduced for Node {}",
+                    delay_ms, node.id
+                );
                 Some(Duration::from_millis(delay_ms))
             } else {
                 None
@@ -413,10 +398,25 @@ async fn run_fault_tolerance_test(config: &FaultToleranceConfig) -> Result<()> {
 fn generate_batch(count: usize, batch_id: usize) -> Vec<Transaction> {
     let mut transactions = Vec::with_capacity(count);
 
+    let sender_prefix = "sender_";
+    let recipient_prefix = "recipient_";
+
     for i in 0..count {
+        let tx_index = batch_id * count + i;
+        let sender = format!("{}{}", sender_prefix, tx_index);
+        let recipient = format!("{}{}", recipient_prefix, tx_index + 1);
+
         // Create a transaction with a unique ID based on batch and index
-        let tx_id = batch_id * count + i;
-        let tx = Transaction::new_test_transaction(tx_id);
+        let tx = Transaction::new(
+            TransactionType::Transfer,
+            sender,
+            recipient,
+            100 + tx_index as u64,
+            tx_index as u64,
+            10,
+            21000,
+            vec![],
+        );
         transactions.push(tx);
     }
 
@@ -429,7 +429,7 @@ async fn main() -> Result<()> {
     println!("===============================\n");
 
     // Different test configurations
-    let configs = vec![
+    let configs = [
         // Quick test with high failure rate for debugging
         FaultToleranceConfig {
             duration_secs: 30,

@@ -6,5 +6,6 @@ pub mod transaction_engine;
 
 // Re-export key types
 pub use executor::{ExecutionResult, TransactionExecutor};
-pub use parallel::{ConflictStrategy, ParallelConfig, ParallelExecutionManager};
+pub use parallel::{MemoryPool, ParallelProcessor, TopologicalSort, TransactionGraph};
 pub use transaction_engine::TransactionEngine;
+pub mod arthacoin_executor;

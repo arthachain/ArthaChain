@@ -1,5 +1,7 @@
 use crate::network::peer::{PeerId, PeerInfo};
-use crate::utils::crypto::{dilithium_sign, dilithium_verify, quantum_resistant_hash};
+use crate::utils::crypto::{
+    dilithium_sign, dilithium_verify, quantum_resistant_hash, PostQuantumCrypto,
+};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -144,11 +146,8 @@ impl AdaptiveGossipManager {
         let id = if self.config.use_quantum_resistant {
             quantum_resistant_hash(&content)?
         } else {
-            // Fallback to regular hash if quantum resistance not required
-            use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(&content);
-            hasher.finalize().to_vec()
+            // Fallback to quantum-resistant hash (BLAKE3)
+            blake3::hash(&content).as_bytes().to_vec()
         };
 
         // Generate signature
@@ -164,11 +163,9 @@ impl AdaptiveGossipManager {
         let signature = if self.config.use_quantum_resistant {
             dilithium_sign(&self.quantum_private_key, &signature_data)?
         } else {
-            // Fallback to regular signature if quantum resistance not required
-            use ed25519_dalek::{Signer, SigningKey};
-            let private_key_bytes: [u8; 32] = self.quantum_private_key[0..32].try_into()?;
-            let signing_key = SigningKey::from_bytes(&private_key_bytes);
-            signing_key.sign(&signature_data).to_bytes().to_vec()
+            // Use quantum-resistant signature for fallback too
+            let pq_crypto = PostQuantumCrypto::new()?;
+            pq_crypto.sign(&self.quantum_private_key, &signature_data)?
         };
 
         Ok(GossipMessage {
@@ -201,14 +198,9 @@ impl AdaptiveGossipManager {
         let valid = if self.config.use_quantum_resistant {
             dilithium_verify(sender_public_key, &signature_data, &message.signature)?
         } else {
-            // Fallback to regular verification if quantum resistance not required
-            use ed25519_dalek::{Verifier, VerifyingKey};
-            let public_key_bytes: [u8; 32] = sender_public_key[0..32].try_into()?;
-            let verifying_key = VerifyingKey::from_bytes(&public_key_bytes)?;
-            let signature: [u8; 64] = message.signature[0..64].try_into()?;
-            verifying_key
-                .verify(&signature_data, &signature.into())
-                .is_ok()
+            // Use quantum-resistant verification for fallback too
+            let pq_crypto = PostQuantumCrypto::new()?;
+            pq_crypto.verify(sender_public_key, &signature_data, &message.signature)?
         };
 
         Ok(valid)

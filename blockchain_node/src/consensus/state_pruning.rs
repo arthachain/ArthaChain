@@ -172,7 +172,7 @@ impl PruningManager {
 
         // Store transition in database
         self.db.put(
-            format!("transition:{}", height).as_bytes(),
+            format!("transition:{}", height).as_ref(),
             bincode::serialize(&transition)?,
         )?;
 
@@ -194,13 +194,13 @@ impl PruningManager {
         
         // Get previous state root
         let prev_root: Hash = bincode::deserialize(
-            &self.db.get(format!("state:{}", height - 1).as_bytes())?
+            &self.db.get(format!("state:{}", height - 1).as_ref())?
                 .ok_or_else(|| PruningError::Internal(format!("Missing state root at height {}", height - 1)))?
         )?;
         
         // Get new state root
         let new_root: Hash = bincode::deserialize(
-            &self.db.get(format!("state:{}", height).as_bytes())?
+            &self.db.get(format!("state:{}", height).as_ref())?
                 .ok_or_else(|| PruningError::Internal(format!("Missing state root at height {}", height)))?
         )?;
 
@@ -301,7 +301,7 @@ impl PruningManager {
             return Ok(None);
         }
         
-        match self.archive_db.get(format!("transition:{}", height).as_bytes())? {
+        match self.archive_db.get(format!("transition:{}", height).as_ref())? {
             Some(data) => {
                 match bincode::deserialize(&data) {
                     Ok(transition) => Ok(Some(transition)),

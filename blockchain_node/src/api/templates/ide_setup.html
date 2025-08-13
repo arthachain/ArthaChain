@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArthaChain IDE Integration - EVM & WASM Development</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; color: white; }
+        .header h1 { font-size: 3rem; margin-bottom: 10px; }
+        .header p { font-size: 1.2rem; opacity: 0.9; }
+        .ide-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
+            gap: 25px; 
+            margin-bottom: 40px; 
+        }
+        .ide-card { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 30px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+            transition: transform 0.3s ease;
+        }
+        .ide-card:hover { transform: translateY(-5px); }
+        .ide-header { 
+            display: flex; 
+            align-items: center; 
+            margin-bottom: 20px; 
+        }
+        .ide-icon { 
+            width: 50px; 
+            height: 50px; 
+            margin-right: 15px; 
+            border-radius: 10px; 
+        }
+        .ide-title { 
+            font-size: 1.4rem; 
+            color: #2c3e50; 
+            margin-bottom: 5px; 
+        }
+        .ide-type { 
+            background: #3498db; 
+            color: white; 
+            padding: 5px 12px; 
+            border-radius: 15px; 
+            font-size: 0.8rem; 
+            margin-left: auto; 
+        }
+        .ide-description { 
+            color: #666; 
+            margin-bottom: 20px; 
+            line-height: 1.6; 
+        }
+        .setup-guide { 
+            background: #f8f9fa; 
+            border-left: 4px solid #3498db; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin-bottom: 20px; 
+        }
+        .setup-guide h4 { 
+            color: #2c3e50; 
+            margin-bottom: 10px; 
+        }
+        .code-block { 
+            background: #2c3e50; 
+            color: #ecf0f1; 
+            padding: 15px; 
+            border-radius: 8px; 
+            font-family: 'JetBrains Mono', monospace; 
+            font-size: 0.9rem; 
+            overflow-x: auto; 
+            margin: 10px 0; 
+        }
+        .features { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 8px; 
+            margin-bottom: 20px; 
+        }
+        .feature-tag { 
+            background: #ecf0f1; 
+            color: #2c3e50; 
+            padding: 5px 10px; 
+            border-radius: 12px; 
+            font-size: 0.8rem; 
+        }
+        .launch-btn { 
+            background: linear-gradient(135deg, #3498db 0%, #2c3e50 100%); 
+            color: white; 
+            border: none; 
+            padding: 12px 25px; 
+            border-radius: 25px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            width: 100%; 
+            transition: transform 0.2s ease; 
+        }
+        .launch-btn:hover { transform: scale(1.05); }
+        .quick-start { 
+            background: white; 
+            border-radius: 15px; 
+            padding: 30px; 
+            margin-top: 30px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+        }
+        .quick-start h2 { 
+            color: #2c3e50; 
+            margin-bottom: 20px; 
+        }
+        .network-config { 
+            background: #f8f9fa; 
+            border: 2px solid #3498db; 
+            border-radius: 10px; 
+            padding: 20px; 
+            margin: 20px 0; 
+        }
+        .config-item { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 10px; 
+            padding: 8px 0; 
+            border-bottom: 1px solid #ecf0f1; 
+        }
+        .config-item:last-child { border-bottom: none; }
+        .config-label { font-weight: 600; color: #2c3e50; }
+        .config-value { 
+            color: #3498db; 
+            font-family: monospace; 
+            background: white; 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛠️ ArthaChain IDE Integration</h1>
+            <p>Complete development environment for EVM & WASM smart contracts</p>
+        </div>
+
+        <div class="ide-grid">
+            <!-- Remix IDE -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="https://remix.ethereum.org/favicon.ico" alt="Remix" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Remix IDE</h3>
+                        <div class="ide-type">EVM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Web-based IDE for Solidity smart contract development. Perfect for beginners and quick prototyping.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Web-based</span>
+                    <span class="feature-tag">Solidity</span>
+                    <span class="feature-tag">Debugging</span>
+                    <span class="feature-tag">Deploy</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 Quick Setup:</h4>
+                    <p>1. Open Remix IDE</p>
+                    <p>2. Go to Deploy & Run tab</p>
+                    <p>3. Select "Custom" environment</p>
+                    <div class="code-block">RPC URL: https://rpc.arthachain.online
+Chain ID: 4919</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://remix.ethereum.org/', '_blank')">
+                    Launch Remix IDE
+                </button>
+            </div>
+
+            <!-- Hardhat -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="https://hardhat.org/favicon.ico" alt="Hardhat" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Hardhat</h3>
+                        <div class="ide-type">EVM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Ethereum development environment for professionals. Advanced testing, debugging, and deployment tools.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Node.js</span>
+                    <span class="feature-tag">Testing</span>
+                    <span class="feature-tag">Plugins</span>
+                    <span class="feature-tag">TypeScript</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 Configuration:</h4>
+                    <div class="code-block">// hardhat.config.js
+module.exports = {
+  networks: {
+    arthachain: {
+      url: "https://rpc.arthachain.online",
+      chainId: 4919,
+      accounts: ["YOUR_PRIVATE_KEY"]
+    }
+  }
+};</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://hardhat.org/', '_blank')">
+                    Get Hardhat
+                </button>
+            </div>
+
+            <!-- Foundry -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTE2IDBMMTI4IDMySDRMMTYgMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=" alt="Foundry" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Foundry</h3>
+                        <div class="ide-type">EVM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Blazing fast Ethereum development toolkit written in Rust. Perfect for advanced developers.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Rust</span>
+                    <span class="feature-tag">Fast</span>
+                    <span class="feature-tag">CLI</span>
+                    <span class="feature-tag">Testing</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 Deploy Command:</h4>
+                    <div class="code-block">forge create --rpc-url https://rpc.arthachain.online \
+  --private-key YOUR_KEY \
+  --chain-id 4919 \
+  src/Contract.sol:Contract</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://book.getfoundry.sh/', '_blank')">
+                    Get Foundry
+                </button>
+            </div>
+
+            <!-- Truffle -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="https://trufflesuite.com/favicon.ico" alt="Truffle" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Truffle Suite</h3>
+                        <div class="ide-type">EVM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Comprehensive development framework with built-in testing, migration, and asset pipeline.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Framework</span>
+                    <span class="feature-tag">Migration</span>
+                    <span class="feature-tag">Testing</span>
+                    <span class="feature-tag">Ganache</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 Network Config:</h4>
+                    <div class="code-block">// truffle-config.js
+networks: {
+  arthachain: {
+    host: "rpc.arthachain.online",
+    port: 443,
+    network_id: 4919,
+    gas: 8000000
+  }
+}</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://trufflesuite.com/', '_blank')">
+                    Get Truffle
+                </button>
+            </div>
+
+            <!-- Solana Playground -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="https://beta.solpg.io/favicon.ico" alt="Solana Playground" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Solana Playground</h3>
+                        <div class="ide-type">WASM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Browser-based IDE for Solana/WASM development. Write, test, and deploy Rust smart contracts online.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Web-based</span>
+                    <span class="feature-tag">Rust</span>
+                    <span class="feature-tag">WASM</span>
+                    <span class="feature-tag">Deploy</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 ArthaChain Setup:</h4>
+                    <p>1. Open Solana Playground</p>
+                    <p>2. Configure custom RPC endpoint</p>
+                    <div class="code-block">RPC: https://wasm.arthachain.online
+Network: ArthaChain WASM</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://beta.solpg.io/', '_blank')">
+                    Launch Playground
+                </button>
+            </div>
+
+            <!-- Anchor Framework -->
+            <div class="ide-card">
+                <div class="ide-header">
+                    <img src="https://anchor-lang.com/favicon.ico" alt="Anchor" class="ide-icon">
+                    <div>
+                        <h3 class="ide-title">Anchor Framework</h3>
+                        <div class="ide-type">WASM</div>
+                    </div>
+                </div>
+                <p class="ide-description">
+                    Rust framework for WASM smart contracts. Provides high-level abstractions and safety features.
+                </p>
+                <div class="features">
+                    <span class="feature-tag">Rust</span>
+                    <span class="feature-tag">Framework</span>
+                    <span class="feature-tag">Safe</span>
+                    <span class="feature-tag">CLI</span>
+                </div>
+                <div class="setup-guide">
+                    <h4>🚀 Anchor.toml Config:</h4>
+                    <div class="code-block">[provider]
+cluster = "https://wasm.arthachain.online"
+
+[programs.arthachain]
+arthachain = "YOUR_PROGRAM_ID"</div>
+                </div>
+                <button class="launch-btn" onclick="window.open('https://anchor-lang.com/', '_blank')">
+                    Get Anchor
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Start Guide -->
+        <div class="quick-start">
+            <h2>⚡ Quick Start Guide</h2>
+            
+            <div class="network-config">
+                <h3>🌐 ArthaChain Network Configuration</h3>
+                <div class="config-item">
+                    <span class="config-label">Network Name:</span>
+                    <span class="config-value">ArthaChain Mainnet</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">RPC URL (EVM):</span>
+                    <span class="config-value">https://rpc.arthachain.online</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">RPC URL (WASM):</span>
+                    <span class="config-value">https://wasm.arthachain.online</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Chain ID:</span>
+                    <span class="config-value">4919 (0x1337)</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Currency:</span>
+                    <span class="config-value">ARTHA</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Gas Price:</span>
+                    <span class="config-value">1 GWEI (Ultra Low!)</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Faucet:</span>
+                    <span class="config-value">https://faucet.arthachain.online</span>
+                </div>
+            </div>
+
+            <h3>🎯 Development Steps:</h3>
+            <ol style="margin-left: 20px; line-height: 2;">
+                <li><strong>Choose your IDE</strong> - Pick EVM or WASM based on your needs</li>
+                <li><strong>Configure Network</strong> - Add ArthaChain to your development environment</li>
+                <li><strong>Get Test Tokens</strong> - Use our faucet to get ARTHA for gas fees</li>
+                <li><strong>Write Contracts</strong> - Develop in Solidity (EVM) or Rust (WASM)</li>
+                <li><strong>Test & Deploy</strong> - Deploy to ArthaChain testnet</li>
+                <li><strong>Interact</strong> - Use wallets to interact with your deployed contracts</li>
+            </ol>
+
+            <h3>💡 Pro Tips:</h3>
+            <ul style="margin-left: 20px; line-height: 2; color: #666;">
+                <li>Start with Remix for quick prototyping</li>
+                <li>Use Hardhat/Foundry for production projects</li>
+                <li>Try WASM for high-performance contracts</li>
+                <li>Our gas fees are 50x cheaper than Ethereum!</li>
+                <li>Dual VM means you can use both EVM and WASM contracts together</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Load IDE statistics
+        async function loadIDEStats() {
+            try {
+                const response = await fetch('/api/ides');
+                const data = await response.json();
+                console.log('Supported IDEs:', data.supported_ides.length);
+            } catch (error) {
+                console.error('Failed to load IDE data:', error);
+            }
+        }
+
+        // Copy configuration to clipboard
+        function copyConfig(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Configuration copied to clipboard!');
+            });
+        }
+
+        // Add click handlers for config items
+        document.querySelectorAll('.config-value').forEach(item => {
+            item.style.cursor = 'pointer';
+            item.title = 'Click to copy';
+            item.addEventListener('click', () => copyConfig(item.textContent));
+        });
+
+        // Initialize
+        loadIDEStats();
+    </script>
+</body>
+</html>

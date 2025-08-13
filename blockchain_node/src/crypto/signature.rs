@@ -1,77 +1,81 @@
+use crate::crypto::keys::{PrivateKey, PublicKey};
+use anyhow::{anyhow, Result};
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, Verifier, VerifyingKey};
+
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use std::fmt;
 
-use super::keys::{KeyPair, PublicKey};
-
-#[derive(Debug, Error)]
-pub enum SignatureError {
-    #[error("Invalid signature data")]
-    InvalidData,
-    #[error("Invalid key")]
-    InvalidKey,
-    #[error("Signature verification failed")]
-    VerificationFailed,
-    #[error("Key generation error")]
-    KeyError,
-}
-
-/// Signature type used throughout the blockchain
+/// Generic signature type
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Signature(Vec<u8>);
 
 impl Signature {
-    /// Create a new signature from bytes
-    pub fn new(data: Vec<u8>) -> Self {
-        Signature(data)
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
     }
 
-    /// Get the raw bytes of the signature
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self(bytes.to_vec())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }
 
-/// Sign a message using a KeyPair
-pub fn sign(message: &[u8], keypair: &KeyPair) -> Result<Signature, SignatureError> {
-    // Convert private key bytes to SigningKey
-    let signing_key_bytes: [u8; 32] = keypair.private.as_bytes()[..32]
-        .try_into()
-        .map_err(|_| SignatureError::InvalidKey)?;
-
-    let signing_key = SigningKey::from_bytes(&signing_key_bytes);
-
-    // Sign the message
-    let signature = signing_key.sign(message);
-
-    // Return the signature
-    Ok(Signature(signature.to_bytes().to_vec()))
+impl AsRef<[u8]> for Signature {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
-/// Verify a signature using a PublicKey
-pub fn verify(
-    message: &[u8],
-    signature: &Signature,
-    public_key: &PublicKey,
-) -> Result<bool, SignatureError> {
-    // Convert signature to ed25519 signature
-    let sig_bytes: [u8; 64] = signature.as_bytes()[..64]
-        .try_into()
-        .map_err(|_| SignatureError::InvalidData)?;
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
 
-    let ed_signature = Ed25519Signature::from_bytes(&sig_bytes);
+/// Sign a message using Ed25519
+pub fn sign(private_key: &PrivateKey, message: &[u8]) -> Result<Signature> {
+    if private_key.as_ref().len() < 32 {
+        return Err(anyhow!("Private key too short"));
+    }
 
-    // Convert public key to verifying key
-    let key_bytes: [u8; 32] = public_key.as_bytes()[..32]
+    let signing_key_bytes: [u8; 32] = private_key.as_ref()[..32]
         .try_into()
-        .map_err(|_| SignatureError::InvalidKey)?;
+        .map_err(|_| anyhow!("Invalid private key length"))?;
+
+    let signing_key = SigningKey::from_bytes(&signing_key_bytes);
+    let signature = signing_key.sign(message);
+
+    Ok(Signature::new(signature.to_bytes().to_vec()))
+}
+
+/// Verify a signature using Ed25519
+pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> Result<bool> {
+    if signature.as_ref().len() < 64 {
+        return Err(anyhow!("Signature too short"));
+    }
+
+    if public_key.as_ref().len() < 32 {
+        return Err(anyhow!("Public key too short"));
+    }
+
+    let sig_bytes: [u8; 64] = signature.as_ref()[..64]
+        .try_into()
+        .map_err(|_| anyhow!("Invalid signature length"))?;
+
+    let key_bytes: [u8; 32] = public_key.as_ref()[..32]
+        .try_into()
+        .map_err(|_| anyhow!("Invalid public key length"))?;
 
     let verifying_key =
-        VerifyingKey::from_bytes(&key_bytes).map_err(|_| SignatureError::InvalidKey)?;
+        VerifyingKey::from_bytes(&key_bytes).map_err(|e| anyhow!("Invalid public key: {}", e))?;
 
-    // Verify the signature
-    match verifying_key.verify(message, &ed_signature) {
-        Ok(_) => Ok(true),
+    let signature = Ed25519Signature::from_bytes(&sig_bytes);
+
+    match verifying_key.verify(message, &signature) {
+        Ok(()) => Ok(true),
         Err(_) => Ok(false),
     }
 }

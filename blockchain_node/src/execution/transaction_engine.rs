@@ -88,7 +88,10 @@ impl TransactionEngine {
 
     /// Process a single transaction
     pub async fn process_transaction(&self, tx: &mut Transaction) -> Result<ExecutionResult> {
-        debug!("Processing transaction: {}", tx.hash());
+        debug!(
+            "Processing transaction: {}",
+            hex::encode(tx.hash().as_ref())
+        );
         self.executor.execute_transaction(tx, &self.state).await
     }
 
@@ -193,8 +196,8 @@ mod tests {
         let config = Config::default();
         let state = Arc::new(State::new(&config).unwrap());
 
-        // Initialize state
-        state.set_balance("sender", 10000).unwrap();
+        // Initialize state - increase balance to cover transfer + gas
+        state.set_balance("sender", 50000).unwrap(); // Enough for 1000 transfer + 21000 gas + buffer
         state.set_balance("recipient", 0).unwrap();
 
         // Create engine
@@ -221,8 +224,12 @@ mod tests {
         // Verify result
         match result {
             ExecutionResult::Success => {
-                // Check state updates
-                assert_eq!(state.get_balance("sender").unwrap(), 10000 - 1000 - 21000);
+                // Check state updates - sender should have original - amount - gas_fee
+                let expected_sender_balance = 50000 - 1000 - 21000; // 28000
+                assert_eq!(
+                    state.get_balance("sender").unwrap(),
+                    expected_sender_balance
+                );
                 assert_eq!(state.get_balance("recipient").unwrap(), 1000);
                 assert_eq!(state.get_nonce("sender").unwrap(), 1);
             }

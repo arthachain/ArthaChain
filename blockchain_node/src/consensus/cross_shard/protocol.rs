@@ -20,6 +20,10 @@ pub enum CrossShardTxType {
         contract_addr: Vec<u8>,
         call_data: Vec<u8>,
     },
+    /// Simple transfer (for compatibility)
+    Transfer,
+    /// Atomic swap between shards
+    AtomicSwap,
 }
 
 /// Status of a cross-shard transaction
@@ -33,6 +37,16 @@ pub enum CrossShardStatus {
     Committed,
     /// Transaction failed
     Failed(String),
+}
+
+/// Transaction coordination protocol for cross-shard transactions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionCoordination {
+    pub transaction_id: String,
+    pub coordinator_shard: u32,
+    pub participant_shards: Vec<u32>,
+    pub status: CrossShardStatus,
+    pub timeout_ms: u64,
 }
 
 /// Protocol message types for cross-shard communication

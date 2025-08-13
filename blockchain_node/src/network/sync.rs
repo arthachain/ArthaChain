@@ -2,15 +2,14 @@ use super::types::{SerializableDuration, SerializableInstant};
 use crate::ledger::block::Block;
 use crate::ledger::transaction::Transaction;
 use crate::network::p2p::NetworkMessage;
-use crate::storage::StorageError;
-use crate::storage::{Result as StorageResult, Storage};
+use crate::storage::Storage;
 use crate::types::Hash;
 use anyhow::Result;
 use async_trait::async_trait;
 use libp2p::PeerId;
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -948,7 +947,8 @@ impl SyncManager {
 
             // Update block status
             let mut downloading = self.downloading_blocks.write().await;
-            if let Some(info) = downloading.get_mut(&block.hash()) {
+            let block_hash = block.hash().unwrap_or_default();
+            if let Some(info) = downloading.get_mut(&block_hash) {
                 info.status = BlockSyncStatus::Processed;
             }
         }
@@ -1010,41 +1010,50 @@ impl MockStorage {
 
 #[async_trait]
 impl Storage for MockStorage {
-    async fn store(&self, _data: &[u8]) -> StorageResult<Hash> {
-        let hash = Hash::new(vec![0; 32]); // Placeholder
-        Ok(hash)
-    }
-
-    async fn retrieve(&self, hash: &Hash) -> StorageResult<Option<Vec<u8>>> {
-        if self.blocks.contains_key(hash) {
+    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, crate::storage::StorageError> {
+        let hash = Hash::new(key.to_vec());
+        if self.blocks.contains_key(&hash) {
             Ok(Some(vec![1, 2, 3])) // Placeholder
         } else {
             Ok(None)
         }
     }
 
-    async fn exists(&self, hash: &Hash) -> StorageResult<bool> {
-        Ok(self.blocks.contains_key(hash))
-    }
-
-    async fn delete(&self, _hash: &Hash) -> StorageResult<()> {
+    async fn put(&self, key: &[u8], value: &[u8]) -> Result<(), crate::storage::StorageError> {
+        // Mock implementation - just succeed
         Ok(())
     }
 
-    async fn verify(&self, _hash: &Hash, _data: &[u8]) -> StorageResult<bool> {
-        Ok(true)
-    }
-
-    async fn close(&self) -> StorageResult<()> {
+    async fn delete(&self, key: &[u8]) -> Result<(), crate::storage::StorageError> {
+        // Mock implementation - just succeed
         Ok(())
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    async fn exists(&self, key: &[u8]) -> Result<bool, crate::storage::StorageError> {
+        let hash = Hash::new(key.to_vec());
+        Ok(self.blocks.contains_key(&hash))
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    async fn list_keys(
+        &self,
+        _prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, crate::storage::StorageError> {
+        // Mock implementation
+        Ok(vec![])
+    }
+
+    async fn get_stats(
+        &self,
+    ) -> Result<crate::storage::StorageStats, crate::storage::StorageError> {
+        Ok(crate::storage::StorageStats::default())
+    }
+
+    async fn flush(&self) -> Result<(), crate::storage::StorageError> {
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<(), crate::storage::StorageError> {
+        Ok(())
     }
 }
 
@@ -1053,7 +1062,7 @@ trait BlockchainStorage {
     fn get_block_by_hash(&self, hash: &Hash) -> Option<Block>;
     fn get_block_by_height(&self, height: u64) -> Option<Block>;
     fn get_latest_block(&self) -> Option<Block>;
-    fn store_block(&mut self, block: Block) -> Result<(), StorageError>;
+    fn store_block(&mut self, block: Block) -> Result<(), anyhow::Error>;
     #[cfg(test)]
     async fn test_sync_manager() {
         let config = SyncConfig::default();

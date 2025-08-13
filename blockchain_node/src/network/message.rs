@@ -6,6 +6,45 @@ use super::types::SerializableInstant;
 // Define NodeId locally as a string type alias
 pub type NodeId = String;
 
+// 🛡️ SPOF ELIMINATION: Redundant Network Messaging Support
+
+/// Message redundancy level for fault tolerance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RedundancyLevel {
+    None,          // Single path delivery
+    Basic,         // 2 path delivery
+    High,          // 3 path delivery
+    Maximum,       // 5+ path delivery
+}
+
+/// Channel route information for redundant delivery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelRoute {
+    pub route_id: String,
+    pub route_type: RouteType,
+    pub reliability_score: f64,
+    pub latency_ms: u64,
+    pub is_active: bool,
+}
+
+/// Network route types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RouteType {
+    Direct,        // Direct peer connection
+    Relay,         // Through relay node
+    Mesh,          // Mesh network route
+    Backup,        // Emergency backup route
+}
+
+/// Delivery confirmation tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliveryConfirmation {
+    pub confirmed_routes: Vec<String>,
+    pub failed_routes: Vec<String>,
+    pub confirmation_timestamp: SystemTime,
+    pub total_delivery_time_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkMessage {
     pub id: String,
@@ -16,6 +55,13 @@ pub struct NetworkMessage {
     pub payload: MessagePayload,
     pub signature: Option<Vec<u8>>,
     pub sequence: u64,
+    
+    // 🛡️ SPOF ELIMINATION: Redundant Network Messaging (SPOF FIX #6)
+    pub redundancy_level: RedundancyLevel,
+    pub channel_routes: Vec<ChannelRoute>,
+    pub backup_routes: Vec<String>,
+    pub delivery_confirmation: Option<DeliveryConfirmation>,
+    pub message_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +80,14 @@ pub enum MessageType {
     CrossShard,
     Diagnostic,
     Error,
+    
+    // 🛡️ SPOF ELIMINATION: Redundant Network Message Types
+    RouteDiscovery,           // Discover alternative routes
+    RouteHealth,              // Report route health status  
+    ChannelFailover,          // Initiate channel failover
+    DeliveryConfirmation,     // Confirm message delivery
+    RedundantHeartbeat,       // Multi-path heartbeat
+    NetworkRedundancyCheck,   // Check network redundancy status
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,7 +264,7 @@ impl NetworkMessage {
         let id = Self::generate_message_id(&source, &timestamp, &payload);
 
         Self {
-            id,
+            id: id.clone(),
             timestamp,
             source: source.to_string(),
             target: target.map(|id| id.to_string()),
@@ -218,6 +272,19 @@ impl NetworkMessage {
             payload,
             signature: None,
             sequence: 0,
+            
+            // 🛡️ SPOF ELIMINATION: Initialize redundant messaging fields
+            redundancy_level: RedundancyLevel::Basic, // Default to basic redundancy
+            channel_routes: vec![ChannelRoute {
+                route_id: "primary".to_string(),
+                route_type: RouteType::Direct,
+                reliability_score: 1.0,
+                latency_ms: 0,
+                is_active: true,
+            }],
+            backup_routes: Vec::new(), // Initialize empty, will be populated by network layer
+            delivery_confirmation: None, // Will be set when delivery is confirmed
+            message_hash: Some(id), // Use message ID as hash for now
         }
     }
 

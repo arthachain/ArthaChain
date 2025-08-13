@@ -1,11 +1,7 @@
-use super::Storage;
 use crate::types::Hash;
-use anyhow::Result;
-use log::debug;
 
 /// Transaction for atomic operations across storage systems
-pub struct StorageTransaction<'a> {
-    hybrid: &'a dyn Storage,
+pub struct StorageTransaction {
     operations: Vec<StorageOperation>,
     committed: bool,
 }
@@ -16,11 +12,10 @@ enum StorageOperation {
     Delete { hash: Hash },
 }
 
-impl<'a> StorageTransaction<'a> {
+impl StorageTransaction {
     /// Create a new storage transaction
-    pub fn new(hybrid: &'a dyn Storage) -> Self {
+    pub fn new() -> Self {
         Self {
-            hybrid,
             operations: Vec::new(),
             committed: false,
         }
@@ -35,35 +30,31 @@ impl<'a> StorageTransaction<'a> {
     }
 
     /// Add delete operation to transaction
-    pub fn delete(&mut self, hash: &Hash) -> &mut Self {
-        self.operations
-            .push(StorageOperation::Delete { hash: hash.clone() });
+    pub fn delete(&mut self, hash: Hash) -> &mut Self {
+        self.operations.push(StorageOperation::Delete { hash });
         self
     }
 
-    /// Commit the transaction
-    pub async fn commit(mut self) -> Result<()> {
-        // Perform all operations
-        for op in &self.operations {
-            match op {
-                StorageOperation::Store { data } => {
-                    self.hybrid.store(data).await?;
-                }
-                StorageOperation::Delete { hash } => {
-                    self.hybrid.delete(hash).await?;
-                }
-            }
-        }
+    /// Get number of operations
+    pub fn len(&self) -> usize {
+        self.operations.len()
+    }
 
+    /// Check if transaction is empty
+    pub fn is_empty(&self) -> bool {
+        self.operations.is_empty()
+    }
+
+    /// Mark transaction as committed (for testing)
+    pub fn mark_committed(&mut self) {
         self.committed = true;
-        Ok(())
     }
 }
 
-impl<'a> Drop for StorageTransaction<'a> {
+impl Drop for StorageTransaction {
     fn drop(&mut self) {
         if !self.committed && !self.operations.is_empty() {
-            debug!(
+            log::warn!(
                 "Storage transaction dropped without commit ({} operations)",
                 self.operations.len()
             );

@@ -3,18 +3,20 @@
 //! Provides the execution environment for WebAssembly smart contracts.
 //! Integrates storage, runtime, and context for contract execution.
 
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use crate::ledger::state::State;
 use crate::ledger::Ledger;
 use crate::storage::Storage;
 use crate::types::{Address, Block};
 use crate::wasm::runtime::WasmRuntime;
-use crate::wasm::runtime::{WasmConfig, WasmEnv};
+use crate::wasm::runtime::WasmEnv;
 use crate::wasm::storage::WasmStorage;
 use crate::wasm::types::{
-    CallContext, CallParams, CallResult, WasmContractAddress, WasmError, WasmExecutionResult,
+    CallContext, CallParams, CallResult, WasmConfig, WasmContractAddress, WasmError, WasmExecutionResult,
     WasmTransaction,
 };
 
@@ -218,7 +220,7 @@ impl WasmExecutor {
 
         let mut hasher = Hasher::new();
         hasher.update(bytecode);
-        *hasher.finalize().as_bytes()
+        *hasher.finalize().as_ref()
     }
 
     /// Check if a contract exists
@@ -333,7 +335,7 @@ impl ContractExecutor {
         let mut hasher = sha2::Sha256::new();
         use sha2::Digest;
         hasher.update(contract_code);
-        hasher.update(sender.as_bytes());
+        hasher.update(sender.as_ref());
         hasher.update(
             &std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -506,7 +508,7 @@ mod tests {
         "#;
 
         // Convert to wasm
-        let wasm = wat::parse_str(wat).unwrap();
+        let wasm = wasmtime::wat::parse_str(wat).unwrap();
 
         // Deploy contract
         let result = executor.deploy_contract(&wasm, "test_sender", 1000000);
@@ -535,7 +537,7 @@ mod tests {
         "#;
 
         // Convert to wasm
-        let wasm = wat::parse_str(wat).unwrap();
+        let wasm = wasmtime::wat::parse_str(wat).unwrap();
 
         // Deploy contract
         let contract_address = executor
