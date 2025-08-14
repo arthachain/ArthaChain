@@ -153,8 +153,8 @@ jsonrpc-http-server = "18.0.0"
 # Metrics and monitoring
 prometheus = { workspace = true }
 
-# Python integration for AI - 🛡️ SECURITY: Updated to fix RUSTSEC-2025-0020 buffer overflow
-pyo3 = { version = "0.24.1", features = ["auto-initialize"] }
+# Python integration for AI - enable abi3 to avoid linking to system libpython at build time
+pyo3 = { version = "0.24.1", features = ["auto-initialize", "abi3-py39"] }
 
 # Additional required dependencies
 hex = "0.4.3"
