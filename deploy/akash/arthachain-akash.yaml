@@ -1,0 +1,84 @@
+version: "2.0"
+
+services:
+  arthachain:
+    image: ghcr.io/arthachain/arthachain:latest
+    env:
+      - RUST_LOG=info
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # Override entrypoint to ensure the global testnet config (binds to 0.0.0.0) is used
+    command:
+      - /bin/sh
+      - -lc
+      - >-
+        [ -x /app/real_time_api_server ] && exec /app/real_time_api_server ||
+        ( [ -x /app/api_server ] && exec /app/api_server ) ||
+        ( [ -x /app/testnet_api_server ] && exec /app/testnet_api_server ) ||
+        exec /app/arthachain run --config blockchain_node/testnet_config_global.toml
+    expose:
+      - port: 30303
+        as: 30303
+        to:
+          - global: true
+      - port: 30303
+        as: 30303
+        proto: udp
+        to:
+          - global: true
+      - port: 3000
+        as: 3000
+        to:
+          - global: true
+      - port: 8545
+        as: 8545
+        to:
+          - global: true
+      - port: 8546
+        as: 8546
+        to:
+          - global: true
+      - port: 9090
+        as: 9090
+        to:
+          - global: true
+    params:
+      storage:
+        data:
+          mount: /app/testnet_data
+
+profiles:
+  compute:
+    arthachain-profile:
+      resources:
+        cpu:
+          units: 12
+        memory:
+          size: 48gb
+        storage:
+          - size: 20Gi
+          - name: data
+            size: 1tb
+            attributes:
+              persistent: true
+              class: beta3
+        gpu:
+          units: 1
+          attributes:
+            vendor:
+              nvidia:
+                - model: a100
+  placement:
+    dcloud:
+      pricing:
+        arthachain-profile:
+          denom: uakt
+          amount: 1000
+
+deployment:
+  arthachain:
+    dcloud:
+      profile: arthachain-profile
+      count: 1
+
+
