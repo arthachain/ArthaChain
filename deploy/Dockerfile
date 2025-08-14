@@ -14,11 +14,11 @@ RUN cargo fetch
 
 # Build only a minimal API server first to avoid heavy deps; fall back progressively
 ENV RUSTFLAGS="--cfg skip_problematic_modules"
-RUN cargo build --release -p blockchain_node --bin real_time_api_server \
+RUN cargo build --release -p arthachain_node --bin real_time_api_server \
  || cargo build --release --bin real_time_api_server \
- || cargo build --release -p blockchain_node --bin api_server \
+ || cargo build --release -p arthachain_node --bin api_server \
  || cargo build --release --bin api_server \
- || cargo build --release -p blockchain_node --bin testnet_api_server \
+ || cargo build --release -p arthachain_node --bin testnet_api_server \
  || cargo build --release --bin testnet_api_server \
  || cargo build --release -p arthachain_node \
  || cargo build --release

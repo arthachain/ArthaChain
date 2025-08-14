@@ -1280,13 +1280,21 @@ impl SVCPMiner {
             let target_chunks = target.chunks_exact(32);
 
             for (h, t) in hash_chunks.zip(target_chunks) {
-                let hash_vec = _mm256_loadu_si256(h.as_ptr() as *const __m256i);
-                let target_vec = _mm256_loadu_si256(t.as_ptr() as *const __m256i);
+                // Intrinsics require unsafe blocks
+                let (hash_vec, target_vec) = unsafe {
+                    (
+                        _mm256_loadu_si256(h.as_ptr() as *const __m256i),
+                        _mm256_loadu_si256(t.as_ptr() as *const __m256i),
+                    )
+                };
 
-                // Compare hash with target (hash must be less than target)
-                let cmp = _mm256_cmpgt_epi8(target_vec, hash_vec);
-                let mask = _mm256_movemask_epi8(cmp);
+                let (cmp, mask) = unsafe {
+                    let cmp = _mm256_cmpgt_epi8(target_vec, hash_vec);
+                    let mask = _mm256_movemask_epi8(cmp);
+                    (cmp, mask)
+                };
 
+                let _ = cmp; // silence unused in non-AVX paths
                 if mask != 0 {
                     return false;
                 }
