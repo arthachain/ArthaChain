@@ -70,8 +70,40 @@ impl NodeConfig {
     /// Load configuration from file
     pub async fn load_from_file(path: &str) -> Result<Self> {
         let contents = tokio::fs::read_to_string(path).await?;
+        
+        // Try to parse as flat NodeConfig first
+        if let Ok(config) = toml::from_str::<NodeConfig>(&contents) {
+            return Ok(config);
+        }
+        
+        // If that fails, try to parse as nested Config and convert
+        if let Ok(nested_config) = toml::from_str::<Config>(&contents) {
+            return Ok(Self::from_nested_config(nested_config));
+        }
+        
+        // If both fail, return the original error
         let config: NodeConfig = toml::from_str(&contents)?;
         Ok(config)
+    }
+    
+    /// Convert from nested Config structure
+    pub fn from_nested_config(config: Config) -> Self {
+        Self {
+            node_id: config.node_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            network_id: config.network.network_name,
+            data_dir: config.data_dir,
+            listen_address: "0.0.0.0".to_string(),
+            port: config.network.p2p_port,
+            bootstrap_peers: config.bootstrap_peers.unwrap_or_default(),
+            validator_key: None,
+            is_validator: false,
+            ai_enabled: config.enable_ai,
+            model_path: Some(config.ai_model_dir),
+            storage_path: PathBuf::from(config.storage.db_path),
+            max_storage_size: 100 * 1024 * 1024 * 1024, // 100 GB
+            max_connections: config.network.max_peers,
+            sync_timeout: Duration::from_secs(30),
+        }
     }
 
     /// Save configuration to file  

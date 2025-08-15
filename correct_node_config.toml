@@ -1,0 +1,14 @@
+node_id = "production-node-01"
+network_id = "arthachain-mainnet"
+data_dir = "./blockchain_data"
+listen_address = "0.0.0.0"
+port = 30303
+bootstrap_peers = []
+validator_key = ""
+is_validator = false
+ai_enabled = true
+model_path = ""
+storage_path = "./blockchain_data/storage"
+max_storage_size = 107374182400
+max_connections = 50
+sync_timeout = "30s"
