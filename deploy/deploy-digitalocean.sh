@@ -63,9 +63,13 @@ apt-get install -y build-essential pkg-config libssl-dev git curl ufw nginx cert
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source /root/.cargo/env
 
-# Clone ArthaChain
+# Download ArthaChain source (replace with your actual repository or local deployment)
 cd /root
-git clone https://github.com/arthachain/arthachain.git
+# For now, we'll use a local deployment approach
+# You can replace this with your actual GitHub repository once it's published
+wget -O arthachain.tar.gz "YOUR_REPOSITORY_ARCHIVE_URL"
+tar -xzf arthachain.tar.gz
+mv arthachain-main arthachain || mv arthachain-* arthachain
 cd arthachain
 
 # Build the project
@@ -92,8 +96,8 @@ listen_addr = "0.0.0.0:30303"
 external_addr = "/ip4/${PUBLIC_IP}/tcp/30303"
 max_peers = 100
 boot_nodes = [
-    "/ip4/147.182.246.123/tcp/30303/p2p/12D3KooWGlobalNode1",
-    "/ip4/164.92.123.45/tcp/30303/p2p/12D3KooWGlobalNode2",
+    # Add your actual boot nodes here after initial deployment
+    # "/ip4/YOUR_FIRST_NODE_IP/tcp/30303/p2p/YOUR_PEER_ID",
 ]
 enable_nat = true
 

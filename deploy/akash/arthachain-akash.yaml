@@ -1,31 +1,9 @@
+---
 version: "2.0"
-
 services:
   arthachain:
     image: ghcr.io/arthachain/arthachain:latest
-    env:
-      - RUST_LOG=info
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    # Override entrypoint to ensure the global testnet config (binds to 0.0.0.0) is used
-    command:
-      - /bin/sh
-      - -lc
-      - >-
-        [ -x /app/real_time_api_server ] && exec /app/real_time_api_server ||
-        ( [ -x /app/api_server ] && exec /app/api_server ) ||
-        ( [ -x /app/testnet_api_server ] && exec /app/testnet_api_server ) ||
-        exec /app/arthachain run --config blockchain_node/testnet_config_global.toml
     expose:
-      - port: 30303
-        as: 30303
-        to:
-          - global: true
-      - port: 30303
-        as: 30303
-        proto: udp
-        to:
-          - global: true
       - port: 3000
         as: 3000
         to:
@@ -36,27 +14,42 @@ services:
           - global: true
       - port: 8546
         as: 8546
+        proto: tcp
         to:
           - global: true
       - port: 9090
         as: 9090
         to:
           - global: true
+      - port: 30303
+        as: 30303
+        proto: tcp
+        to:
+          - global: true
+    command: /bin/sh
+    args:
+      - >-
+        -lc "[ -x /app/real_time_api_server ] && exec /app/real_time_api_server
+        || ([ -x /app/api_server ] && exec /app/api_server) || ([ -x
+        /app/testnet_api_server ] && exec /app/testnet_api_server) || exec
+        /app/arthachain run --config blockchain_node/testnet_config_global.toml"
+    env:
+      - RUST_LOG=info
     params:
       storage:
         data:
-          mount: /app/testnet_data
-
+          mount: /mnt/data
+          readOnly: false
 profiles:
   compute:
-    arthachain-profile:
+    arthachain:
       resources:
         cpu:
-          units: 12
+          units: 24
         memory:
           size: 48gb
         storage:
-          - size: 20Gi
+          - size: 1tb
           - name: data
             size: 1tb
             attributes:
@@ -71,14 +64,13 @@ profiles:
   placement:
     dcloud:
       pricing:
-        arthachain-profile:
-          denom: uakt
-          amount: 1000
-
+        arthachain:
+          denom: ibc/170C677610AC31DF0904FFE09CD3B5C657492170E7E52372E48756B71E56F2F1
+          amount: 100000
 deployment:
   arthachain:
     dcloud:
-      profile: arthachain-profile
+      profile: arthachain
       count: 1
 
 
