@@ -11,4 +11,4 @@ model_path = ""
 storage_path = "./blockchain_data/storage"
 max_storage_size = 107374182400
 max_connections = 50
-sync_timeout = "30s"
+sync_timeout = 30

@@ -2,13 +2,23 @@ use crate::ai_engine::data_chunking::ChunkingConfig;
 use crate::ledger::state::ShardConfig;
 use anyhow::Result;
 use log::{debug, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::{self, Visitor};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+// Custom deserializer for Duration from u64 seconds
+fn deserialize_duration_from_u64<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let seconds = u64::deserialize(deserializer)?;
+    Ok(Duration::from_secs(seconds))
+}
 
 // pub mod network;
 // pub mod node;
@@ -42,6 +52,7 @@ pub struct NodeConfig {
 
     /// Performance settings
     pub max_connections: u32,
+    #[serde(deserialize_with = "deserialize_duration_from_u64")]
     pub sync_timeout: Duration,
 }
 
