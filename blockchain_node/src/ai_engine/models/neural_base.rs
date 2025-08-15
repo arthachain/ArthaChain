@@ -1,4 +1,6 @@
 use anyhow::Result;
+use log::info;
+#[cfg(feature = "python-ai")]
 use pyo3::{PyObject, Python};
 
 #[derive(Debug, Clone)]
@@ -6,6 +8,7 @@ pub struct TrainingResult {
     pub loss: f64,
     pub epoch: u32,
 }
+#[cfg(feature = "python-ai")]
 use pyo3::types::{PyAnyMethods, PyListMethods};
 use serde::{Deserialize, Serialize};
 // use std::collections::HashMap; // Unused import removed
@@ -169,28 +172,53 @@ impl NeuralConfig {
 impl NeuralBase {
     /// Save model state to file
     pub fn save_state(&self, path: &str) -> Result<()> {
-        Python::with_gil(|py| -> Result<()> {
-            let model_guard = self.model.blocking_read();
-            // Use advanced PyObject extraction
-            let model_ref = Self::extract_python_object(&model_guard, py)?;
+        #[cfg(feature = "python-ai")]
+        {
+            Python::with_gil(|py| -> Result<()> {
+                let model_guard = self.model.blocking_read();
+                // Use advanced PyObject extraction
+                let model_ref = Self::extract_python_object(&model_guard, py)?;
 
-            // Save the model state
-            let torch = py.import_bound("torch")?;
-            torch.call_method1("save", (model_ref, path))?;
+                // Save the model state
+                let torch = py.import_bound("torch")?;
+                torch.call_method1("save", (model_ref, path))?;
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "python-ai"))]
+        {
+            // Save using alternative serialization
+            use std::fs;
+            let model_guard = self.model.blocking_read();
+            let serialized = serde_json::to_string(&*model_guard)?;
+            fs::write(path, serialized)?;
             Ok(())
-        })
+        }
     }
 
     /// Load model state from file
     pub fn load_state(&mut self, path: &str) -> Result<()> {
-        Python::with_gil(|py| -> Result<()> {
-            let torch = py.import_bound("torch")?;
-            let loaded_model = torch.call_method1("load", (path,))?;
+        #[cfg(feature = "python-ai")]
+        {
+            Python::with_gil(|py| -> Result<()> {
+                let torch = py.import_bound("torch")?;
+                let loaded_model = torch.call_method1("load", (path,))?;
 
-            // Replace the current model
-            *self.model.blocking_write() = loaded_model.into();
+                // Replace the current model
+                *self.model.blocking_write() = loaded_model.into();
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "python-ai"))]
+        {
+            // Load using alternative deserialization (mock implementation)
+            use std::fs;
+            let contents = fs::read_to_string(path)?;
+            // For non-Python builds, just store a placeholder
+            let _model_data = contents; // Consume the data
+            info!("Model loading skipped - Python AI features disabled");
             Ok(())
-        })
+        }
     }
 }
 
@@ -311,7 +339,10 @@ pub struct NeuralBase {
     /// Network configuration
     pub config: NeuralConfig,
     /// PyTorch model (wrapped in Arc&lt;RwLock&gt; for thread safety)
+    #[cfg(feature = "python-ai")]
     pub model: Arc<RwLock<PyObject>>,
+    #[cfg(not(feature = "python-ai"))]
+    pub model: Arc<RwLock<serde_json::Value>>,
     /// Training history
     pub training_history: Vec<f64>,
     /// Device configuration for distributed computing
@@ -337,6 +368,7 @@ impl NeuralBase {
 
     /// Create a new neural base synchronously
     pub fn new_sync(config: NeuralConfig) -> Result<Self> {
+        #[cfg(feature = "python-ai")]
         let model = Python::with_gil(|py| -> Result<PyObject> {
             let torch = py.import_bound("torch")?;
             let nn = py.import_bound("torch.nn")?;
@@ -420,6 +452,17 @@ impl NeuralBase {
             Ok(model.into())
         })?;
 
+        #[cfg(not(feature = "python-ai"))]
+        let model = {
+            // Create a mock model for non-Python builds
+            use serde_json::json;
+            let mock_model = json!({
+                "type": "mock_neural_model",
+                "config": config.clone()
+            });
+            serde_json::from_value(mock_model)?
+        };
+
         Ok(Self {
             config,
             model: Arc::new(RwLock::new(model)),
@@ -430,23 +473,48 @@ impl NeuralBase {
     }
 
     /// Create PyTorch model asynchronously
+    #[cfg(feature = "python-ai")]
     async fn create_pytorch_model(config: &NeuralConfig) -> Result<PyObject> {
-        let model = Python::with_gil(|py| -> Result<PyObject> {
-            let torch = py.import_bound("torch")?;
-            let nn = py.import_bound("torch.nn")?;
+        #[cfg(feature = "python-ai")]
+        {
+            let model = Python::with_gil(|py| -> Result<PyObject> {
+                let torch = py.import_bound("torch")?;
+                let nn = py.import_bound("torch.nn")?;
 
-            // Create a simple sequential model
-            let layers = pyo3::types::PyList::empty_bound(py);
+                // Create a simple sequential model
+                let layers = pyo3::types::PyList::empty_bound(py);
 
-            // Add layers based on configuration
-            let linear = nn.call_method1("Linear", (config.input_dim, config.output_dim))?;
-            layers.append(linear)?;
+                // Add layers based on configuration
+                let linear = nn.call_method1("Linear", (config.input_dim, config.output_dim))?;
+                layers.append(linear)?;
 
-            let model = nn.call_method1("Sequential", (layers,))?;
-            Ok(model.into())
-        })?;
+                let model = nn.call_method1("Sequential", (layers,))?;
+                Ok(model.into())
+            })?;
 
-        Ok(model)
+            Ok(model)
+        }
+        #[cfg(not(feature = "python-ai"))]
+        {
+            // Return mock model for non-Python builds
+            use serde_json::json;
+            let mock_model = json!({
+                "type": "mock_pytorch_model",
+                "config": config.clone()
+            });
+            Ok(serde_json::from_value(mock_model)?)
+        }
+    }
+
+    /// Create mock model for non-Python builds
+    #[cfg(not(feature = "python-ai"))]
+    async fn create_pytorch_model(config: &NeuralConfig) -> Result<serde_json::Value> {
+        use serde_json::json;
+        let mock_model = json!({
+            "type": "mock_pytorch_model_no_python",
+            "config": config.clone()
+        });
+        Ok(mock_model)
     }
 
     /// Train the model with supervised learning
@@ -459,6 +527,7 @@ impl NeuralBase {
             return Err(anyhow::anyhow!("Input and target lengths must match"));
         }
 
+        #[cfg(feature = "python-ai")]
         let loss = Python::with_gil(|py| -> Result<f64> {
             let torch = py.import_bound("torch")?;
             let nn = py.import_bound("torch.nn")?;
@@ -512,6 +581,13 @@ impl NeuralBase {
             Ok(total_loss / (inputs.len() / batch_size) as f64)
         })?;
 
+        #[cfg(not(feature = "python-ai"))]
+        let loss = {
+            // Mock training for non-Python builds
+            info!("Training skipped - Python AI features disabled");
+            0.5 // Return a dummy loss value
+        };
+
         self.training_history.push(loss);
         Ok(TrainingResult {
             loss,
@@ -520,6 +596,7 @@ impl NeuralBase {
     }
 
     /// Convert Rust vectors to PyTorch tensors
+    #[cfg(feature = "python-ai")]
     fn vec_to_tensor(&self, py: Python, data: &[Vec<f32>]) -> Result<PyObject> {
         let torch = py.import_bound("torch")?;
 
@@ -533,6 +610,16 @@ impl NeuralBase {
 
         Ok(reshaped.unbind().into())
     }
+
+    /// Mock tensor conversion for non-Python builds
+    #[cfg(not(feature = "python-ai"))]
+    fn vec_to_tensor(&self, _data: &[Vec<f32>]) -> Result<serde_json::Value> {
+        use serde_json::json;
+        Ok(json!({
+            "type": "mock_tensor",
+            "shape": [_data.len(), _data.get(0).map(|v| v.len()).unwrap_or(0)]
+        }))
+    }
 }
 
 impl NeuralNetwork for NeuralBase {
@@ -540,20 +627,29 @@ impl NeuralNetwork for NeuralBase {
         let rt = tokio::runtime::Runtime::new()?;
         let model_guard = rt.block_on(async { self.model.read().await });
 
-        Python::with_gil(|py| -> Result<Vec<f32>> {
-            let torch = py.import_bound("torch")?;
-            let model = model_guard.bind(py);
+        #[cfg(feature = "python-ai")]
+        {
+            Python::with_gil(|py| -> Result<Vec<f32>> {
+                let torch = py.import_bound("torch")?;
+                let model = model_guard.bind(py);
 
-            // Convert input to tensor
-            let input_tensor = torch.call_method1("tensor", (input.to_vec(),))?;
+                // Convert input to tensor
+                let input_tensor = torch.call_method1("tensor", (input.to_vec(),))?;
 
-            // Forward pass
-            let output = model.call_method1("forward", (input_tensor,))?;
+                // Forward pass
+                let output = model.call_method1("forward", (input_tensor,))?;
 
-            // Convert back to Vec<f32>
-            let output_list: Vec<f32> = output.call_method0("tolist")?.extract()?;
-            Ok(output_list)
-        })
+                // Convert back to Vec<f32>
+                let output_list: Vec<f32> = output.call_method0("tolist")?.extract()?;
+                Ok(output_list)
+            })
+        }
+        #[cfg(not(feature = "python-ai"))]
+        {
+            // Mock forward pass for non-Python builds
+            info!("Forward pass skipped - Python AI features disabled");
+            Ok(vec![0.5; input.len()]) // Return dummy output
+        }
     }
 
     fn train(&mut self, inputs: &[Vec<f32>], targets: &[Vec<f32>]) -> Result<f64> {
@@ -613,6 +709,7 @@ impl NeuralBase {
         inputs: &[Vec<f32>],
         targets: &[Vec<f32>],
     ) -> Result<TrainingResult> {
+        #[cfg(feature = "python-ai")]
         let loss = Python::with_gil(|py| -> Result<f64> {
             let torch = py.import_bound("torch")?;
             let nn = py.import_bound("torch.nn")?;
@@ -668,6 +765,13 @@ impl NeuralBase {
             Ok(total_loss / (inputs.len() as f64 / batch_size as f64))
         })?;
 
+        #[cfg(not(feature = "python-ai"))]
+        let loss = {
+            // Mock quantum training for non-Python builds
+            info!("Quantum training skipped - Python AI features disabled");
+            0.3 // Return a dummy loss value
+        };
+
         Ok(TrainingResult { loss, epoch: 1 })
     }
 
@@ -690,6 +794,7 @@ impl NeuralBase {
     }
 
     /// Advanced PyObject extraction with error handling  
+    #[cfg(feature = "python-ai")]
     #[allow(dead_code)]
     fn extract_python_object<'py>(
         guard: &pyo3::Py<pyo3::PyAny>,

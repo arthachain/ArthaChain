@@ -209,8 +209,9 @@ mod tests {
     #[tokio::test]
     async fn test_api_server_creation() {
         let config = Config::default();
+        let node_config = crate::config::NodeConfig::default();
         let state = Arc::new(RwLock::new(State::new(&config).unwrap()));
-        let node = Arc::new(Mutex::new(Node::new(config.clone()).await.unwrap()));
+        let node = Arc::new(Mutex::new(Node::new(node_config).await.unwrap()));
         let _server = ApiServer::new(
             config,
             state,

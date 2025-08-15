@@ -341,47 +341,36 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Storage for MockStorage {
-        async fn store(&self, _data: &[u8]) -> std::result::Result<Hash, anyhow::Error> {
-            Ok(Hash::new(vec![0; 32]))
-        }
-
-        async fn retrieve(
-            &self,
-            _hash: &Hash,
-        ) -> std::result::Result<Option<Vec<u8>>, anyhow::Error> {
+        async fn get(&self, _key: &[u8]) -> crate::storage::Result<Option<Vec<u8>>> {
             Ok(None)
         }
 
-        async fn exists(&self, _hash: &Hash) -> std::result::Result<bool, anyhow::Error> {
+        async fn put(&self, _key: &[u8], _value: &[u8]) -> crate::storage::Result<()> {
+            Ok(())
+        }
+
+        async fn delete(&self, _key: &[u8]) -> crate::storage::Result<()> {
+            Ok(())
+        }
+
+        async fn exists(&self, _key: &[u8]) -> crate::storage::Result<bool> {
             Ok(false)
         }
 
-        async fn delete(&self, _hash: &Hash) -> std::result::Result<(), anyhow::Error> {
-            Ok(())
+        async fn list_keys(&self, _prefix: &[u8]) -> crate::storage::Result<Vec<Vec<u8>>> {
+            Ok(vec![])
         }
 
-        async fn verify(
-            &self,
-            _hash: &Hash,
-            _data: &[u8],
-        ) -> std::result::Result<bool, anyhow::Error> {
-            Ok(true)
-        }
-
-        async fn close(&self) -> Result<(), anyhow::Error> {
-            Ok(())
-        }
-
-        async fn get_stats(&self) -> Result<crate::storage::StorageStats, anyhow::Error> {
+        async fn get_stats(&self) -> crate::storage::Result<crate::storage::StorageStats> {
             Ok(crate::storage::StorageStats::default())
         }
 
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
+        async fn flush(&self) -> crate::storage::Result<()> {
+            Ok(())
         }
 
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-            self
+        async fn close(&self) -> crate::storage::Result<()> {
+            Ok(())
         }
     }
 }

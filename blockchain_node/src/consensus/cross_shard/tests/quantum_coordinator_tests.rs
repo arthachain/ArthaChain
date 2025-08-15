@@ -9,22 +9,25 @@ mod tests {
     async fn test_quantum_coordinator_initialization() {
         // Test quantum coordinator initialization with proper config
         let config = CoordinatorConfig {
-            shard_count: 4,
-            committee_size: 3,
             timeout_ms: 5000,
             max_concurrent_txs: 100,
-            quantum_key_refresh_interval: 1000,
-            enable_quantum_verification: true,
+            retry_attempts: 3,
+            quantum_signature_enabled: true,
+            enable_distributed_coordination: true,
+            coordinator_replicas: 5,
+            consensus_threshold: 3,
+            enable_coordinator_failover: true,
+            coordinator_health_check_interval_ms: 1000,
         };
 
         // Verify configuration is valid
-        assert_eq!(config.shard_count, 4);
-        assert_eq!(config.committee_size, 3);
-        assert!(config.enable_quantum_verification);
+        assert_eq!(config.max_concurrent_txs, 100);
+        assert_eq!(config.retry_attempts, 3);
+        assert!(config.quantum_signature_enabled);
         assert!(config.timeout_ms > 0);
 
-        // Test that shard count is reasonable
-        assert!(config.shard_count >= 2 && config.shard_count <= 1024);
+        // Test that coordinator configuration is reasonable
+        assert!(config.coordinator_replicas >= 3 && config.coordinator_replicas <= 10);
     }
 
     #[tokio::test]
@@ -38,7 +41,7 @@ mod tests {
         }
 
         // Test communication channel setup
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
         // Send test message
         let test_message = "test_quantum_message";

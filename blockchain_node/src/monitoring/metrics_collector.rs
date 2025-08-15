@@ -17,6 +17,24 @@ pub struct NetworkInterfaceStats {
     pub tx_bytes: u64,
 }
 
+/// Metrics configuration
+#[derive(Debug, Clone)]
+pub struct MetricsConfig {
+    pub address: String,
+    pub port: u16,
+    pub enabled: bool,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            address: "0.0.0.0".to_string(),
+            port: 9090,
+            enabled: true,
+        }
+    }
+}
+
 /// Metrics collector service
 pub struct MetricsCollector {
     /// Collection task handle

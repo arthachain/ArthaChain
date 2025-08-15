@@ -6,7 +6,7 @@ authors = ["ArthaChain Team <team@arthachain.io>"]
 description = "Next-generation blockchain node with AI-native features, quantum resistance, and ultra-high performance"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/arthachain/arthachain"
-homepage = "https://arthachain.io"
+homepage = "https://arthachain.com"
 keywords = ["blockchain", "ai", "quantum-resistant", "consensus", "smart-contracts"]
 categories = ["cryptography", "network-programming", "database", "algorithms"]
 
@@ -154,7 +154,7 @@ jsonrpc-http-server = "18.0.0"
 prometheus = { workspace = true }
 
 # Python integration for AI - enable abi3 to avoid linking to system libpython at build time
-pyo3 = { version = "0.24.1", features = ["auto-initialize", "abi3-py39"] }
+pyo3 = { version = "0.24.1", features = ["abi3-py310"], optional = true }
 
 # Additional required dependencies
 hex = "0.4.3"
@@ -177,6 +177,7 @@ tempfile = "3.13.0"
 default = ["full"]
 full = ["ai-engine", "quantum-resistance", "wasm-runtime", "evm-runtime", "cross-shard", "biometrics"]
 ai-engine = []
+python-ai = ["pyo3"]
 quantum-resistance = []
 wasm-runtime = []
 evm-runtime = []

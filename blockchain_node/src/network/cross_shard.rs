@@ -604,6 +604,14 @@ mod tests {
             batch_size: 5,
             max_queue_size: 10,
             sync_interval: Duration::from_millis(100),
+            validation_threshold: 0.67,
+            transaction_timeout: Duration::from_secs(30),
+            retry_count: 3,
+            pending_timeout: Duration::from_secs(60),
+            timeout_check_interval: Duration::from_secs(10),
+            resource_threshold: 0.8,
+            local_shard: 0,
+            connected_shards: vec![1, 2],
         };
 
         let manager = CrossShardManager::new(config);
@@ -663,6 +671,14 @@ mod tests {
             batch_size: 5,
             max_queue_size: 10,
             sync_interval: Duration::from_millis(100),
+            validation_threshold: 0.67,
+            transaction_timeout: Duration::from_secs(30),
+            retry_count: 3,
+            pending_timeout: Duration::from_secs(60),
+            timeout_check_interval: Duration::from_secs(10),
+            resource_threshold: 0.8,
+            local_shard: 0,
+            connected_shards: vec![1, 2],
         };
 
         let manager = CrossShardManager::new(config);

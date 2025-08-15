@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_quantum_resistant_hash() {
         let data = b"test hash input";
-        let hash = quantum_resistant_hash(data);
+        let hash = quantum_resistant_hash(data).unwrap();
         assert_eq!(hash.len(), 32); // BLAKE3 output size
     }
 

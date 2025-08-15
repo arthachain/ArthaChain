@@ -548,9 +548,7 @@ mod tests {
             min_validators: 1,
             max_validators: 100,
             rotation_interval: 1000,
-            min_stake: 100_000,
-            max_stake: 10_000_000,
-            stake_lock_period: 100,
+
         };
         let validator_manager = Arc::new(ValidatorSetManager::new(validator_config));
 
@@ -579,9 +577,7 @@ mod tests {
             min_validators: 1,
             max_validators: 100,
             rotation_interval: 1000,
-            min_stake: 100_000,
-            max_stake: 10_000_000,
-            stake_lock_period: 100,
+
         };
         let validator_manager = Arc::new(ValidatorSetManager::new(validator_config));
 

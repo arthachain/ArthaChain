@@ -167,7 +167,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_service() {
-        let config = Config::default();
+        let config = crate::config::NodeConfig::default();
         let _node = Arc::new(Node::new(config).await.unwrap());
         let service = MetricsService::new();
 

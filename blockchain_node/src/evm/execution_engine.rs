@@ -745,6 +745,8 @@ mod tests {
             gas_limit: U256::from(100000),
             gas_price: U256::from(20_000_000_000),
             nonce: U256::zero(),
+            chain_id: Some(1337),
+            signature: None,
         };
 
         let result = engine.execute_transaction(&tx).await.unwrap();

@@ -392,6 +392,18 @@ mod tests {
         fn is_genesis_node(&self) -> bool {
             self.is_genesis_node
         }
+
+        fn is_sharding_enabled(&self) -> bool {
+            false
+        }
+
+        fn get_shard_count(&self) -> u32 {
+            1
+        }
+
+        fn get_primary_shard(&self) -> u32 {
+            0
+        }
     }
 }
 

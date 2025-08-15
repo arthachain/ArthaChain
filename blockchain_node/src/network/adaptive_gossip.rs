@@ -373,7 +373,7 @@ mod tests {
 
         // Generate test keys
         let (quantum_public_key, quantum_private_key) =
-            match crate::utils::crypto::generate_quantum_resistant_keypair(None) {
+            match crate::utils::crypto::generate_quantum_resistant_keypair() {
                 Ok(keys) => keys,
                 Err(_) => (vec![0; 32], vec![0; 32]),
             };

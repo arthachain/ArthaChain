@@ -3,6 +3,7 @@ use anyhow::Result;
 use candle_core::{Device, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
 use log::{debug, info};
+#[cfg(feature = "python-ai")]
 use pyo3::Python;
 use serde::{Deserialize, Serialize};
 
@@ -388,15 +389,24 @@ impl BlockchainNeuralModel {
         // Get model state from Python
         let model_state = rt.block_on(async {
             let model = self.neural_base.model.read().await;
-            Python::with_gil(|py| -> Result<Vec<u8>> {
-                let model_ref = model.bind(py);
+            #[cfg(feature = "python-ai")]
+            {
+                Python::with_gil(|py| -> Result<Vec<u8>> {
+                    let model_ref = model.bind(py);
 
-                // Get the model state as bytes
-                let save_state_attr = py.None(); // Placeholder state
-                let state = save_state_attr;
-                let state_str: String = format!("{:?}", state);
-                Ok(state_str.into_bytes())
-            })
+                    // Get the model state as bytes
+                    let save_state_attr = py.None(); // Placeholder state
+                    let state = save_state_attr;
+                    let state_str: String = format!("{:?}", state);
+                    Ok(state_str.into_bytes())
+                })
+            }
+            #[cfg(not(feature = "python-ai"))]
+            {
+                // Mock state serialization for non-Python builds
+                let mock_state = format!("mock_blockchain_neural_state_{:?}", model);
+                Ok::<Vec<u8>, anyhow::Error>(mock_state.into_bytes())
+            }
         })?;
 
         // Write to file
@@ -422,20 +432,30 @@ impl BlockchainNeuralModel {
         // Load state into Python model
         rt.block_on(async {
             let model = self.neural_base.model.write().await;
-            Python::with_gil(|py| -> Result<()> {
-                let model_ref = model.bind(py);
+            #[cfg(feature = "python-ai")]
+            {
+                Python::with_gil(|py| -> Result<()> {
+                    let model_ref = model.bind(py);
 
-                // Convert bytes back to state dict (simplified)
+                    // Convert bytes back to state dict (simplified)
+                    let state_str = String::from_utf8_lossy(&buffer);
+                    debug!(
+                        "Loading model state: {}",
+                        &state_str[..state_str.len().min(100)]
+                    );
+
+                    // In a full implementation, this would deserialize the actual PyTorch state dict
+                    info!("Model loaded from: {}", path);
+                    Ok(())
+                })
+            }
+            #[cfg(not(feature = "python-ai"))]
+            {
+                // Mock state loading for non-Python builds
                 let state_str = String::from_utf8_lossy(&buffer);
-                debug!(
-                    "Loading model state: {}",
-                    &state_str[..state_str.len().min(100)]
-                );
-
-                // In a full implementation, this would deserialize the actual PyTorch state dict
-                info!("Model loaded from: {}", path);
-                Ok(())
-            })
+                info!("Mock model loaded from: {} (length: {} bytes)", path, state_str.len());
+                Ok::<(), anyhow::Error>(())
+            }
         })?;
 
         Ok(())

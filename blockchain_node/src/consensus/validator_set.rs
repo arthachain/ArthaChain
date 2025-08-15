@@ -314,6 +314,8 @@ impl ValidatorSetManager {
         Ok(info.metrics.clone())
     }
 
+
+
     /// Save state to disk
     pub async fn save_state(&self, path: &str) -> Result<()> {
         let state = self.state.read().await;
@@ -354,9 +356,6 @@ mod tests {
                 rotation_interval: 1, // Set to 1 to ensure rotation happens easily
                 min_validators: 1,
                 max_validators: 5,
-                min_stake: 100,
-                max_stake: 10000,
-                stake_lock_period: 100,
             };
 
             // Create validator manager with this config
@@ -372,10 +371,10 @@ mod tests {
             let a2 = Address::from_bytes(&v2).unwrap();
             let a3 = Address::from_bytes(&v3).unwrap();
 
-            // Register validators with stakes
-            manager.update_stake(v1.clone(), 1000).await.unwrap();
-            manager.update_stake(v2.clone(), 800).await.unwrap();
-            manager.update_stake(v3.clone(), 600).await.unwrap();
+            // Register validators (no staking required!)
+            manager.register_validator(v1.clone(), vec![0u8; 32]).await.unwrap();
+            manager.register_validator(v2.clone(), vec![1u8; 32]).await.unwrap();
+            manager.register_validator(v3.clone(), vec![2u8; 32]).await.unwrap();
 
             // Manually set the validators as active in the state
             {
