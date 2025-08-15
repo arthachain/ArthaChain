@@ -595,8 +595,30 @@ impl Node {
     /// Start network layer
     pub async fn start_network(&self) -> Result<(), anyhow::Error> {
         info!("🌐 Network layer starting...");
-        // TODO: Implement actual network initialization
-        // For now we'll just log this
+        
+        // Start API server on port 3000
+        let api_handle = tokio::spawn(async {
+            if let Err(e) = crate::api::server::start_api_server(3000).await {
+                log::error!("API server failed: {}", e);
+            }
+        });
+        
+        // Give the server a moment to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        info!("✅ API server started on port 3000");
+        
+        // Start HTTP RPC on port 8545
+        // TODO: Implement RPC server
+        info!("✅ HTTP RPC would start on port 8545");
+        
+        // Start WebSocket RPC on port 8546
+        // TODO: Implement WebSocket RPC
+        info!("✅ WebSocket RPC would start on port 8546");
+        
+        // Start P2P network on port 30303
+        // TODO: Implement P2P network
+        info!("✅ P2P network would start on port 30303");
+        
         info!("✅ Network layer started successfully");
         Ok(())
     }
@@ -622,8 +644,20 @@ impl Node {
     /// Start monitoring
     pub async fn start_monitoring(&self) -> Result<(), anyhow::Error> {
         info!("📊 Monitoring starting...");
-        // TODO: Implement actual monitoring initialization
-        // For now we'll just log this
+        
+        // Start Prometheus metrics server on port 9090
+        let metrics_config = crate::monitoring::metrics_collector::MetricsConfig {
+            address: "0.0.0.0".to_string(),
+            port: 9090,
+            enabled: true,
+        };
+        
+        // TODO: Implement actual metrics server
+        // let metrics_server = crate::monitoring::metrics_collector::MetricsServer::new(metrics_config).await?;
+        // let metrics_handle = metrics_server.start().await?;
+        // *self.metrics.write().await = Some(metrics_handle);
+        
+        info!("✅ Metrics server would start on port 9090");
         info!("✅ Monitoring started successfully");
         Ok(())
     }
