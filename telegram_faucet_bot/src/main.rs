@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
         .expect("TELEGRAM_BOT_TOKEN environment variable not set");
     
     let faucet_api_url = std::env::var("FAUCET_API_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        .unwrap_or_else(|_| "https://api.arthachain.in".to_string());
 
     let bot = Bot::new(bot_token);
     let state = BotState::new(faucet_api_url);

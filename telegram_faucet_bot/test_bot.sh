@@ -11,7 +11,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Test API endpoints that the bot uses
-API_BASE="http://localhost:8080"
+API_BASE="https://api.arthachain.in"
 
 echo ""
 echo "${BLUE}📡 Testing API Endpoints...${NC}"

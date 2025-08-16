@@ -32,7 +32,7 @@ A feature-rich Telegram bot for the ArthaChain testnet faucet, allowing users to
    ```bash
    # Edit .env file
    TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
-   FAUCET_API_URL=http://localhost:8080
+   FAUCET_API_URL=https://api.arthachain.in
    ```
 
 3. **Build and run**:
@@ -68,7 +68,7 @@ A feature-rich Telegram bot for the ArthaChain testnet faucet, allowing users to
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | **Required** |
-| `FAUCET_API_URL` | ArthaChain API endpoint | `http://localhost:8080` |
+| `FAUCET_API_URL` | ArthaChain API endpoint | `https://api.arthachain.in` |
 | `RATE_LIMIT_SECONDS` | Cooldown between requests | `86400` (24 hours) |
 | `RUST_LOG` | Logging level | `info` |
 | `BOT_ADMIN_USER_ID` | Admin user ID | Optional |
@@ -133,7 +133,7 @@ The bot integrates with these ArthaChain endpoints:
 ```bash
 # Set environment variables
 export TELEGRAM_BOT_TOKEN="your_token"
-export FAUCET_API_URL="http://localhost:8080"
+export FAUCET_API_URL="https://api.arthachain.in"
 
 # Run in development mode
 RUST_LOG=debug cargo run
@@ -205,7 +205,7 @@ cargo test --test integration_tests
 RUST_LOG=debug cargo run
 
 # Check API connectivity
-curl http://localhost:8080/api/health
+curl https://api.arthachain.in/api/health
 ```
 
 ## 📈 Performance

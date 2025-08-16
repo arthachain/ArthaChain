@@ -271,7 +271,7 @@ impl Config {
                 db_type: "rocksdb".to_string(),
                 max_open_files: 512,
                 db_path: "./data/db".to_string(),
-                svdb_url: "http://localhost:3000".to_string(),
+                svdb_url: "https://api.arthachain.in".to_string(),
                 size_threshold: 1024 * 1024, // 1MB
             },
             api: ApiConfig {

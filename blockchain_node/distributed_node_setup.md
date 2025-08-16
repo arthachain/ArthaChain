@@ -293,14 +293,14 @@ sudo firewall-cmd --reload
 After starting each node:
 
 ```bash
-# Check if node is running
+# Check if local node is running
 curl http://localhost:8080/api/health
 
-# Check peer connections
+# Check local peer connections
 curl http://localhost:8080/api/status
 
-# Check validator set
-curl http://localhost:8080/api/validators
+# Check network validator set (from bootstrap)
+curl https://api.arthachain.in/api/validators
 ```
 
 ---

@@ -10,15 +10,15 @@
    - **Save the bot token** you receive (looks like: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
 
 2. **ArthaChain Node Running**:
-   - Ensure your ArthaChain testnet API is running on `http://localhost:8080`
-   - Test with: `curl http://localhost:8080/api/health`
+   - Ensure your ArthaChain testnet API is running on `https://api.arthachain.in`
+   - Test with: `curl https://api.arthachain.in/api/health`
 
 ## ⚡ Quick Start
 
 1. **Set Environment Variable**:
    ```bash
    export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-   export FAUCET_API_URL="http://localhost:8080"
+   export FAUCET_API_URL="https://api.arthachain.in"
    ```
 
 2. **Run the Bot**:
@@ -55,7 +55,7 @@
 ### Environment Variables
 ```bash
 export TELEGRAM_BOT_TOKEN="your_bot_token"
-export FAUCET_API_URL="http://localhost:8080"
+export FAUCET_API_URL="https://api.arthachain.in"
 export RUST_LOG="info"
 ```
 
@@ -74,7 +74,7 @@ tail -f bot.log
 When running successfully, you should see:
 ```
 🚀 Starting ArthaChain Telegram Faucet Bot...
-✅ Bot initialized. Faucet API: http://localhost:8080
+✅ Bot initialized. Faucet API: https://api.arthachain.in
 ```
 
 ## 🔍 Troubleshooting
@@ -85,7 +85,7 @@ When running successfully, you should see:
 3. Ensure network connectivity
 
 ### Faucet Requests Failing
-1. Check if ArthaChain node is running: `curl http://localhost:8080/api/health`
+1. Check if ArthaChain node is running: `curl https://api.arthachain.in/api/health`
 2. Verify API endpoints are accessible
 3. Check rate limiting (24-hour cooldown)
 

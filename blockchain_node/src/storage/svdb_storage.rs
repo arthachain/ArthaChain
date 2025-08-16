@@ -32,9 +32,9 @@ pub struct SvdbStorage {
 
 impl Default for SvdbStorage {
     fn default() -> Self {
-        Self::new("http://localhost:8080".to_string()).unwrap_or_else(|_| Self {
+        Self::new("https://api.arthachain.in".to_string()).unwrap_or_else(|_| Self {
             _client: Client::new(),
-            _base_url: "http://localhost:8080".to_string(),
+            _base_url: "https://api.arthachain.in".to_string(),
             db: Arc::new(RwLock::new(None)),
             db_path: Arc::new(RwLock::new(None)),
             _data: HashMap::new(),
