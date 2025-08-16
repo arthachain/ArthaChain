@@ -37,7 +37,7 @@ pub async fn get_supported_wallets() -> Json<serde_json::Value> {
         "wasm_wallets": wasm_wallets,
         "connection_guide": "/wallet/connect",
         "rpc_endpoint": "/rpc",
-        "chain_id": "0x1337", // ArthaChain testnet
+        "chain_id": "0x31426", // ArthaChain testnet (201766)
         "network_name": "ArthaChain Testnet",
         "currency": {
             "name": "ARTHA",
@@ -380,8 +380,8 @@ pub async fn get_chain_config() -> Json<serde_json::Value> {
             "symbol": "ARTHA",
             "decimals": 18
         },
-        "rpcUrls": ["https://rpc.arthachain.online"],
-        "blockExplorerUrls": ["https://explorer.arthachain.online"],
-        "iconUrls": ["https://arthachain.online/logo.png"]
+        "rpcUrls": ["https://rpc.arthachain.in"],
+        "blockExplorerUrls": ["https://explorer.arthachain.in"],
+        "iconUrls": ["https://arthachain.in/logo.png"]
     }))
 }

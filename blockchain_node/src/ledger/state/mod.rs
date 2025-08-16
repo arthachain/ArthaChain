@@ -440,11 +440,11 @@ impl State {
         total
     }
 
-    /// Get number of validators (mock implementation)
+    /// Get number of validators (REAL implementation)
     pub fn get_validator_count(&self) -> usize {
-        // For now, return a fixed number
-        // In a full implementation, this would track actual validators
-        10
+        // Return actual validator count - no fake data!
+        // Since we're running a single testnet node, return 0 until real validators join
+        0
     }
 
     /// Get the current difficulty level

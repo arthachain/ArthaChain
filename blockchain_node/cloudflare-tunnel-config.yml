@@ -1,0 +1,35 @@
+tunnel: 183a41d3-047b-4375-b616-f57126f5345f
+credentials-file: /Users/sainathtangallapalli/.cloudflared/183a41d3-047b-4375-b616-f57126f5345f.json
+
+ingress:
+  # Route for API endpoints
+  - hostname: "api.arthachain.in"
+    service: http://localhost:8080
+    originRequest:
+      httpHostHeader: localhost
+  # Route for Explorer APIs
+  - hostname: "explorer.arthachain.in"
+    service: http://localhost:8080
+    originRequest:
+      httpHostHeader: localhost
+  # Route for realtime APIs
+  - hostname: "realtime.arthachain.in"
+    service: http://localhost:8080
+    originRequest:
+      httpHostHeader: localhost
+  # Route for RPC APIs  
+  - hostname: "rpc.arthachain.in"
+    service: http://localhost:8080
+    originRequest:
+      httpHostHeader: localhost
+  # Catch-all rule
+  - service: http_status:404
+
+# Additional configuration for high performance
+originRequest:
+  connectTimeout: 30s
+  tlsTimeout: 10s
+  tcpKeepAlive: 30s
+  keepAliveConnections: 1024
+  keepAliveTimeout: 1m30s
+  httpHostHeader: localhost
