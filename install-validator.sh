@@ -184,30 +184,30 @@ EOF
 create_scripts() {
     echo -e "${BLUE}📝 Creating management scripts...${NC}"
     
+    # Create scripts in the installation directory
+    cd "$INSTALL_PATH/ArthaChain"
+    
     # Start script
-    cat > start-validator.sh << 'EOF'
+    cat > start-validator.sh << EOF
 #!/bin/bash
 echo "🚀 Starting ArthChain Validator..."
-echo "Dashboard: http://localhost:DASHBOARD_PORT"
-echo "API: http://localhost:API_PORT"
-echo "P2P: PORT P2P_PORT"
+echo "📊 Dashboard: http://localhost:$DASHBOARD_PORT"
+echo "🔗 API: http://localhost:$API_PORT"
+echo "📡 P2P: $P2P_PORT"
 echo ""
 
-cd INSTALL_PATH/ArthaChain/blockchain_node
+cd $INSTALL_PATH/ArthaChain/blockchain_node
 source ~/.cargo/env
 
-./target/release/testnet_api_server --config validator_config.toml
+./target/release/testnet_api_server --config validator_config.toml &
+sleep 3
+echo "✅ Validator started!"
+echo "📊 Check status: curl http://localhost:$API_PORT/api/status"
 EOF
-    
-    # Replace placeholders
-    sed -i "s/DASHBOARD_PORT/$DASHBOARD_PORT/g" start-validator.sh
-    sed -i "s/API_PORT/$API_PORT/g" start-validator.sh
-    sed -i "s/P2P_PORT/$P2P_PORT/g" start-validator.sh
-    sed -i "s|INSTALL_PATH|$INSTALL_PATH|g" start-validator.sh
     chmod +x start-validator.sh
     
     # Stop script
-    cat > stop-validator.sh << 'EOF'
+    cat > stop-validator.sh << EOF
 #!/bin/bash
 echo "🛑 Stopping ArthChain Validator..."
 pkill -f testnet_api_server
@@ -217,14 +217,24 @@ EOF
     chmod +x stop-validator.sh
     
     # Status script
-    cat > check-status.sh << 'EOF'
+    cat > check-status.sh << EOF
 #!/bin/bash
 echo "📊 ArthChain Validator Status:"
 echo "=============================="
-curl -s http://localhost:API_PORT/api/status | python3 -m json.tool 2>/dev/null || echo "Validator not responding"
+curl -s http://localhost:$API_PORT/api/status | python3 -m json.tool 2>/dev/null || echo "Validator not responding"
+echo ""
+echo "🌐 Network Status:"
+curl -s https://api.arthachain.in/api/validators | python3 -c "import sys,json; data=json.load(sys.stdin); print(f'Validators: {data[\"active_count\"]} active')" 2>/dev/null
 EOF
-    sed -i "s/API_PORT/$API_PORT/g" check-status.sh
     chmod +x check-status.sh
+    
+    # Create a simple start command in working directory too
+    cd "$INSTALL_PATH"
+    cat > start-arthachain.sh << EOF
+#!/bin/bash
+cd ArthaChain && ./start-validator.sh
+EOF
+    chmod +x start-arthachain.sh
 }
 
 print_success() {
