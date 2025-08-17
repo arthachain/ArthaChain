@@ -12,16 +12,66 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 print_logo() {
+    clear
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║                                                          ║"
     echo "║            🚀 ArthChain Validator Setup 🚀               ║"
     echo "║                                                          ║"
-    echo "║              Simple One-Command Installation             ║"
+    echo "║         Complete Environment → Validator Setup          ║"
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+}
+
+# Progress animation
+show_progress() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='|/-\'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
+# Loading animation
+loading_animation() {
+    local message="$1"
+    local duration="$2"
+    echo -n "$message"
+    for i in $(seq 1 $duration); do
+        echo -n "."
+        sleep 0.5
+    done
+    echo " ✅"
+}
+
+# Generate wallet
+generate_wallet() {
+    echo -e "${BLUE}💰 Generating ArthChain Validator Wallet...${NC}"
+    
+    # Generate random private key
+    PRIVATE_KEY=$(openssl rand -hex 32)
+    
+    # Generate wallet address (simplified)
+    WALLET_ADDRESS="0x$(echo -n "$PRIVATE_KEY" | sha256sum | cut -c1-40)"
+    
+    echo -e "${GREEN}✅ Wallet Generated!${NC}"
+    echo -e "${YELLOW}📋 SAVE THESE CREDENTIALS:${NC}"
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│  🔐 Wallet Address: $WALLET_ADDRESS      │"
+    echo "│  🗝️  Private Key: $PRIVATE_KEY │"
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo ""
+    echo -e "${RED}⚠️  IMPORTANT: Save your private key securely!${NC}"
+    echo -e "${YELLOW}Press ENTER to continue after saving your wallet info...${NC}"
+    read -r
 }
 
 ask_permission() {
@@ -84,22 +134,27 @@ ask_custom_config() {
 }
 
 install_dependencies() {
-    echo -e "${BLUE}📦 Installing dependencies...${NC}"
+    echo -e "${BLUE}📦 Setting up environment...${NC}"
+    loading_animation "Preparing system" 3
     
     # Detect OS and install accordingly
     if [ -f /etc/debian_version ]; then
-        apt update -qq
-        apt install -y curl wget git build-essential pkg-config libssl-dev python3 clang libclang-dev llvm-dev cmake
+        echo "🔄 Installing dependencies..."
+        (apt update -qq && apt install -y curl wget git build-essential pkg-config libssl-dev python3 clang libclang-dev llvm-dev cmake openssl >/dev/null 2>&1) &
+        show_progress $!
     elif [ -f /etc/redhat-release ]; then
-        yum update -y
-        yum install -y curl wget git gcc gcc-c++ make openssl-devel python3 clang llvm-devel cmake
+        echo "🔄 Installing dependencies..."
+        (yum update -y && yum install -y curl wget git gcc gcc-c++ make openssl-devel python3 clang llvm-devel cmake >/dev/null 2>&1) &
+        show_progress $!
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
+        echo "🔄 Installing dependencies..."
         if ! command -v brew &> /dev/null; then
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         fi
-        brew install curl wget git openssl python3 llvm cmake
+        (brew install curl wget git openssl python3 llvm cmake >/dev/null 2>&1) &
+        show_progress $!
     fi
+    echo -e "${GREEN}✅ Environment ready!${NC}"
 }
 
 install_rust() {
@@ -130,14 +185,38 @@ download_arthachain() {
 }
 
 build_validator() {
-    echo -e "${BLUE}🔨 Building ArthChain Validator (this may take 10 minutes)...${NC}"
+    echo -e "${BLUE}🔨 Building ArthChain Validator...${NC}"
+    loading_animation "Compiling blockchain code (this takes 5-10 minutes)" 6
     
     cd blockchain_node
     source ~/.cargo/env
     export PATH="$HOME/.cargo/bin:$PATH"
     
-    cargo build --release --bin testnet_api_server
-    cargo build --release --bin arthachain
+    echo "🔄 Building validator binary..."
+    (cargo build --release --bin testnet_api_server >/dev/null 2>&1) &
+    BUILD_PID=$!
+    
+    # Show progress while building
+    while ps -p $BUILD_PID > /dev/null; do
+        for i in {1..10}; do
+            echo -n "█"
+            sleep 3
+        done
+        echo -n " Building..."
+        echo ""
+    done
+    
+    # Verify build
+    if [ -f "target/release/testnet_api_server" ]; then
+        echo -e "${GREEN}✅ Validator built successfully!${NC}"
+        BINARY_PATH="$(pwd)/target/release/testnet_api_server"
+    elif [ -f "../target/release/testnet_api_server" ]; then
+        echo -e "${GREEN}✅ Validator built successfully!${NC}"
+        BINARY_PATH="$(pwd)/../target/release/testnet_api_server"
+    else
+        echo -e "${RED}❌ Build failed!${NC}"
+        exit 1
+    fi
 }
 
 create_config() {
@@ -183,14 +262,16 @@ EOF
 
 create_scripts() {
     echo -e "${BLUE}📝 Creating management scripts...${NC}"
+    loading_animation "Setting up scripts" 2
     
     # Create scripts in the installation directory
     cd "$INSTALL_PATH/ArthaChain"
     
-    # Start script
+    # Start script with proper binary path
     cat > start-validator.sh << EOF
 #!/bin/bash
-echo "🚀 Starting ArthChain Validator..."
+echo -e "${GREEN}🚀 Starting ArthChain Validator...${NC}"
+echo "💰 Wallet: $WALLET_ADDRESS"
 echo "📊 Dashboard: http://localhost:$DASHBOARD_PORT"
 echo "🔗 API: http://localhost:$API_PORT"
 echo "📡 P2P: $P2P_PORT"
@@ -199,22 +280,21 @@ echo ""
 cd $INSTALL_PATH/ArthaChain/blockchain_node
 source ~/.cargo/env
 
-./target/release/testnet_api_server --config validator_config.toml &
-sleep 3
+# Use the correct binary path
+$BINARY_PATH --config validator_config.toml &
+sleep 5
+
 echo "✅ Validator started!"
-echo "📊 Check status: curl http://localhost:$API_PORT/api/status"
+echo "📊 Status: curl http://localhost:$API_PORT/api/status"
+echo "🌐 Dashboard: http://localhost:$DASHBOARD_PORT"
+echo "🔐 Password: $DASHBOARD_PASSWORD"
 EOF
     chmod +x start-validator.sh
     
-    # Stop script
-    cat > stop-validator.sh << EOF
-#!/bin/bash
-echo "🛑 Stopping ArthChain Validator..."
-pkill -f testnet_api_server
-pkill -f arthachain
-echo "✅ Validator stopped"
-EOF
-    chmod +x stop-validator.sh
+    # Auto-start the validator
+    echo -e "${BLUE}🚀 Starting your validator now...${NC}"
+    loading_animation "Launching validator" 4
+    ./start-validator.sh
     
     # Status script
     cat > check-status.sh << EOF
@@ -228,13 +308,14 @@ curl -s https://api.arthachain.in/api/validators | python3 -c "import sys,json; 
 EOF
     chmod +x check-status.sh
     
-    # Create a simple start command in working directory too
-    cd "$INSTALL_PATH"
-    cat > start-arthachain.sh << EOF
+    # Stop script
+    cat > stop-validator.sh << EOF
 #!/bin/bash
-cd ArthaChain && ./start-validator.sh
+echo "🛑 Stopping ArthChain Validator..."
+pkill -f testnet_api_server
+echo "✅ Validator stopped"
 EOF
-    chmod +x start-arthachain.sh
+    chmod +x stop-validator.sh
 }
 
 print_success() {
@@ -269,6 +350,7 @@ main() {
     
     install_dependencies
     install_rust
+    generate_wallet
     download_arthachain
     build_validator
     create_config
