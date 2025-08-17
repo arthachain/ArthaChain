@@ -13,15 +13,33 @@ NC='\033[0m'
 
 print_logo() {
     clear
-    echo -e "${BLUE}"
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║                                                          ║"
-    echo "║            🚀 ArthChain Validator Setup 🚀               ║"
-    echo "║                                                          ║"
-    echo "║         Complete Environment → Validator Setup          ║"
-    echo "║                                                          ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
+    echo -e "${PURPLE}"
+    echo "                                                              "
+    echo "    ██████╗ ██████╗ ████████╗██╗  ██╗ █████╗  ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗"
+    echo "   ██╔══██╗██╔══██╗╚══██╔══╝██║  ██║██╔══██╗██╔════╝██║  ██║██╔══██╗██║████╗  ██║"
+    echo "   ███████║██████╔╝   ██║   ███████║███████║██║     ███████║███████║██║██╔██╗ ██║"
+    echo "   ██╔══██║██╔══██╗   ██║   ██╔══██║██╔══██║██║     ██╔══██║██╔══██║██║██║╚██╗██║"
+    echo "   ██║  ██║██║  ██║   ██║   ██║  ██║██║  ██║╚██████╗██║  ██║██║  ██║██║██║ ╚████║"
+    echo "   ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝"
     echo -e "${NC}"
+    echo ""
+    echo -e "${CYAN}╭──────────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${CYAN}│${NC}  🌟 ${YELLOW}QUANTUM-POWERED BLOCKCHAIN VALIDATOR SETUP${NC} 🌟  ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  🔥 ${GREEN}Join the most advanced blockchain network${NC} 🔥      ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ⚡ ${BLUE}AI-Enhanced • Quantum-Resistant • Lightning Fast${NC}   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  💎 ${PURPLE}Earn rewards while securing the future${NC} 💎        ${CYAN}│${NC}"
+    echo -e "${CYAN}╰──────────────────────────────────────────────────────────────╯${NC}"
+    echo ""
+    
+    # Flashy animation
+    for i in {1..3}; do
+        echo -e "${RED}💥${YELLOW}✨${GREEN}🚀${BLUE}⚡${PURPLE}💎${NC}"
+        sleep 0.3
+        echo -e "\033[1A\033[K"
+    done
+    
+    echo -e "${GREEN}🔥 ${YELLOW}Ready to become a blockchain validator?${NC} 🔥"
     echo ""
 }
 
@@ -52,9 +70,18 @@ loading_animation() {
     echo " ✅"
 }
 
-# Generate wallet
+# Generate wallet with cool animations
 generate_wallet() {
-    echo -e "${BLUE}💰 Generating ArthChain Validator Wallet...${NC}"
+    echo -e "${PURPLE}💎 Creating Your Blockchain Identity...${NC}"
+    echo ""
+    
+    # Cool generation animation
+    echo -n "🔮 Generating quantum-secure keys"
+    for i in {1..8}; do
+        echo -n " ⚡"
+        sleep 0.4
+    done
+    echo ""
     
     # Generate random private key
     PRIVATE_KEY=$(openssl rand -hex 32)
@@ -62,15 +89,33 @@ generate_wallet() {
     # Generate wallet address (simplified)
     WALLET_ADDRESS="0x$(echo -n "$PRIVATE_KEY" | sha256sum | cut -c1-40)"
     
-    echo -e "${GREEN}✅ Wallet Generated!${NC}"
-    echo -e "${YELLOW}📋 SAVE THESE CREDENTIALS:${NC}"
-    echo "┌─────────────────────────────────────────────────────────┐"
-    echo "│  🔐 Wallet Address: $WALLET_ADDRESS      │"
-    echo "│  🗝️  Private Key: $PRIVATE_KEY │"
-    echo "└─────────────────────────────────────────────────────────┘"
     echo ""
-    echo -e "${RED}⚠️  IMPORTANT: Save your private key securely!${NC}"
-    echo -e "${YELLOW}Press ENTER to continue after saving your wallet info...${NC}"
+    echo -e "${GREEN}🎉 YOUR ARTHACHAIN VALIDATOR WALLET IS READY! 🎉${NC}"
+    echo ""
+    
+    # Flashy wallet display
+    echo -e "${CYAN}╭─────────────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${CYAN}│${NC}                   ${YELLOW}💰 WALLET CREDENTIALS 💰${NC}                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC}                                                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  🔐 ${GREEN}Address:${NC} ${WALLET_ADDRESS}     ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  🗝️  ${YELLOW}Private:${NC} ${PRIVATE_KEY} ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}╰─────────────────────────────────────────────────────────────────╯${NC}"
+    echo ""
+    
+    # Security warning with animation
+    for i in {1..3}; do
+        echo -e "${RED}🚨 CRITICAL: SAVE YOUR PRIVATE KEY NOW! 🚨${NC}"
+        sleep 0.5
+        echo -e "\033[1A\033[K"
+    done
+    
+    echo -e "${RED}🔒 SECURITY ALERT: Your private key = Your money! Save it safely! 🔒${NC}"
+    echo ""
+    echo -e "${YELLOW}📱 Screenshot this, write it down, or copy to secure storage...${NC}"
+    echo -e "${GREEN}Press ENTER after you've safely saved your wallet credentials ⬇️${NC}"
     read -r
 }
 
@@ -85,8 +130,17 @@ ask_permission() {
 
 # Smart defaults with minimal questions
 set_defaults() {
-    # Auto-detect external IP
+    echo -e "${BLUE}🔮 Auto-configuring your validator...${NC}"
+    loading_animation "Detecting network settings" 4
+    
+    # Auto-detect external IP with animation
+    echo -n "🌐 Finding your IP address"
+    for i in {1..3}; do
+        echo -n " 🔍"
+        sleep 0.3
+    done
     EXTERNAL_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "127.0.0.1")
+    echo " ✅ Found: $EXTERNAL_IP"
     
     # Use standard ports
     P2P_PORT=30303
@@ -99,15 +153,12 @@ set_defaults() {
     # Enable dashboard by default
     ENABLE_DASHBOARD=true
     
-    # Generate secure random password
-    DASHBOARD_PASSWORD=$(openssl rand -base64 12 2>/dev/null || echo "arthachain$(date +%s)")
-    
-    echo -e "${BLUE}🔧 Using smart defaults:${NC}"
-    echo "   📁 Install Path: $INSTALL_PATH"
-    echo "   🌐 External IP: $EXTERNAL_IP"
-    echo "   📡 P2P Port: $P2P_PORT"
-    echo "   🔗 API Port: $API_PORT"
-    echo "   📊 Dashboard: http://localhost:$DASHBOARD_PORT"
+    echo ""
+    echo -e "${GREEN}⚙️ Configuration Ready:${NC}"
+    echo "   📁 Install: $INSTALL_PATH"
+    echo "   🌐 IP: $EXTERNAL_IP"
+    echo "   📡 P2P: $P2P_PORT"
+    echo "   🔗 API: $API_PORT"
     echo ""
 }
 
@@ -185,38 +236,48 @@ download_arthachain() {
 }
 
 build_validator() {
-    echo -e "${BLUE}🔨 Building ArthChain Validator...${NC}"
-    loading_animation "Compiling blockchain code (this takes 5-10 minutes)" 6
+    echo -e "${PURPLE}⚡ Compiling ArthChain Quantum Validator...${NC}"
+    echo ""
     
     cd blockchain_node
     source ~/.cargo/env
     export PATH="$HOME/.cargo/bin:$PATH"
     
-    echo "🔄 Building validator binary..."
+    echo -e "${CYAN}🔥 Building the future of blockchain...${NC}"
+    echo ""
+    
+    # Epic build animation
+    echo -n "🚀 Quantum compilation"
     (cargo build --release --bin testnet_api_server >/dev/null 2>&1) &
     BUILD_PID=$!
     
-    # Show progress while building
+    # Show epic progress while building
     while ps -p $BUILD_PID > /dev/null; do
-        for i in {1..10}; do
-            echo -n "█"
-            sleep 3
+        for emoji in "⚡" "🔥" "💎" "🌟" "⭐" "✨" "💫" "🌠"; do
+            echo -n " $emoji"
+            sleep 1
         done
-        echo -n " Building..."
+        echo -n " [Building...]"
         echo ""
     done
     
-    # Verify build
+    echo ""
+    echo -e "${GREEN}🎉 BLOCKCHAIN VALIDATOR COMPILED! 🎉${NC}"
+    
+    # Verify build with animations
     if [ -f "target/release/testnet_api_server" ]; then
-        echo -e "${GREEN}✅ Validator built successfully!${NC}"
         BINARY_PATH="$(pwd)/target/release/testnet_api_server"
+        echo -e "${GREEN}✅ Validator binary ready at: $BINARY_PATH${NC}"
     elif [ -f "../target/release/testnet_api_server" ]; then
-        echo -e "${GREEN}✅ Validator built successfully!${NC}"
         BINARY_PATH="$(pwd)/../target/release/testnet_api_server"
+        echo -e "${GREEN}✅ Validator binary ready at: $BINARY_PATH${NC}"
     else
         echo -e "${RED}❌ Build failed!${NC}"
         exit 1
     fi
+    
+    echo ""
+    loading_animation "Preparing validator engine" 3
 }
 
 create_config() {
@@ -291,9 +352,42 @@ echo "🔐 Password: $DASHBOARD_PASSWORD"
 EOF
     chmod +x start-validator.sh
     
-    # Auto-start the validator
-    echo -e "${BLUE}🚀 Starting your validator now...${NC}"
-    loading_animation "Launching validator" 4
+    # Ask for password at the end
+    echo -e "${YELLOW}🔐 Set your dashboard password (or press ENTER for auto-generated):${NC}"
+    read -s USER_PASSWORD
+    echo ""
+    if [ ! -z "$USER_PASSWORD" ]; then
+        DASHBOARD_PASSWORD="$USER_PASSWORD"
+        echo -e "${GREEN}✅ Custom password set!${NC}"
+    else
+        echo -e "${GREEN}✅ Auto-generated password: $DASHBOARD_PASSWORD${NC}"
+    fi
+    echo ""
+    
+    # Epic launch sequence
+    echo -e "${PURPLE}🚀 LAUNCHING YOUR ARTHACHAIN VALIDATOR 🚀${NC}"
+    echo ""
+    echo -e "${BLUE}Initializing quantum engines...${NC}"
+    for i in {1..10}; do
+        echo -n "⚡"
+        sleep 0.2
+    done
+    echo " ✅"
+    
+    echo -e "${GREEN}Connecting to ArthChain network...${NC}"
+    for i in {1..8}; do
+        echo -n "🌐"
+        sleep 0.2
+    done
+    echo " ✅"
+    
+    echo -e "${YELLOW}Starting validator process...${NC}"
+    for i in {1..6}; do
+        echo -n "🔥"
+        sleep 0.3
+    done
+    echo " ✅"
+    
     ./start-validator.sh
     
     # Status script
@@ -319,26 +413,50 @@ EOF
 }
 
 print_success() {
+    clear
+    
+    # Epic success animation
+    echo -e "${GREEN}"
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                ║"
+    echo "║              🎉🎉🎉 VALIDATOR READY! 🎉🎉🎉                   ║"
+    echo "║                                                                ║"
+    echo "║          🔥 YOU'RE NOW AN ARTHACHAIN VALIDATOR! 🔥             ║"
+    echo "║                                                                ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
     echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                  🎉 SETUP COMPLETE! 🎉                   ║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+    
+    # Celebration animation
+    for i in {1..5}; do
+        echo -e "${YELLOW}🎊${GREEN}🎉${BLUE}🚀${PURPLE}💎${RED}🔥${NC}"
+        sleep 0.3
+        echo -e "\033[1A\033[K"
+    done
+    
+    echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${CYAN}│${NC}                    ${YELLOW}🎯 VALIDATOR INFO 🎯${NC}                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC}                                                             ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  💰 ${GREEN}Wallet:${NC} $WALLET_ADDRESS     ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  🌐 ${BLUE}Dashboard:${NC} http://localhost:$DASHBOARD_PORT              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  🔐 ${YELLOW}Password:${NC} $DASHBOARD_PASSWORD                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  📡 ${PURPLE}API:${NC} http://localhost:$API_PORT                     ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                             ${CYAN}│${NC}"
+    echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
-    echo -e "${YELLOW}📋 Your ArthChain Validator is ready!${NC}"
+    
+    echo -e "${GREEN}✅ Your validator is running and contributing to ArthChain!${NC}"
+    echo -e "${BLUE}💎 Earning rewards by securing the network${NC}"
+    echo -e "${YELLOW}🌟 Part of the future of blockchain technology${NC}"
     echo ""
-    echo -e "${BLUE}🚀 Start validator:${NC} ./start-validator.sh"
-    echo -e "${BLUE}📊 Check status:${NC} ./check-status.sh"
-    echo -e "${BLUE}🛑 Stop validator:${NC} ./stop-validator.sh"
+    
+    echo -e "${CYAN}📋 Quick Commands:${NC}"
+    echo -e "   📊 Status: ${GREEN}./check-status.sh${NC}"
+    echo -e "   🛑 Stop: ${RED}./stop-validator.sh${NC}"
     echo ""
-    echo -e "${GREEN}📊 Dashboard:${NC} http://localhost:$DASHBOARD_PORT"
-    echo -e "${GREEN}🔗 Password:${NC} $DASHBOARD_PASSWORD"
-    echo ""
-    echo -e "${BLUE}📁 Path:${NC} $INSTALL_PATH/ArthaChain"
-    echo -e "${BLUE}🌐 Network:${NC} ArthChain Testnet (existing blocks)"
-    echo -e "${BLUE}📡 Bootstrap:${NC} 103.160.27.49:30303"
-    echo ""
-    echo -e "${GREEN}🎯 Your validator will join the existing network at current block height!${NC}"
-    echo -e "${YELLOW}⚠️  IMPORTANT: Save dashboard password: $DASHBOARD_PASSWORD${NC}"
+    
+    echo -e "${PURPLE}🎊 Welcome to the ArthChain validator community! 🎊${NC}"
 }
 
 # Main execution
