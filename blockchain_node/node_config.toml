@@ -1,12 +1,16 @@
 [node]
 name = "arthachain-real-node"
-network_id = "arthachain-mainnet"
+network_id = "arthachain-testnet-1"
 data_dir = "./data"
 
 [network]
 listen_addr = "0.0.0.0:30303"
-bootstrap_peers = []
+bootstrap_peers = [
+    "/ip4/103.160.27.49/tcp/30303",
+    "https://api.arthachain.in"
+]
 enable_discovery = true
+genesis_sync = false
 
 [consensus]
 mechanism = "SVCP_SVBFT"

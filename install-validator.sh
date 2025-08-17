@@ -25,7 +25,7 @@ print_logo() {
 }
 
 ask_permission() {
-    echo -e "${YELLOW}By running this installer, you agree to join the ArthChain network as a validator. (y/n)?:${NC}"
+    echo -e "${YELLOW}Join the ArthChain network as a validator? (y/n):${NC}"
     read -r PERMISSION
     if [[ ! "$PERMISSION" =~ ^[Yy]$ ]]; then
         echo "Installation cancelled."
@@ -33,56 +33,54 @@ ask_permission() {
     fi
 }
 
-ask_dashboard() {
-    echo -e "${YELLOW}Do you want to run the web based Dashboard? (y/n):${NC}"
-    read -r DASHBOARD
-    if [[ "$DASHBOARD" =~ ^[Yy]$ ]]; then
-        ENABLE_DASHBOARD=true
-    else
-        ENABLE_DASHBOARD=false
-    fi
-}
-
-ask_dashboard_port() {
-    if [ "$ENABLE_DASHBOARD" = true ]; then
-        echo -e "${YELLOW}Enter the port (1025-65536) to access the web based Dashboard (default 8080):${NC}"
-        read -r DASHBOARD_PORT
-        DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
-    else
-        DASHBOARD_PORT=8080
-    fi
-}
-
-ask_external_ip() {
-    echo -e "${YELLOW}If you wish to set an explicit external IP, enter an IPv4 address (default=auto):${NC}"
-    read -r EXTERNAL_IP
-    if [ -z "$EXTERNAL_IP" ]; then
-        EXTERNAL_IP=$(curl -s ifconfig.me 2>/dev/null || echo "auto")
-    fi
-}
-
-ask_p2p_port() {
-    echo -e "${YELLOW}Enter the first port (1025-65536) for p2p communication (default 30303):${NC}"
-    read -r P2P_PORT
-    P2P_PORT=${P2P_PORT:-30303}
-}
-
-ask_api_port() {
-    echo -e "${YELLOW}Enter the API port (1025-65536) for blockchain API (default 8080):${NC}"
-    read -r API_PORT
-    API_PORT=${API_PORT:-8080}
-}
-
-ask_install_path() {
-    echo -e "${YELLOW}What base directory should the node use (defaults to ~/.arthachain):${NC}"
-    read -r INSTALL_PATH
-    INSTALL_PATH=${INSTALL_PATH:-~/.arthachain}
-}
-
-ask_password() {
-    echo -e "${YELLOW}Set the password to access the Dashboard:${NC}"
-    read -s DASHBOARD_PASSWORD
+# Smart defaults with minimal questions
+set_defaults() {
+    # Auto-detect external IP
+    EXTERNAL_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "127.0.0.1")
+    
+    # Use standard ports
+    P2P_PORT=30303
+    API_PORT=8080
+    DASHBOARD_PORT=8080
+    
+    # Default paths
+    INSTALL_PATH="$HOME/.arthachain"
+    
+    # Enable dashboard by default
+    ENABLE_DASHBOARD=true
+    
+    # Generate secure random password
+    DASHBOARD_PASSWORD=$(openssl rand -base64 12 2>/dev/null || echo "arthachain$(date +%s)")
+    
+    echo -e "${BLUE}🔧 Using smart defaults:${NC}"
+    echo "   📁 Install Path: $INSTALL_PATH"
+    echo "   🌐 External IP: $EXTERNAL_IP"
+    echo "   📡 P2P Port: $P2P_PORT"
+    echo "   🔗 API Port: $API_PORT"
+    echo "   📊 Dashboard: http://localhost:$DASHBOARD_PORT"
     echo ""
+}
+
+ask_custom_config() {
+    echo -e "${YELLOW}Use custom configuration? (n=use defaults, y=customize):${NC}"
+    read -r CUSTOM_CONFIG
+    
+    if [[ "$CUSTOM_CONFIG" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}P2P port (default 30303):${NC}"
+        read -r CUSTOM_P2P_PORT
+        P2P_PORT=${CUSTOM_P2P_PORT:-30303}
+        
+        echo -e "${YELLOW}API port (default 8080):${NC}"
+        read -r CUSTOM_API_PORT
+        API_PORT=${CUSTOM_API_PORT:-8080}
+        
+        echo -e "${YELLOW}Dashboard password (leave empty for auto-generated):${NC}"
+        read -s CUSTOM_PASSWORD
+        if [ ! -z "$CUSTOM_PASSWORD" ]; then
+            DASHBOARD_PASSWORD="$CUSTOM_PASSWORD"
+        fi
+        echo ""
+    fi
 }
 
 install_dependencies() {
@@ -146,33 +144,40 @@ create_config() {
     echo -e "${BLUE}⚙️ Creating validator configuration...${NC}"
     
     cat > validator_config.toml << EOF
-[network]
-network_id = "arthachain-testnet-1"
-chain_id = 201766
-
 [node]
-node_id = "validator-$(date +%s)"
+name = "validator-$(date +%s)"
+network_id = "arthachain-testnet-1"
 data_dir = "./validator_data"
 
-[api]
-addr = "0.0.0.0"
-port = $API_PORT
-
-[p2p]
+[network]
 listen_addr = "0.0.0.0:$P2P_PORT"
-external_addr = "$EXTERNAL_IP:$P2P_PORT"
 bootstrap_peers = [
-    "/ip4/103.160.27.61/tcp/30303"
+    "/ip4/103.160.27.49/tcp/30303",
+    "https://api.arthachain.in"
 ]
+enable_discovery = true
+genesis_sync = true
+sync_from_network = true
+
+[api]
+listen_addr = "0.0.0.0:$API_PORT"
+enable_cors = true
+enable_metrics = true
+
+[consensus]
+mechanism = "SVCP_SVBFT"
+block_time = 5
+validator_enabled = true
+join_existing_network = true
+
+[storage]
+backend = "rocksdb"
+path = "./validator_data/rocksdb"
 
 [dashboard]
 enabled = $ENABLE_DASHBOARD
 port = $DASHBOARD_PORT
 password = "$DASHBOARD_PASSWORD"
-
-[consensus]
-mechanism = "SVCP"
-validator_enabled = true
 EOF
 }
 
@@ -230,40 +235,27 @@ print_success() {
     echo ""
     echo -e "${YELLOW}📋 Your ArthChain Validator is ready!${NC}"
     echo ""
-    echo -e "${BLUE}🚀 To start your validator:${NC}"
-    echo "   ./start-validator.sh"
+    echo -e "${BLUE}🚀 Start validator:${NC} ./start-validator.sh"
+    echo -e "${BLUE}📊 Check status:${NC} ./check-status.sh"
+    echo -e "${BLUE}🛑 Stop validator:${NC} ./stop-validator.sh"
     echo ""
-    echo -e "${BLUE}📊 To check status:${NC}"
-    echo "   ./check-status.sh"
+    echo -e "${GREEN}📊 Dashboard:${NC} http://localhost:$DASHBOARD_PORT"
+    echo -e "${GREEN}🔗 Password:${NC} $DASHBOARD_PASSWORD"
     echo ""
-    echo -e "${BLUE}🛑 To stop your validator:${NC}"
-    echo "   ./stop-validator.sh"
+    echo -e "${BLUE}📁 Path:${NC} $INSTALL_PATH/ArthaChain"
+    echo -e "${BLUE}🌐 Network:${NC} ArthChain Testnet (existing blocks)"
+    echo -e "${BLUE}📡 Bootstrap:${NC} 103.160.27.49:30303"
     echo ""
-    if [ "$ENABLE_DASHBOARD" = true ]; then
-        echo -e "${BLUE}🌐 Dashboard:${NC} http://localhost:$DASHBOARD_PORT"
-        echo ""
-    fi
-    echo -e "${BLUE}📁 Installation Path:${NC} $INSTALL_PATH/ArthaChain"
-    echo -e "${BLUE}🌐 Network:${NC} ArthChain Testnet"
-    echo -e "${BLUE}🔗 API Port:${NC} $API_PORT"
-    echo -e "${BLUE}📡 P2P Port:${NC} $P2P_PORT"
-    echo ""
-    echo -e "${GREEN}🎯 Your validator will help secure the ArthChain network!${NC}"
+    echo -e "${GREEN}🎯 Your validator will join the existing network at current block height!${NC}"
+    echo -e "${YELLOW}⚠️  IMPORTANT: Save dashboard password: $DASHBOARD_PASSWORD${NC}"
 }
 
 # Main execution
 main() {
     print_logo
     ask_permission
-    ask_dashboard
-    ask_dashboard_port
-    ask_external_ip
-    ask_p2p_port
-    ask_api_port
-    ask_install_path
-    if [ "$ENABLE_DASHBOARD" = true ]; then
-        ask_password
-    fi
+    set_defaults
+    ask_custom_config
     
     install_dependencies
     install_rust
