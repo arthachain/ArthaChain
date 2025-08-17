@@ -100,7 +100,7 @@ pub struct State {
 impl State {
     pub fn new(_config: &Config) -> Result<Self> {
         let (sync_sender, _) = broadcast::channel(1000);
-        
+
         Ok(Self {
             balances: RwLock::new(HashMap::new()),
             nonces: RwLock::new(HashMap::new()),
@@ -116,7 +116,7 @@ impl State {
             latest_block_hash: RwLock::new(
                 "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
             ),
-            
+
             // 🛡️ SPOF ELIMINATION: Initialize distributed state
             state_replicas: Arc::new(RwLock::new(Vec::new())),
             primary_replica: Arc::new(RwLock::new(0)),
@@ -567,17 +567,21 @@ impl State {
     pub async fn add_replica(&self, replica: StateReplica) -> Result<()> {
         let mut replicas = self.state_replicas.write().unwrap();
         replicas.push(replica.clone());
-        
+
         // Initialize health tracking
         let mut health = self.replica_health.write().unwrap();
         health.insert(replica.replica_id, ReplicaHealth::Healthy);
-        
+
         // Update consensus configuration
         let mut consensus = self.state_consensus.write().unwrap();
         consensus.active_replicas = replicas.len();
-        
-        info!("Added state replica {} ({}). Total replicas: {}", 
-              replica.replica_id, replica.endpoint, replicas.len());
+
+        info!(
+            "Added state replica {} ({}). Total replicas: {}",
+            replica.replica_id,
+            replica.endpoint,
+            replicas.len()
+        );
         Ok(())
     }
 
@@ -585,15 +589,18 @@ impl State {
     pub async fn remove_replica(&self, replica_id: usize) -> Result<()> {
         let mut replicas = self.state_replicas.write().unwrap();
         replicas.retain(|r| r.replica_id != replica_id);
-        
+
         let mut health = self.replica_health.write().unwrap();
         health.remove(&replica_id);
-        
+
         let mut consensus = self.state_consensus.write().unwrap();
         consensus.active_replicas = replicas.len();
-        
-        warn!("Removed failed state replica {}. Remaining replicas: {}", 
-              replica_id, replicas.len());
+
+        warn!(
+            "Removed failed state replica {}. Remaining replicas: {}",
+            replica_id,
+            replicas.len()
+        );
         Ok(())
     }
 
@@ -613,7 +620,7 @@ impl State {
     async fn failover_get_balance(&self, address: &str) -> Result<u64> {
         let replicas = self.state_replicas.read().unwrap();
         let health = self.replica_health.read().unwrap();
-        
+
         // Try healthy replicas
         for replica in replicas.iter() {
             if let Some(ReplicaHealth::Healthy) = health.get(&replica.replica_id) {
@@ -622,32 +629,38 @@ impl State {
                 return self.get_balance(address);
             }
         }
-        
+
         Err(anyhow!("All state replicas unavailable"))
     }
 
     /// Set balance with consensus
     pub async fn set_balance_consensus(&self, address: &str, amount: u64) -> Result<()> {
         let consensus = self.state_consensus.read().unwrap();
-        
+
         if consensus.active_replicas >= consensus.consensus_threshold {
             // Broadcast update to all replicas
-            let sync_msg = StateSyncMessage::BalanceUpdate { 
-                address: address.to_string(), 
-                balance: amount 
+            let sync_msg = StateSyncMessage::BalanceUpdate {
+                address: address.to_string(),
+                balance: amount,
             };
-            
+
             if let Ok(sender_guard) = self.sync_channel.try_lock() {
                 let _ = sender_guard.send(sync_msg);
             }
-            
+
             // Apply to local state
             self.set_balance(address, amount)?;
-            info!("Balance update consensus achieved for {}: {}", address, amount);
+            info!(
+                "Balance update consensus achieved for {}: {}",
+                address, amount
+            );
             Ok(())
         } else {
-            Err(anyhow!("Insufficient replicas for consensus. Need: {}, Have: {}", 
-                       consensus.consensus_threshold, consensus.active_replicas))
+            Err(anyhow!(
+                "Insufficient replicas for consensus. Need: {}, Have: {}",
+                consensus.consensus_threshold,
+                consensus.active_replicas
+            ))
         }
     }
 

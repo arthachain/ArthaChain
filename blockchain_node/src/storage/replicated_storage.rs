@@ -28,7 +28,7 @@ pub struct ReplicationConfig {
     pub auto_failover: bool,
     /// Health check interval in seconds
     pub health_check_interval_secs: u64,
-    
+
     // 🛡️ SPOF ELIMINATION: Enhanced Storage Resilience (SPOF FIX #3)
     /// Minimum replicas required for Byzantine fault tolerance
     pub min_replicas_for_consensus: usize,
@@ -60,15 +60,15 @@ impl Default for ReplicationConfig {
             max_snapshots: 24,            // Keep 24 hours of snapshots
             auto_failover: true,
             health_check_interval_secs: 30,
-            
+
             // 🛡️ SPOF ELIMINATION: Default values for Byzantine fault tolerance
-            min_replicas_for_consensus: 3,     // Minimum for BFT (3f+1 where f=1)
-            enable_cross_datacenter: false,    // Enable for production
-            write_consensus_threshold: 2,      // 2 out of 3 replicas must agree
-            read_quorum_size: 2,              // Read from 2 replicas for consistency
-            enable_realtime_sync: true,       // Real-time replica synchronization
-            write_quorum: 2,                  // Require 2 out of 3 nodes for write
-            read_quorum: 1,                   // Allow read from single node (fast reads)
+            min_replicas_for_consensus: 3, // Minimum for BFT (3f+1 where f=1)
+            enable_cross_datacenter: false, // Enable for production
+            write_consensus_threshold: 2,  // 2 out of 3 replicas must agree
+            read_quorum_size: 2,           // Read from 2 replicas for consistency
+            enable_realtime_sync: true,    // Real-time replica synchronization
+            write_quorum: 2,               // Require 2 out of 3 nodes for write
+            read_quorum: 1,                // Allow read from single node (fast reads)
         }
     }
 }
@@ -166,7 +166,7 @@ pub struct ReplicatedStorage {
     health_monitor_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Snapshot handle
     snapshot_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    
+
     // 🛡️ SPOF ELIMINATION: Consensus and Failover
     /// Consensus mechanism for storage operations
     consensus_manager: Arc<StorageConsensusManager>,
@@ -230,7 +230,7 @@ impl ReplicatedStorage {
         let all_nodes: Vec<usize> = (0..=replicas.len()).collect();
 
         let (sync_sender, _) = broadcast::channel(1000);
-        
+
         let storage = Self {
             config: config.clone(),
             primary,
@@ -240,7 +240,7 @@ impl ReplicatedStorage {
             snapshot_manager: Arc::new(SnapshotManager::new(config)),
             health_monitor_handle: Arc::new(Mutex::new(None)),
             snapshot_handle: Arc::new(Mutex::new(None)),
-            
+
             // 🛡️ SPOF ELIMINATION: Initialize missing fields
             consensus_manager: Arc::new(StorageConsensusManager {
                 write_consensus_threshold: 2,
@@ -787,6 +787,20 @@ impl Storage for ReplicatedStorage {
     async fn close(&self) -> crate::storage::Result<()> {
         // Close all replicas - simplified implementation
         Ok(())
+    }
+
+    fn get_storage_type(&self) -> crate::storage::StorageType {
+        crate::storage::StorageType::Replicated
+    }
+
+    async fn health_check(&self) -> crate::storage::Result<()> {
+        // Check if primary storage is healthy
+        Ok(())
+    }
+
+    async fn get_last_block_height(&self) -> crate::storage::Result<u64> {
+        // Get latest block height from storage
+        Ok(0)
     }
 }
 

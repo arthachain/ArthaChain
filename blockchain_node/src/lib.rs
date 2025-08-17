@@ -228,10 +228,10 @@ pub mod utils;
 pub mod performance;
 
 // Mobile optimization
-// pub mod mobile; // TODO: Implement mobile optimization module
+pub mod mobile;
 
 // Cross-chain bridges
-// pub mod bridges; // TODO: Implement cross-chain bridges module
+pub mod bridges;
 
 // Native token
 pub mod native_token;

@@ -2,8 +2,8 @@ use crate::ai_engine::data_chunking::ChunkingConfig;
 use crate::ledger::state::ShardConfig;
 use anyhow::Result;
 use log::{debug, info, warn};
-use serde::{Deserialize, Deserializer, Serialize};
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -81,26 +81,28 @@ impl NodeConfig {
     /// Load configuration from file
     pub async fn load_from_file(path: &str) -> Result<Self> {
         let contents = tokio::fs::read_to_string(path).await?;
-        
+
         // Try to parse as flat NodeConfig first
         if let Ok(config) = toml::from_str::<NodeConfig>(&contents) {
             return Ok(config);
         }
-        
+
         // If that fails, try to parse as nested Config and convert
         if let Ok(nested_config) = toml::from_str::<Config>(&contents) {
             return Ok(Self::from_nested_config(nested_config));
         }
-        
+
         // If both fail, return the original error
         let config: NodeConfig = toml::from_str(&contents)?;
         Ok(config)
     }
-    
+
     /// Convert from nested Config structure
     pub fn from_nested_config(config: Config) -> Self {
         Self {
-            node_id: config.node_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            node_id: config
+                .node_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             network_id: config.network.network_name,
             data_dir: config.data_dir,
             listen_address: "0.0.0.0".to_string(),

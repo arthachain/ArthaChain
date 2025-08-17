@@ -1,0 +1,26 @@
+tunnel: arthachain-tunnel
+credentials-file: ~/.cloudflared/arthachain-tunnel.json
+
+ingress:
+  # Main API endpoints
+  - hostname: api.arthachain.in
+    service: http://localhost:8080
+  
+  # P2P endpoints  
+  - hostname: p2p.arthachain.in
+    service: tcp://localhost:30303
+    
+  # RPC endpoints
+  - hostname: rpc.arthachain.in
+    service: http://localhost:8545
+    
+  # WebSocket RPC
+  - hostname: ws.arthachain.in
+    service: http://localhost:8546
+    
+  # Monitoring endpoints
+  - hostname: monitor.arthachain.in
+    service: http://localhost:9090
+    
+  # Catch-all rule (required)
+  - service: http_status:404

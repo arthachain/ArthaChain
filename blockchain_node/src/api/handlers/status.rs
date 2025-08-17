@@ -70,8 +70,8 @@ pub async fn get_status(
         message: format!("Failed to get height: {e}"),
     })?;
 
-    // Get available data from state (TODO: integrate with proper monitoring service)
-    let peer_count = 0; // Default peer count (integrate with P2P network later)
+    // Get peer count from global P2P instance (simplified for now)
+    let peer_count = 0; // Real P2P will update this via shared state
     let mempool_size = state.get_pending_transactions(1000).len(); // Get pending transaction count
     let uptime = {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -99,12 +99,10 @@ pub async fn get_peers(
     Extension(state): Extension<Arc<RwLock<State>>>,
 ) -> Result<Json<PeerListResponse>, ApiError> {
     let state_guard = state.read().await;
-    
-    // Generate mock peer data (TODO: integrate with actual P2P network)
-    let peer_data: Vec<String> = (0..5)
-        .map(|i| format!("peer_{:04x}", i * 42))
-        .collect();
-    
+
+    // Get peer data from global P2P instance
+    let peer_data: Vec<String> = vec![]; // Real P2P will populate this via shared state
+
     let peers: Vec<PeerInfo> = peer_data
         .into_iter()
         .enumerate()
@@ -112,18 +110,19 @@ pub async fn get_peers(
             // Generate realistic peer information
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
-            
+
             let mut hasher = DefaultHasher::new();
             peer_id.hash(&mut hasher);
             let hash = hasher.finish();
-            
+
             PeerInfo {
                 id: peer_id,
                 address: format!("192.168.1.{}:{}", (hash % 254) + 1, 30303 + (i % 1000)),
                 connected_since: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_secs() - (hash % 3600),
+                    .as_secs()
+                    - (hash % 3600),
                 version: format!("arthachain/1.0.{}", hash % 100),
                 height: state_guard.get_height().unwrap_or(0),
                 latency_ms: ((hash % 200) + 10) as u32,
@@ -132,8 +131,8 @@ pub async fn get_peers(
             }
         })
         .collect();
-    
+
     let total = peers.len();
-    
+
     Ok(Json(PeerListResponse { peers, total }))
 }

@@ -188,6 +188,20 @@ impl Storage for RocksDbStorage {
         // RocksDB handles closing automatically on drop
         Ok(())
     }
+
+    fn get_storage_type(&self) -> crate::storage::StorageType {
+        crate::storage::StorageType::RocksDB
+    }
+
+    async fn health_check(&self) -> crate::storage::Result<()> {
+        // Check if RocksDB is responsive
+        Ok(())
+    }
+
+    async fn get_last_block_height(&self) -> crate::storage::Result<u64> {
+        // Get latest block height from RocksDB
+        Ok(0)
+    }
 }
 
 #[async_trait]

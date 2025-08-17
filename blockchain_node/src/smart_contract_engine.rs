@@ -522,6 +522,15 @@ impl SmartContractEngine {
                     error: None,
                 };
 
+                // Calculate optimization savings
+                let base_gas_estimate =
+                    self.estimate_base_gas_usage(&request.args, ContractRuntime::Wasm);
+                let optimization_savings = if wasm_result.gas_used < base_gas_estimate {
+                    base_gas_estimate - wasm_result.gas_used
+                } else {
+                    0
+                };
+
                 ContractExecutionResult {
                     success: wasm_result.success,
                     return_data: wasm_result.return_data,
@@ -530,7 +539,7 @@ impl SmartContractEngine {
                     error: wasm_result.error,
                     execution_time_us: start_time.elapsed().as_micros() as u64,
                     runtime: ContractRuntime::Wasm,
-                    optimization_savings: 0, // TODO: Track optimization savings
+                    optimization_savings,
                 }
             }
             ContractRuntime::Evm => {
@@ -766,6 +775,49 @@ impl SmartContractEngine {
             "Optimization cache cleaned up, {} entries remaining",
             cache.len()
         );
+    }
+
+    /// Estimate base gas usage for comparison with optimized execution
+    fn estimate_base_gas_usage(&self, args: &[u8], runtime: ContractRuntime) -> u64 {
+        // Base gas calculation considers:
+        // 1. Base transaction cost
+        // 2. Data size cost
+        // 3. Runtime overhead
+        // 4. Typical unoptimized execution patterns
+
+        let base_cost = match runtime {
+            ContractRuntime::Wasm => 21000,   // Base WASM execution cost
+            ContractRuntime::Evm => 21000,    // Base EVM transaction cost
+            ContractRuntime::Native => 10000, // Base native execution cost
+        };
+
+        // Data cost (4 gas per zero byte, 16 gas per non-zero byte)
+        let data_cost: u64 = args
+            .iter()
+            .map(|&byte| if byte == 0 { 4 } else { 16 })
+            .sum();
+
+        // Runtime overhead estimation
+        let runtime_overhead = match runtime {
+            ContractRuntime::Wasm => {
+                // WASM compilation and execution overhead
+                5000 + (args.len() as u64 * 10)
+            }
+            ContractRuntime::Evm => {
+                // EVM interpretation overhead
+                3000 + (args.len() as u64 * 8)
+            }
+            ContractRuntime::Native => {
+                // Native execution has minimal overhead
+                1000 + (args.len() as u64 * 2)
+            }
+        };
+
+        // Add inefficiency factor for unoptimized code
+        let inefficiency_multiplier = 1.3; // 30% inefficiency in unoptimized code
+
+        let total_base = base_cost + data_cost + runtime_overhead;
+        (total_base as f64 * inefficiency_multiplier) as u64
     }
 }
 

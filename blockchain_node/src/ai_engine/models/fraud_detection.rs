@@ -15,6 +15,15 @@ pub struct FraudDetectionModel {
     feature_processor: FeatureProcessor,
     /// Model parameters
     params: ModelParams,
+    /// Model features
+    features: Vec<String>,
+    /// Model weights (for custom implementations)
+    weights: Option<Vec<f32>>,
+    /// Model performance metrics
+    accuracy: f64,
+    precision: f64,
+    recall: f64,
+    f1_score: f64,
 }
 
 /// Model parameters for fraud detection
@@ -145,6 +154,21 @@ impl FraudDetectionModel {
             model: None,
             feature_processor,
             params,
+            features: vec![
+                "transaction_amount".to_string(),
+                "transaction_frequency".to_string(),
+                "device_reputation".to_string(),
+                "network_trust".to_string(),
+                "historical_behavior".to_string(),
+                "geographical_risk".to_string(),
+                "time_pattern".to_string(),
+                "peer_reputation".to_string(),
+            ],
+            weights: None,
+            accuracy: 0.0,
+            precision: 0.0,
+            recall: 0.0,
+            f1_score: 0.0,
         })
     }
 
@@ -190,6 +214,43 @@ impl FraudDetectionModel {
 
         // Store the trained model
         self.model = Some(model);
+
+        // Update model metrics
+        self.accuracy = train_accuracy;
+        // Calculate precision, recall, and f1 (simplified for now)
+        let true_positives = y_test
+            .iter()
+            .zip(&y_pred)
+            .filter(|(&actual, &predicted)| actual == 1 && predicted == 1)
+            .count() as f64;
+        let false_positives = y_test
+            .iter()
+            .zip(&y_pred)
+            .filter(|(&actual, &predicted)| actual == 0 && predicted == 1)
+            .count() as f64;
+        let false_negatives = y_test
+            .iter()
+            .zip(&y_pred)
+            .filter(|(&actual, &predicted)| actual == 1 && predicted == 0)
+            .count() as f64;
+
+        self.precision = if true_positives + false_positives > 0.0 {
+            true_positives / (true_positives + false_positives)
+        } else {
+            0.0
+        };
+
+        self.recall = if true_positives + false_negatives > 0.0 {
+            true_positives / (true_positives + false_negatives)
+        } else {
+            0.0
+        };
+
+        self.f1_score = if self.precision + self.recall > 0.0 {
+            2.0 * (self.precision * self.recall) / (self.precision + self.recall)
+        } else {
+            0.0
+        };
 
         // Calculate feature importance (simplified)
         let feature_importance = self
@@ -250,14 +311,139 @@ impl FraudDetectionModel {
     }
 
     /// Save model to file
-    pub fn save(&self, _path: &str) -> Result<()> {
-        // TODO: Implement model serialization when smartcore supports it
+    pub fn save(&self, path: &str) -> Result<()> {
+        use std::fs;
+
+        // Save model metadata as JSON (since smartcore models aren't directly serializable)
+        let model_metadata = serde_json::json!({
+            "model_type": "FraudDetectionModel",
+            "version": "1.0",
+            "training_date": chrono::Utc::now().to_rfc3339(),
+            "params": {
+                "n_estimators": self.params.n_estimators,
+                "max_depth": self.params.max_depth,
+                "min_samples_split": self.params.min_samples_split,
+                "min_samples_leaf": self.params.min_samples_leaf,
+                "random_state": self.params.random_state,
+                "prediction_threshold": self.params.prediction_threshold,
+            },
+            "features": self.features,
+            "performance": {
+                "accuracy": self.accuracy,
+                "precision": self.precision,
+                "recall": self.recall,
+                "f1_score": self.f1_score,
+            },
+            "weights": self.weights,
+            "feature_processor": {
+                "feature_names": self.feature_processor.feature_names,
+            }
+        });
+
+        let json_data = serde_json::to_string_pretty(&model_metadata)?;
+        fs::write(path, json_data)?;
+
+        // Save model weights if available
+        if let Some(weights) = &self.weights {
+            let weights_path = format!("{}.weights", path);
+            let weights_data = bincode::serialize(weights)?;
+            fs::write(weights_path, weights_data)?;
+        }
+
         Ok(())
     }
 
     /// Load model from file
-    pub fn load(&mut self, _path: &str) -> Result<()> {
-        // TODO: Implement model deserialization when smartcore supports it
+    pub fn load(&mut self, path: &str) -> Result<()> {
+        use std::fs;
+
+        // Load model metadata from JSON
+        let json_data = fs::read_to_string(path)?;
+        let model_metadata: serde_json::Value = serde_json::from_str(&json_data)?;
+
+        // Validate model type
+        if model_metadata["model_type"] != "FraudDetectionModel" {
+            return Err(anyhow::anyhow!("Invalid model type"));
+        }
+
+        // Load parameters
+        if let Some(params) = model_metadata["params"].as_object() {
+            self.params.n_estimators = params
+                .get("n_estimators")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100) as u16;
+            self.params.max_depth = params
+                .get("max_depth")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u16);
+            self.params.min_samples_split = params
+                .get("min_samples_split")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(2) as usize;
+            self.params.min_samples_leaf = params
+                .get("min_samples_leaf")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1) as usize;
+            self.params.random_state = params
+                .get("random_state")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(42);
+            self.params.prediction_threshold = params
+                .get("prediction_threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.5) as f32;
+        }
+
+        // Load features
+        if let Some(features) = model_metadata["features"].as_array() {
+            self.features = features
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+        }
+
+        // Load performance metrics
+        if let Some(performance) = model_metadata["performance"].as_object() {
+            self.accuracy = performance
+                .get("accuracy")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            self.precision = performance
+                .get("precision")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            self.recall = performance
+                .get("recall")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            self.f1_score = performance
+                .get("f1_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+        }
+
+        // Load weights if they exist
+        let weights_path = format!("{}.weights", path);
+        if std::path::Path::new(&weights_path).exists() {
+            let weights_data = fs::read(weights_path)?;
+            let weights: Vec<f32> = bincode::deserialize(&weights_data)?;
+            self.weights = Some(weights);
+        }
+
+        // Load feature processor names
+        if let Some(processor) = model_metadata["feature_processor"].as_object() {
+            if let Some(feature_names) = processor.get("feature_names").and_then(|v| v.as_array()) {
+                self.feature_processor.feature_names = feature_names
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+            }
+        }
+
+        // Note: The actual RandomForest model cannot be deserialized directly
+        // In production, you would need to retrain or use a different serialization approach
+        self.model = None; // Will need retraining
+
         Ok(())
     }
 

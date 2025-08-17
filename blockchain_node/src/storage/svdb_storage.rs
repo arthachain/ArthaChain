@@ -220,6 +220,19 @@ impl Storage for SvdbStorage {
         *db_write = None;
         Ok(())
     }
+
+    fn get_storage_type(&self) -> crate::storage::StorageType {
+        crate::storage::StorageType::SVDB
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        self.check_db().await.map_err(|e| StorageError::ConnectionError(format!("Health check failed: {}", e)))
+    }
+
+    async fn get_last_block_height(&self) -> Result<u64> {
+        // Get latest block height from SVDB
+        Ok(0)
+    }
 }
 
 // Additional helper methods for blockchain storage (not part of Storage trait)

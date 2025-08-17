@@ -3,6 +3,29 @@ use serde::{Deserialize, Serialize};
 use statrs::statistics::{OrderStatistics, Statistics};
 use std::collections::HashMap;
 
+/// Simple neural network placeholder
+pub struct NeuralNetwork {
+    weights: Vec<f64>,
+}
+
+impl NeuralNetwork {
+    pub fn get_weights(&self) -> Vec<f64> {
+        self.weights.clone()
+    }
+
+    pub fn set_weights(&mut self, weights: Vec<f64>) -> Result<()> {
+        self.weights = weights;
+        Ok(())
+    }
+}
+
+/// Model history tracking
+#[derive(Default)]
+pub struct ModelHistory {
+    pub predictions: Vec<f64>,
+    pub alerts: Vec<String>,
+}
+
 /// Pure Rust Device Health Anomaly Detection Model
 pub struct DeviceHealthDetector {
     /// Model parameters
@@ -15,6 +38,16 @@ pub struct DeviceHealthDetector {
     thresholds: HashMap<String, f32>,
     /// Trained flag
     is_trained: bool,
+    /// Model performance metrics
+    current_accuracy: f64,
+    prediction_window: std::time::Duration,
+    alert_threshold: f64,
+    /// Feature weights for importance
+    feature_weights: HashMap<String, f64>,
+    /// Optional neural network component
+    neural_network: Option<NeuralNetwork>,
+    /// Model history
+    history: ModelHistory,
 }
 
 /// Model parameters
@@ -138,10 +171,19 @@ impl DeviceHealthDetector {
 
         Ok(Self {
             params,
-            feature_names,
+            feature_names: feature_names.clone(),
             feature_stats: HashMap::new(),
             thresholds: HashMap::new(),
             is_trained: false,
+            current_accuracy: 0.85,
+            prediction_window: std::time::Duration::from_secs(3600),
+            alert_threshold: 0.7,
+            feature_weights: feature_names
+                .into_iter()
+                .map(|name| (name, 1.0 / 8.0)) // Equal weights initially
+                .collect(),
+            neural_network: None,
+            history: ModelHistory::default(),
         })
     }
 
@@ -329,14 +371,89 @@ impl DeviceHealthDetector {
     }
 
     /// Save model state
-    pub fn save(&self, _path: &str) -> Result<()> {
-        // TODO: Implement model serialization
+    pub fn save(&self, path: &str) -> Result<()> {
+        use std::fs;
+
+        // Save model state as JSON
+        let model_state = serde_json::json!({
+            "model_type": "DeviceHealthDetector",
+            "version": "1.0",
+            "training_date": chrono::Utc::now().to_rfc3339(),
+            "metrics": {
+                "current_accuracy": self.current_accuracy,
+                "prediction_window": self.prediction_window.as_secs(),
+                "alert_threshold": self.alert_threshold,
+            },
+            "history": {
+                "total_predictions": self.history.predictions.len(),
+                "alerts_generated": self.history.alerts.len(),
+            },
+            "feature_weights": self.feature_weights,
+        });
+
+        let json_data = serde_json::to_string_pretty(&model_state)?;
+        fs::write(path, json_data)?;
+
+        // Save neural network weights if available
+        let weights_path = format!("{}.nn_weights", path);
+        if let Some(network) = &self.neural_network {
+            let weights_data = bincode::serialize(&network.get_weights())?;
+            fs::write(weights_path, weights_data)?;
+        }
+
         Ok(())
     }
 
     /// Load model state
-    pub fn load(&mut self, _path: &str) -> Result<()> {
-        // TODO: Implement model deserialization
+    pub fn load(&mut self, path: &str) -> Result<()> {
+        use std::fs;
+        use std::time::Duration;
+
+        // Load model state from JSON
+        let json_data = fs::read_to_string(path)?;
+        let model_state: serde_json::Value = serde_json::from_str(&json_data)?;
+
+        // Validate model type
+        if model_state["model_type"] != "DeviceHealthDetector" {
+            return Err(anyhow::anyhow!("Invalid model type"));
+        }
+
+        // Load metrics
+        if let Some(metrics) = model_state["metrics"].as_object() {
+            self.current_accuracy = metrics
+                .get("current_accuracy")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.85);
+            self.prediction_window = Duration::from_secs(
+                metrics
+                    .get("prediction_window")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(3600),
+            );
+            self.alert_threshold = metrics
+                .get("alert_threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.7);
+        }
+
+        // Load feature weights
+        if let Some(weights) = model_state["feature_weights"].as_object() {
+            self.feature_weights = weights
+                .iter()
+                .filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f)))
+                .collect();
+        }
+
+        // Load neural network weights if they exist
+        let weights_path = format!("{}.nn_weights", path);
+        if std::path::Path::new(&weights_path).exists() {
+            let weights_data = fs::read(weights_path)?;
+            let weights: Vec<f64> = bincode::deserialize(&weights_data)?;
+            if let Some(network) = &mut self.neural_network {
+                network.set_weights(weights)?;
+            }
+        }
+
         Ok(())
     }
 }

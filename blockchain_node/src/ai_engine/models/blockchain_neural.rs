@@ -453,7 +453,11 @@ impl BlockchainNeuralModel {
             {
                 // Mock state loading for non-Python builds
                 let state_str = String::from_utf8_lossy(&buffer);
-                info!("Mock model loaded from: {} (length: {} bytes)", path, state_str.len());
+                info!(
+                    "Mock model loaded from: {} (length: {} bytes)",
+                    path,
+                    state_str.len()
+                );
                 Ok::<(), anyhow::Error>(())
             }
         })?;

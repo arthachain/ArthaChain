@@ -61,7 +61,7 @@ pub struct ConsensusConfig {
     pub byzantine_tolerance: bool,
     /// Maximum Byzantine nodes (f in 3f+1)
     pub max_byzantine_nodes: usize,
-    
+
     // 🛡️ SPOF ELIMINATION: Multi-Leader Consensus (SPOF FIX #4)
     /// Enable multi-leader consensus
     pub enable_multi_leader: bool,
@@ -84,12 +84,12 @@ impl Default for ConsensusConfig {
             emergency_mode_duration_secs: 300, // 5 minutes
             byzantine_tolerance: true,
             max_byzantine_nodes: 1, // Assume 4 nodes minimum (3*1+1)
-            
+
             // 🛡️ SPOF ELIMINATION: Multi-Leader defaults
-            enable_multi_leader: true,          // Enable multi-leader by default
-            concurrent_leaders: 3,              // 3 concurrent leaders for fault tolerance
+            enable_multi_leader: true, // Enable multi-leader by default
+            concurrent_leaders: 3,     // 3 concurrent leaders for fault tolerance
             leader_rotation_strategy: LeaderRotationStrategy::LoadBalanced,
-            leader_failure_timeout_ms: 2000,   // 2 second timeout for leader detection
+            leader_failure_timeout_ms: 2000, // 2 second timeout for leader detection
         }
     }
 }
@@ -171,7 +171,7 @@ pub struct ConsensusManager {
     emergency_mode: Arc<RwLock<Option<SystemTime>>>,
     /// Node ID
     node_id: NodeId,
-    
+
     // 🛡️ SPOF ELIMINATION: Multi-Leader Consensus
     /// Current active leaders
     active_leaders: Arc<RwLock<Vec<NodeId>>>,
@@ -226,7 +226,7 @@ impl ConsensusManager {
             recovery_handle: Arc::new(Mutex::new(None)),
             emergency_mode: Arc::new(RwLock::new(None)),
             node_id: node_id.clone(),
-            
+
             // 🛡️ SPOF ELIMINATION: Initialize multi-leader consensus fields
             active_leaders: Arc::new(RwLock::new(vec![node_id.clone()])), // Start with self as leader
             leader_balancer: Arc::new(Mutex::new(LeaderLoadBalancer {

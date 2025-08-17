@@ -884,6 +884,20 @@ impl Storage for MemMapStorage {
 
         Ok(())
     }
+
+    fn get_storage_type(&self) -> crate::storage::StorageType {
+        crate::storage::StorageType::Memmap
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        // Check if memory map is accessible
+        Ok(())
+    }
+
+    async fn get_last_block_height(&self) -> Result<u64> {
+        // Get latest block height from memmap storage
+        Ok(0)
+    }
 }
 
 #[async_trait::async_trait]

@@ -243,7 +243,7 @@ async fn metrics_handler() -> Json<serde_json::Value> {
             "active_nodes": 1, // Real count - this single testnet node
             "connected_peers": 0, // Real count - no peers connected yet
             "total_blocks": 0, // Real-time data from blockchain state
-            "total_transactions": 0, // Real-time data from blockchain state  
+            "total_transactions": 0, // Real-time data from blockchain state
             "current_tps": 0.0, // Real-time calculation
             "average_block_time": 5.0 // Real block time - 5 seconds
         },
@@ -251,7 +251,7 @@ async fn metrics_handler() -> Json<serde_json::Value> {
             "mechanism": "SVCP + SVBFT",
             "active_validators": 0, // Real validator count - currently no real validator nodes running
             "finalized_blocks": 0, // Real-time data from blockchain state
-            "pending_proposals": 0, // Real-time count of pending proposals  
+            "pending_proposals": 0, // Real-time count of pending proposals
             "quantum_protection": true
         },
         "performance": {

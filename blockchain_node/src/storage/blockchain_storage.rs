@@ -142,6 +142,18 @@ impl Storage for BlockchainStorage {
     async fn close(&self) -> crate::storage::Result<()> {
         self.rocksdb.close().await
     }
+
+    fn get_storage_type(&self) -> crate::storage::StorageType {
+        crate::storage::StorageType::Blockchain
+    }
+
+    async fn health_check(&self) -> crate::storage::Result<()> {
+        self.rocksdb.health_check().await
+    }
+
+    async fn get_last_block_height(&self) -> crate::storage::Result<u64> {
+        self.rocksdb.get_last_block_height().await
+    }
 }
 
 #[async_trait]

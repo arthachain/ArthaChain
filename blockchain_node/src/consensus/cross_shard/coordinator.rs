@@ -18,7 +18,7 @@ pub struct CoordinatorConfig {
     pub max_concurrent_txs: usize,
     pub retry_attempts: u32,
     pub quantum_signature_enabled: bool,
-    
+
     // 🛡️ SPOF ELIMINATION: Distributed Cross-Shard Coordination (SPOF FIX #5)
     pub enable_distributed_coordination: bool,
     pub coordinator_replicas: usize,
@@ -34,12 +34,12 @@ impl Default for CoordinatorConfig {
             max_concurrent_txs: 1000,
             retry_attempts: 3,
             quantum_signature_enabled: true,
-            
+
             // 🛡️ SPOF ELIMINATION: Default distributed coordination settings
             enable_distributed_coordination: true,
-            coordinator_replicas: 5,              // 5 coordinator replicas for fault tolerance
-            consensus_threshold: 3,               // 3 out of 5 must agree (Byzantine fault tolerance)
-            enable_coordinator_failover: true,    // Automatic coordinator failover
+            coordinator_replicas: 5, // 5 coordinator replicas for fault tolerance
+            consensus_threshold: 3,  // 3 out of 5 must agree (Byzantine fault tolerance)
+            enable_coordinator_failover: true, // Automatic coordinator failover
             coordinator_health_check_interval_ms: 1000, // 1 second health checks
         }
     }
@@ -300,7 +300,7 @@ pub struct CrossShardCoordinator {
     proof_cache: Arc<Mutex<ProofCache>>,
     /// Pending proven transactions awaiting validation
     pending_proofs: Arc<RwLock<HashMap<String, ProvenTransaction>>>,
-    
+
     // 🛡️ SPOF ELIMINATION: Distributed Cross-Shard Coordination
     /// Coordinator replica nodes for redundancy
     coordinator_replicas: Arc<RwLock<Vec<CoordinatorReplica>>>,
@@ -331,7 +331,7 @@ impl CrossShardCoordinator {
             heartbeats: Arc::new(RwLock::new(HashMap::new())),
             proof_cache: Arc::new(Mutex::new(ProofCache::new(1000))), // Cache up to 1000 proofs
             pending_proofs: Arc::new(RwLock::new(HashMap::new())),
-            
+
             // 🛡️ SPOF ELIMINATION: Initialize distributed coordination fields
             coordinator_replicas: Arc::new(RwLock::new(Vec::new())),
             primary_coordinator: Arc::new(RwLock::new(0)),

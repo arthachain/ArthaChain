@@ -2,10 +2,10 @@ use crate::config::Config;
 use crate::ledger::state::State;
 use crate::ledger::transaction::{Transaction, TransactionStatus, TransactionType};
 use crate::utils::crypto;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use blake3;
 use hex;
-use log::{error, info, warn};
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
 
 // Global rate limiting storage: address -> last request timestamp
-static LAST_REQUESTS: once_cell::sync::Lazy<Arc<RwLock<HashMap<String, u64>>>> = 
+static LAST_REQUESTS: once_cell::sync::Lazy<Arc<RwLock<HashMap<String, u64>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 /// Faucet configuration
@@ -325,13 +325,8 @@ mod tests {
     #[tokio::test]
     async fn test_faucet_rate_limiting() {
         // Create mock state
-        let state = Arc::new(RwLock::new(
-            State::new(&MockConfig {
-                shard_id: 0,
-                is_genesis_node: true,
-            })
-            .unwrap(),
-        ));
+        let config = crate::config::Config::default();
+        let state = Arc::new(RwLock::new(State::new(&config).unwrap()));
 
         // Create faucet config
         let faucet_config = FaucetConfig {
@@ -345,16 +340,9 @@ mod tests {
         };
 
         // Create faucet
-        let faucet = Faucet::new(
-            &MockConfig {
-                shard_id: 0,
-                is_genesis_node: true,
-            },
-            state,
-            Some(faucet_config),
-        )
-        .await
-        .unwrap();
+        let faucet = Faucet::new(&config, state, Some(faucet_config))
+            .await
+            .unwrap();
 
         // Start faucet
         faucet.start().await.unwrap();
@@ -378,46 +366,11 @@ mod tests {
         faucet.stop().await.unwrap();
     }
 
-    #[derive(Clone)]
-    struct MockConfig {
-        shard_id: u64,
-        is_genesis_node: bool,
-    }
-
-    impl crate::ledger::state::ShardConfig for MockConfig {
-        fn get_shard_id(&self) -> u64 {
-            self.shard_id
-        }
-
-        fn get_genesis_config(&self) -> Option<&Config> {
-            None
-        }
-
-        fn is_genesis_node(&self) -> bool {
-            self.is_genesis_node
-        }
-
-        fn is_sharding_enabled(&self) -> bool {
-            false
-        }
-
-        fn get_shard_count(&self) -> u32 {
-            1
-        }
-
-        fn get_primary_shard(&self) -> u32 {
-            0
-        }
-    }
+    // Mock config removed - using real Config throughout
 }
 
 // HTTP handlers for the faucet API endpoints
-use axum::{
-    extract::{ConnectInfo, Extension},
-    http::StatusCode,
-    response::Json as AxumJson,
-};
-use std::net::SocketAddr;
+use axum::{extract::Extension, http::StatusCode, response::Json as AxumJson};
 
 #[derive(Deserialize)]
 pub struct FaucetRequest {
@@ -454,9 +407,9 @@ pub async fn request_faucet_tokens(
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     let cooldown_duration = 300; // 5 minutes = 300 seconds
-    
+
     {
         let mut rate_limit_guard = LAST_REQUESTS.write().await;
         if let Some(&last_request_time) = rate_limit_guard.get(&payload.address) {
@@ -488,26 +441,30 @@ pub async fn request_faucet_tokens(
 
     // Generate or use existing faucet keypair and fund it if needed
     let (faucet_private_key, faucet_address) = generate_faucet_keypair()?;
-    
+
     // 🔄 UNLIMITED TOKENS: Auto-refill faucet when balance gets low
     {
         let mut state_guard = state.write().await;
         let current_balance = state_guard.get_balance(&faucet_address).unwrap_or(0);
         let min_balance = 10_000_000_000_000_000_000u64; // Keep at least 10 ARTHA (fits in u64)
-        
+
         if current_balance < min_balance {
             // Auto-refill with 18 ARTHA to ensure unlimited supply (max safe u64 amount)
             let refill_amount = 18_000_000_000_000_000_000u64; // 18 ARTHA in wei (fits in u64)
             let new_balance = current_balance + refill_amount;
             match state_guard.set_balance(&faucet_address, new_balance) {
-                Ok(_) => println!("🔄 Faucet auto-refilled: +{} ARTHA (total: {} ARTHA)", 
-                                 refill_amount as f64 / 1e18, 
-                                 new_balance as f64 / 1e18),
+                Ok(_) => println!(
+                    "🔄 Faucet auto-refilled: +{} ARTHA (total: {} ARTHA)",
+                    refill_amount as f64 / 1e18,
+                    new_balance as f64 / 1e18
+                ),
                 Err(e) => println!("⚠️ Warning: Failed to auto-refill faucet: {}", e),
             }
         } else {
-            println!("💰 Faucet balance: {} ARTHA (sufficient)", 
-                     current_balance as f64 / 1e18);
+            println!(
+                "💰 Faucet balance: {} ARTHA (sufficient)",
+                current_balance as f64 / 1e18
+            );
         }
     }
 
@@ -524,7 +481,7 @@ pub async fn request_faucet_tokens(
     let mut transaction = crate::ledger::transaction::Transaction::new(
         crate::ledger::transaction::TransactionType::Transfer,
         faucet_address.clone(),        // from: faucet address as hex string
-        hex::encode(&recipient_bytes), // to: user address as hex string  
+        hex::encode(&recipient_bytes), // to: user address as hex string
         amount_wei,                    // amount: 2 ARTHA in wei
         nonce,                         // nonce: next transaction number
         1_000_000_000,                 // gas_price: 1 GWEI (ultra-low)
@@ -543,34 +500,40 @@ pub async fn request_faucet_tokens(
     // ACTUALLY EXECUTE THE TRANSACTION: Transfer tokens from faucet to user
     {
         let mut state_guard = state.write().await;
-        
+
         // 1. Submit transaction to blockchain (for record keeping)
         match state_guard.add_pending_transaction(transaction) {
             Ok(_) => println!("✅ Faucet transaction submitted to blockchain"),
             Err(e) => println!("⚠️ Warning: Failed to submit transaction: {}", e),
         }
-        
+
         // 2. ACTUALLY TRANSFER THE TOKENS (execute the transaction immediately)
         let current_faucet_balance = state_guard.get_balance(&faucet_address).unwrap_or(0);
-        let current_user_balance = state_guard.get_balance(&hex::encode(&recipient_bytes)).unwrap_or(0);
-        
+        let current_user_balance = state_guard
+            .get_balance(&hex::encode(&recipient_bytes))
+            .unwrap_or(0);
+
         if current_faucet_balance >= amount_wei {
             // Deduct from faucet
             let new_faucet_balance = current_faucet_balance - amount_wei;
             match state_guard.set_balance(&faucet_address, new_faucet_balance) {
-                Ok(_) => println!("💰 Faucet balance: {} ARTHA → {} ARTHA", 
-                                 current_faucet_balance as f64 / 1e18,
-                                 new_faucet_balance as f64 / 1e18),
+                Ok(_) => println!(
+                    "💰 Faucet balance: {} ARTHA → {} ARTHA",
+                    current_faucet_balance as f64 / 1e18,
+                    new_faucet_balance as f64 / 1e18
+                ),
                 Err(e) => println!("⚠️ Warning: Failed to update faucet balance: {}", e),
             }
-            
+
             // Add to user
             let new_user_balance = current_user_balance + amount_wei;
             match state_guard.set_balance(&hex::encode(&recipient_bytes), new_user_balance) {
-                Ok(_) => println!("🎉 USER RECEIVED: {} ARTHA → {} ARTHA (sent to {})", 
-                                 current_user_balance as f64 / 1e18,
-                                 new_user_balance as f64 / 1e18,
-                                 payload.address),
+                Ok(_) => println!(
+                    "🎉 USER RECEIVED: {} ARTHA → {} ARTHA (sent to {})",
+                    current_user_balance as f64 / 1e18,
+                    new_user_balance as f64 / 1e18,
+                    payload.address
+                ),
                 Err(e) => {
                     println!("❌ CRITICAL: Failed to update user balance: {}", e);
                     return Ok(AxumJson(serde_json::json!({
@@ -579,12 +542,19 @@ pub async fn request_faucet_tokens(
                     })));
                 }
             }
-            
-            println!("💰 Faucet: Created real transaction {} for {} ARTHA to {}", 
-                     tx_hash, amount_wei as f64 / 1e18, payload.address);
+
+            println!(
+                "💰 Faucet: Created real transaction {} for {} ARTHA to {}",
+                tx_hash,
+                amount_wei as f64 / 1e18,
+                payload.address
+            );
         } else {
-            println!("❌ CRITICAL: Insufficient faucet balance: {} ARTHA < {} ARTHA needed", 
-                     current_faucet_balance as f64 / 1e18, amount_wei as f64 / 1e18);
+            println!(
+                "❌ CRITICAL: Insufficient faucet balance: {} ARTHA < {} ARTHA needed",
+                current_faucet_balance as f64 / 1e18,
+                amount_wei as f64 / 1e18
+            );
             return Ok(AxumJson(serde_json::json!({
                 "status": "error",
                 "message": "Insufficient faucet balance"
@@ -625,20 +595,21 @@ pub async fn get_faucet_status() -> AxumJson<serde_json::Value> {
 fn generate_faucet_keypair() -> Result<(Vec<u8>, String), StatusCode> {
     // For reproducible faucet address, use a deterministic seed
     // This ensures the same faucet address is used across restarts
-    
+
     // Generate deterministic private key from a known seed for the faucet
-    let faucet_seed = b"arthachain_testnet_faucet_seed_v1"; 
+    let faucet_seed = b"arthachain_testnet_faucet_seed_v1";
     let private_key_hash = blake3::hash(faucet_seed);
     let faucet_private_key = private_key_hash.as_bytes().to_vec();
 
     // Derive address from private key using the crypto utils
-    let faucet_address_hex = match crate::utils::crypto::derive_address_from_private_key(&faucet_private_key) {
-        Ok(addr) => addr,
-        Err(e) => {
-            println!("❌ Failed to derive faucet address: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let faucet_address_hex =
+        match crate::utils::crypto::derive_address_from_private_key(&faucet_private_key) {
+            Ok(addr) => addr,
+            Err(e) => {
+                println!("❌ Failed to derive faucet address: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
 
     println!("🔑 Faucet Address: 0x{}", faucet_address_hex);
     println!("💰 Faucet is ready to distribute tokens!");
