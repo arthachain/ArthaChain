@@ -1,0 +1,18 @@
+[network]
+bind_address = "0.0.0.0:30303"
+bootstrap_nodes = []
+enable_discovery = true
+max_peers = 50
+node_id = "bootstrap_main_node"
+
+[api]
+bind_address = "0.0.0.0:8080"
+enable_cors = true
+
+[consensus]
+validator_enabled = true
+is_bootstrap_node = true
+
+[storage]
+data_dir = "./arthachain_data"
+storage_type = "RocksDB"
