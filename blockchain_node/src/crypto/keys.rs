@@ -46,19 +46,10 @@ pub struct KeyRotationSchedule {
 /// Key recovery methods for redundant access
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyRecoveryMethod {
-    SharedSecret {
-        threshold: usize,
-        shares: Vec<String>,
-    },
-    BackupPhrase {
-        phrase_hash: String,
-    },
-    HardwareToken {
-        token_id: String,
-    },
-    BiometricBackup {
-        backup_hash: String,
-    },
+    SharedSecret { threshold: usize, shares: Vec<String> },
+    BackupPhrase { phrase_hash: String },
+    HardwareToken { token_id: String },
+    BiometricBackup { backup_hash: String },
 }
 
 /// Managed key pair with metadata for SPOF elimination
@@ -75,10 +66,10 @@ pub struct ManagedKeyPair {
 /// Key types for different purposes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyType {
-    Primary,   // Main signing key
-    Backup,    // Backup signing key
-    Recovery,  // Recovery access key
-    Temporary, // Temporary session key
+    Primary,      // Main signing key
+    Backup,       // Backup signing key
+    Recovery,     // Recovery access key
+    Temporary,    // Temporary session key
 }
 
 // // Basic cryptographic structures
@@ -298,34 +289,28 @@ impl MultiKeyIdentity {
         let mut active_keys = HashMap::new();
         let mut backup_keys = HashMap::new();
 
-        // Generate primary key pair
+        // Generate primary key pair  
         let primary_keypair = KeyPair::generate()?;
-        active_keys.insert(
-            "primary".to_string(),
-            ManagedKeyPair {
-                public_key: primary_keypair.public_key().clone(),
-                private_key: primary_keypair.private_key().clone(),
-                key_type: KeyType::Primary,
-                created_at: SystemTime::now(),
-                expires_at: None,
-                usage_count: 0,
-            },
-        );
+        active_keys.insert("primary".to_string(), ManagedKeyPair {
+            public_key: primary_keypair.public_key().clone(),
+            private_key: primary_keypair.private_key().clone(),
+            key_type: KeyType::Primary,
+            created_at: SystemTime::now(),
+            expires_at: None,
+            usage_count: 0,
+        });
 
         // Generate backup key pairs
         for i in 1..=3 {
             let backup_keypair = KeyPair::generate()?;
-            backup_keys.insert(
-                format!("backup_{}", i),
-                ManagedKeyPair {
-                    public_key: backup_keypair.public_key().clone(),
-                    private_key: backup_keypair.private_key().clone(),
-                    key_type: KeyType::Backup,
-                    created_at: SystemTime::now(),
-                    expires_at: None,
-                    usage_count: 0,
-                },
-            );
+            backup_keys.insert(format!("backup_{}", i), ManagedKeyPair {
+                public_key: backup_keypair.public_key().clone(),
+                private_key: backup_keypair.private_key().clone(),
+                key_type: KeyType::Backup,
+                created_at: SystemTime::now(),
+                expires_at: None,
+                usage_count: 0,
+            });
         }
 
         let rotation_schedule = KeyRotationSchedule {
@@ -364,8 +349,7 @@ impl MultiKeyIdentity {
     pub fn rotate_keys(&mut self) -> Result<(), KeyError> {
         // Move current primary to backup
         if let Some(primary) = self.active_keys.remove("primary") {
-            self.backup_keys
-                .insert("rotated_primary".to_string(), primary);
+            self.backup_keys.insert("rotated_primary".to_string(), primary);
         }
 
         // Promote first backup to primary
@@ -373,24 +357,21 @@ impl MultiKeyIdentity {
             let key_id = key_id.clone();
             let mut promoted_key = backup_key.clone();
             promoted_key.key_type = KeyType::Primary;
-
+            
             self.active_keys.insert("primary".to_string(), promoted_key);
             self.backup_keys.remove(&key_id);
         }
 
         // Generate new backup key
         let new_backup = KeyPair::generate()?;
-        self.backup_keys.insert(
-            "new_backup".to_string(),
-            ManagedKeyPair {
-                public_key: new_backup.public_key().clone(),
-                private_key: new_backup.private_key().clone(),
-                key_type: KeyType::Backup,
-                created_at: SystemTime::now(),
-                expires_at: None,
-                usage_count: 0,
-            },
-        );
+        self.backup_keys.insert("new_backup".to_string(), ManagedKeyPair {
+            public_key: new_backup.public_key().clone(),
+            private_key: new_backup.private_key().clone(),
+            key_type: KeyType::Backup,
+            created_at: SystemTime::now(),
+            expires_at: None,
+            usage_count: 0,
+        });
 
         self.rotation_schedule.last_rotation = SystemTime::now();
         Ok(())

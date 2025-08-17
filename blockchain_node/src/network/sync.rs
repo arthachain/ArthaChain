@@ -1055,18 +1055,6 @@ impl Storage for MockStorage {
     async fn close(&self) -> Result<(), crate::storage::StorageError> {
         Ok(())
     }
-
-    fn get_storage_type(&self) -> crate::storage::StorageType {
-        crate::storage::StorageType::Memory
-    }
-
-    async fn health_check(&self) -> Result<(), crate::storage::StorageError> {
-        Ok(())
-    }
-
-    async fn get_last_block_height(&self) -> Result<u64, crate::storage::StorageError> {
-        Ok(0)
-    }
 }
 
 #[allow(unused)]

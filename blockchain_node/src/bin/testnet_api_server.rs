@@ -195,7 +195,7 @@ async fn create_new_block(state: &Arc<RwLock<State>>, height: u64) -> Result<()>
 /// Minimal background activity for network health only
 async fn generate_real_transactions(block_height: u64) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
-
+    
     // PRODUCTION MODE: Minimal background activity
     // Only add a tiny heartbeat transaction every 50 blocks for network health
     if block_height % 50 == 0 {
@@ -203,23 +203,22 @@ async fn generate_real_transactions(block_height: u64) -> Result<Vec<Transaction
             id: arthachain_node::types::Hash::default(),
             from: vec![0u8; 20], // System account
             to: vec![0u8; 20],   // Self transaction for network heartbeat
-            amount: 1,           // Minimal amount - 1 wei
+            amount: 1, // Minimal amount - 1 wei
             fee: 0,
             data: b"network_heartbeat".to_vec(),
             nonce: block_height / 50,
             signature: None,
         };
         transactions.push(heartbeat_transaction);
-        println!(
-            "💓 Network heartbeat transaction added at block {}",
-            block_height
-        );
+        println!("💓 Network heartbeat transaction added at block {}", block_height);
     }
-
-    // Production mempool integration would happen here
-    // For now, return the minimal transactions (heartbeat only)
-    // Real implementation would integrate with mempool, API, cross-shard, and smart contracts
-
+    
+    // TODO: In production, this function will check for:
+    // - Real user transactions from mempool
+    // - Pending transactions submitted via /api/transactions
+    // - Cross-shard transactions
+    // - Smart contract executions
+    
     Ok(transactions)
 }
 

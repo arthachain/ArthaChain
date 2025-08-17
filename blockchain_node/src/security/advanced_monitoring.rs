@@ -92,10 +92,6 @@ pub struct SecurityMetrics {
     pub detection_accuracy: f64,
     /// System uptime
     pub uptime_percentage: f64,
-    /// Incidents successfully mitigated
-    pub incidents_mitigated: u64,
-    /// Critical incidents that triggered emergency responses
-    pub incidents_critical: u64,
 }
 
 /// Real-time monitoring configuration
@@ -152,10 +148,6 @@ pub struct AdvancedSecurityMonitor {
     start_time: Instant,
     /// Attack pattern database
     attack_patterns: Arc<RwLock<HashMap<String, AttackPattern>>>,
-    /// Rate limiting configuration
-    rate_limits: Arc<RwLock<HashMap<String, u32>>>,
-    /// Blocked sources
-    blocked_sources: Arc<RwLock<HashMap<Address, Instant>>>,
 }
 
 /// Threat pattern detection system
@@ -244,8 +236,6 @@ impl AdvancedSecurityMonitor {
             incident_sender,
             start_time: Instant::now(),
             attack_patterns: Arc::new(RwLock::new(HashMap::new())),
-            rate_limits: Arc::new(RwLock::new(Self::default_rate_limits())),
-            blocked_sources: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Initialize attack patterns
@@ -253,15 +243,6 @@ impl AdvancedSecurityMonitor {
 
         info!("Advanced Security Monitor initialized");
         monitor
-    }
-
-    /// Default rate limits
-    fn default_rate_limits() -> HashMap<String, u32> {
-        let mut limits = HashMap::new();
-        limits.insert("api_requests_per_minute".to_string(), 60);
-        limits.insert("transactions_per_block".to_string(), 100);
-        limits.insert("connections_per_ip".to_string(), 10);
-        limits
     }
 
     /// Initialize known attack patterns
@@ -379,8 +360,8 @@ impl AdvancedSecurityMonitor {
             threat_type: threat_type.clone(),
             threat_level: threat_level.clone(),
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-            source: self.extract_source_from_context(context),
-            target: self.extract_target_from_context(context),
+            source: None, // TODO: Extract from context
+            target: None, // TODO: Extract from context
             description: format!(
                 "Detected {} with {}% confidence in context: {}",
                 self.threat_type_description(&threat_type),
@@ -469,17 +450,7 @@ impl AdvancedSecurityMonitor {
     /// Apply rate limiting mitigation
     async fn apply_rate_limiting(&self) -> Result<()> {
         info!("Applying rate limiting mitigation");
-
-        // Update rate limiting configuration
-        let mut rate_limits = self.rate_limits.write().unwrap();
-
-        // Reduce rate limits by 50% during attack
-        rate_limits.insert("api_requests_per_minute".to_string(), 30);
-        rate_limits.insert("transactions_per_block".to_string(), 50);
-        rate_limits.insert("connections_per_ip".to_string(), 5);
-
-        info!("Rate limits reduced: API=30/min, TX=50/block, Conn=5/IP");
-
+        // TODO: Implement actual rate limiting logic
         Ok(())
     }
 
@@ -487,27 +458,7 @@ impl AdvancedSecurityMonitor {
     async fn apply_source_blocking(&self, incident: &SecurityIncident) -> Result<()> {
         if let Some(source) = &incident.source {
             info!("Blocking source: {:?}", source);
-
-            // Add source to blocked list with timestamp
-            let mut blocked = self.blocked_sources.write().unwrap();
-            blocked.insert(source.clone(), Instant::now());
-
-            // Implement actual blocking via network layer
-            // This would integrate with the P2P network to reject connections
-            info!("Source {:?} added to blocklist", source);
-
-            // Schedule automatic unblock after 1 hour
-            let blocked_sources = self.blocked_sources.clone();
-            let source_clone = source.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(3600)).await;
-                let mut blocked = blocked_sources.write().unwrap();
-                blocked.remove(&source_clone);
-                info!(
-                    "Source {:?} removed from blocklist after timeout",
-                    source_clone
-                );
-            });
+            // TODO: Implement actual source blocking logic
         }
         Ok(())
     }
@@ -515,18 +466,7 @@ impl AdvancedSecurityMonitor {
     /// Apply traffic filtering mitigation
     async fn apply_traffic_filtering(&self) -> Result<()> {
         info!("Applying traffic filtering");
-
-        // Update metrics to enable filtering
-        let mut metrics = self.metrics.write().unwrap();
-        metrics.incidents_mitigated += 1;
-
-        // Apply filtering rules
-        info!("Traffic filtering enabled:");
-        info!("  - Blocking suspicious transaction patterns");
-        info!("  - Filtering high-frequency API requests");
-        info!("  - Rejecting malformed network messages");
-        info!("  - Rate limiting peer connections");
-
+        // TODO: Implement actual traffic filtering logic
         Ok(())
     }
 
@@ -534,26 +474,7 @@ impl AdvancedSecurityMonitor {
     async fn apply_validator_isolation(&self, incident: &SecurityIncident) -> Result<()> {
         if let Some(target) = &incident.target {
             warn!("Isolating validator: {:?}", target);
-
-            // Mark validator as isolated
-            let isolated_until = Instant::now() + Duration::from_secs(1800); // 30 minutes
-
-            warn!(
-                "Validator {:?} isolated for 30 minutes due to security incident",
-                target
-            );
-            warn!("Actions taken:");
-            warn!("  - Validator removed from active set");
-            warn!("  - Block proposals from validator rejected");
-            warn!("  - Votes from validator ignored");
-            warn!("  - Peer connections from validator dropped");
-
-            // Schedule automatic reinstatement
-            let target_clone = target.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(1800)).await;
-                info!("Validator {:?} isolation period ended", target_clone);
-            });
+            // TODO: Implement actual validator isolation logic
         }
         Ok(())
     }
@@ -561,57 +482,8 @@ impl AdvancedSecurityMonitor {
     /// Apply emergency halt mitigation
     async fn apply_emergency_halt(&self) -> Result<()> {
         error!("EMERGENCY HALT INITIATED");
-
-        // Set emergency mode flag
-        error!("🚨 EMERGENCY MODE ACTIVATED 🚨");
-        error!("Actions taken:");
-        error!("  - Block production HALTED");
-        error!("  - Transaction processing SUSPENDED");
-        error!("  - New connections REJECTED");
-        error!("  - API endpoints returning 503");
-        error!("");
-        error!("Manual intervention required to resume operations");
-        error!("Run 'arthachain emergency-resume' to exit emergency mode");
-
-        // Update metrics
-        let mut metrics = self.metrics.write().unwrap();
-        metrics.incidents_critical += 1;
-
+        // TODO: Implement actual emergency halt logic
         Ok(())
-    }
-
-    /// Extract source address from metric context
-    fn extract_source_from_context(&self, metric_type: &str) -> Option<Address> {
-        // In a real implementation, this would parse the metric context
-        // For now, return None as we don't have specific address info
-        match metric_type {
-            "network_connections" | "api_requests" => {
-                // Would extract IP/address from connection logs
-                None
-            }
-            "transaction_rate" => {
-                // Would extract sender address from transactions
-                None
-            }
-            _ => None,
-        }
-    }
-
-    /// Extract target address from metric context
-    fn extract_target_from_context(&self, metric_type: &str) -> Option<Address> {
-        // In a real implementation, this would parse the metric context
-        // For now, return None as we don't have specific address info
-        match metric_type {
-            "validator_votes" => {
-                // Would extract validator address
-                None
-            }
-            "contract_calls" => {
-                // Would extract contract address
-                None
-            }
-            _ => None,
-        }
     }
 
     /// Determine threat level based on type and confidence

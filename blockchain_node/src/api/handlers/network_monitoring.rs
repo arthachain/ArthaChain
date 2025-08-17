@@ -245,9 +245,9 @@ impl NetworkMonitoringService {
             0
         };
 
-        // Get configuration from the node config
-        let max_peers = 50; // Standard max peers
-        let min_peers = 3; // Standard min peers
+        // Use default configuration values (TODO: integrate with proper config system)
+        let max_peers = 50; // Default max peers
+        let min_peers = 3;  // Default min peers
 
         let network_health = self.assess_network_health(peer_count, min_peers);
 

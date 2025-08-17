@@ -1,0 +1,43 @@
+[node]
+name = "arthachain-real-node"
+network_id = "arthachain-mainnet"
+data_dir = "./data"
+
+[network]
+listen_addr = "0.0.0.0:30303"
+bootstrap_peers = []
+enable_discovery = true
+
+[consensus]
+mechanism = "SVCP_SVBFT"
+block_time = 5
+enable_quantum_resistance = true
+enable_parallel_processing = true
+enable_cross_shard = true
+
+[ai_engine]
+enable_neural_networks = true
+enable_self_learning = true
+enable_fraud_detection = true
+enable_bci_interface = false  # Disable for production
+
+[storage]
+backend = "rocksdb"
+enable_replication = true
+enable_disaster_recovery = true
+
+[api]
+listen_addr = "0.0.0.0:8080"
+enable_cors = true
+enable_metrics = true
+
+[zk]
+enable_zkp = true
+enable_zkml = true
+proof_systems = ["plonk", "groth16"]
+curves = ["bn254", "bls12_381"]
+
+[wasm]
+enable_contracts = true
+gas_limit = 1000000000
+memory_limit = "256MB"

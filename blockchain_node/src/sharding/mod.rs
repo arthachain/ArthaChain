@@ -372,17 +372,5 @@ mod tests {
         async fn close(&self) -> crate::storage::Result<()> {
             Ok(())
         }
-
-        fn get_storage_type(&self) -> crate::storage::StorageType {
-            crate::storage::StorageType::Memory
-        }
-
-        async fn health_check(&self) -> crate::storage::Result<()> {
-            Ok(())
-        }
-
-        async fn get_last_block_height(&self) -> crate::storage::Result<u64> {
-            Ok(0)
-        }
     }
 }

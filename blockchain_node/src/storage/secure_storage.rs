@@ -744,18 +744,6 @@ impl Storage for SecureStorage {
     async fn close(&self) -> Result<()> {
         self.storage.close().await
     }
-
-    fn get_storage_type(&self) -> crate::storage::StorageType {
-        crate::storage::StorageType::Secure
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        self.storage.health_check().await
-    }
-
-    async fn get_last_block_height(&self) -> Result<u64> {
-        self.storage.get_last_block_height().await
-    }
 }
 
 // Additional helper methods for secure storage (not part of Storage trait)

@@ -243,43 +243,9 @@ impl Block {
         Ok(true)
     }
 
-    /// Serialize block for signing (excluding the signature field)
-    fn to_bytes_for_signing(&self) -> Result<Vec<u8>> {
-        use serde::Serialize;
-
-        #[derive(Serialize)]
-        struct BlockForSigning<'a> {
-            header: &'a BlockHeader,
-            transactions: &'a Vec<Transaction>,
-            // Exclude signature from signing
-        }
-
-        let block_for_signing = BlockForSigning {
-            header: &self.header,
-            transactions: &self.transactions,
-        };
-
-        bincode::serialize(&block_for_signing)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize block for signing: {}", e))
-    }
-
     /// Sign the block with a private key
-    pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
-        use crate::crypto::signature::sign;
-
-        // Create private key
-        let private_key_obj = crate::crypto::keys::PrivateKey::from_bytes(private_key);
-
-        // Serialize block header for signing
-        let block_data = self.to_bytes_for_signing()?;
-
-        // Sign the block data
-        let signature = sign(&private_key_obj, &block_data)
-            .map_err(|e| anyhow::anyhow!("Failed to sign block: {}", e))?;
-
-        // Store signature
-        self.signature = Some(signature);
-
+    pub fn sign(&mut self, _private_key: &[u8]) -> Result<()> {
+        // TODO: Implement BLS signing when we have the private key infrastructure
         Ok(())
     }
 }
@@ -337,51 +303,9 @@ impl Transaction {
         Ok(false)
     }
 
-    /// Serialize transaction for signing (excluding the signature field)
-    fn to_bytes_for_signing(&self) -> Result<Vec<u8>> {
-        use serde::Serialize;
-
-        #[derive(Serialize)]
-        struct TransactionForSigning<'a> {
-            from: &'a Vec<u8>,
-            to: &'a Vec<u8>,
-            amount: &'a u64,
-            fee: &'a u64,
-            nonce: &'a u64,
-            data: &'a Vec<u8>,
-            // Exclude signature from signing
-        }
-
-        let tx_for_signing = TransactionForSigning {
-            from: &self.from,
-            to: &self.to,
-            amount: &self.amount,
-            fee: &self.fee,
-            nonce: &self.nonce,
-            data: &self.data,
-        };
-
-        bincode::serialize(&tx_for_signing)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize transaction for signing: {}", e))
-    }
-
     /// Sign the transaction
-    pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
-        use crate::crypto::signature::sign;
-
-        // Create private key
-        let private_key_obj = crate::crypto::keys::PrivateKey::from_bytes(private_key);
-
-        // Serialize transaction for signing
-        let tx_data = self.to_bytes_for_signing()?;
-
-        // Sign the transaction data
-        let signature = sign(&private_key_obj, &tx_data)
-            .map_err(|e| anyhow::anyhow!("Failed to sign transaction: {}", e))?;
-
-        // Store signature
-        self.signature = Some(signature);
-
+    pub fn sign(&mut self, _private_key: &[u8]) -> Result<()> {
+        // TODO: Implement transaction signing
         Ok(())
     }
 }

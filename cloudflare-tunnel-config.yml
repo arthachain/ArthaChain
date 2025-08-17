@@ -22,5 +22,9 @@ ingress:
   - hostname: monitor.arthachain.in
     service: http://localhost:9090
     
+  # ArthChain API Monitoring Dashboard
+  - hostname: monitor.arthachain.in
+    service: http://localhost:8081
+    
   # Catch-all rule (required)
   - service: http_status:404

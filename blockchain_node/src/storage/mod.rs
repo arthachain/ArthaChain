@@ -77,19 +77,6 @@ impl Default for StorageConfig {
     }
 }
 
-// Storage type enumeration
-#[derive(Debug, Clone, Copy)]
-pub enum StorageType {
-    RocksDB,
-    SVDB,
-    Hybrid,
-    Memmap,
-    Replicated,
-    Secure,
-    Memory,
-    Blockchain,
-}
-
 // Core Storage trait - unified and consistent for ArthaChain
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -101,11 +88,6 @@ pub trait Storage: Send + Sync {
     async fn get_stats(&self) -> Result<StorageStats>;
     async fn flush(&self) -> Result<()>;
     async fn close(&self) -> Result<()>;
-
-    // Additional methods for node initialization
-    fn get_storage_type(&self) -> StorageType;
-    async fn health_check(&self) -> Result<()>;
-    async fn get_last_block_height(&self) -> Result<u64>;
 }
 
 // Storage initialization trait

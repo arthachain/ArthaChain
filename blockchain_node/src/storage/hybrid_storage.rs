@@ -98,23 +98,6 @@ impl Storage for HybridStorage {
         self.svdb.close().await?;
         Ok(())
     }
-
-    fn get_storage_type(&self) -> crate::storage::StorageType {
-        crate::storage::StorageType::Hybrid
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        self.rocksdb.health_check().await?;
-        self.svdb.health_check().await?;
-        Ok(())
-    }
-
-    async fn get_last_block_height(&self) -> Result<u64> {
-        // Check both storages and return the higher value
-        let rocksdb_height = self.rocksdb.get_last_block_height().await.unwrap_or(0);
-        let svdb_height = self.svdb.get_last_block_height().await.unwrap_or(0);
-        Ok(rocksdb_height.max(svdb_height))
-    }
 }
 
 #[async_trait]

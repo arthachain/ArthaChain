@@ -314,6 +314,8 @@ impl ValidatorSetManager {
         Ok(info.metrics.clone())
     }
 
+
+
     /// Save state to disk
     pub async fn save_state(&self, path: &str) -> Result<()> {
         let state = self.state.read().await;
@@ -370,18 +372,9 @@ mod tests {
             let a3 = Address::from_bytes(&v3).unwrap();
 
             // Register validators (no staking required!)
-            manager
-                .register_validator(v1.clone(), vec![0u8; 32])
-                .await
-                .unwrap();
-            manager
-                .register_validator(v2.clone(), vec![1u8; 32])
-                .await
-                .unwrap();
-            manager
-                .register_validator(v3.clone(), vec![2u8; 32])
-                .await
-                .unwrap();
+            manager.register_validator(v1.clone(), vec![0u8; 32]).await.unwrap();
+            manager.register_validator(v2.clone(), vec![1u8; 32]).await.unwrap();
+            manager.register_validator(v3.clone(), vec![2u8; 32]).await.unwrap();
 
             // Manually set the validators as active in the state
             {

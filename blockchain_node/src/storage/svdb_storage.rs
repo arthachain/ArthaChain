@@ -32,9 +32,9 @@ pub struct SvdbStorage {
 
 impl Default for SvdbStorage {
     fn default() -> Self {
-        Self::new("https://api.arthachain.in".to_string()).unwrap_or_else(|_| Self {
+        Self::new("http://localhost:8080".to_string()).unwrap_or_else(|_| Self {
             _client: Client::new(),
-            _base_url: "https://api.arthachain.in".to_string(),
+            _base_url: "http://localhost:8080".to_string(),
             db: Arc::new(RwLock::new(None)),
             db_path: Arc::new(RwLock::new(None)),
             _data: HashMap::new(),
@@ -219,19 +219,6 @@ impl Storage for SvdbStorage {
             .map_err(|_| StorageError::Other("Lock error".to_string()))?;
         *db_write = None;
         Ok(())
-    }
-
-    fn get_storage_type(&self) -> crate::storage::StorageType {
-        crate::storage::StorageType::SVDB
-    }
-
-    async fn health_check(&self) -> Result<()> {
-        self.check_db().await.map_err(|e| StorageError::ConnectionError(format!("Health check failed: {}", e)))
-    }
-
-    async fn get_last_block_height(&self) -> Result<u64> {
-        // Get latest block height from SVDB
-        Ok(0)
     }
 }
 

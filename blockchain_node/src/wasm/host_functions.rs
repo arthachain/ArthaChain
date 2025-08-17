@@ -276,36 +276,12 @@ pub fn log_event(
     Ok(())
 }
 
-/// Register host functions for a WASM module (simplified interface)
-/// In production, this would integrate with wasmtime's Linker
-pub fn register_host_functions(
-    env: Arc<Mutex<WasmEnv>>,
-) -> Result<HostFunctionRegistry, WasmError> {
-    let mut registry = HostFunctionRegistry::new();
-    
-    // Register storage functions
-    registry.register("env", "storage_read", {
-        let env = env.clone();
-        move |key_ptr: u32, key_len: u32| -> u64 {
-            if let Ok(env_guard) = env.lock() {
-                storage_read(&*env_guard, key_ptr, key_len).unwrap_or(0)
-            } else {
-                0
-            }
-        }
-    });
-    
-    registry.register("env", "storage_write", {
-        let env = env.clone();
-        move |key_ptr: u32, key_len: u32, value_ptr: u32, value_len: u32| -> u32 {
-            if let Ok(env_guard) = env.lock() {
-                storage_write(&*env_guard, key_ptr, key_len, value_ptr, value_len).unwrap_or(0)
-            } else {
-                0
-            }
-        }
-    });
-    
+/// Register all host functions for a WASM module
+/// TODO: Temporarily commented out due to wasmer/wasmtime conflict
+pub fn register_host_functions(// instance: &mut wasmer::Instance,
+    // env: Arc<Mutex<WasmEnv>>,
+) -> Result<(), WasmError> {
+    // TODO: Temporarily commented out due to wasmer/wasmtime conflict
     /*
     // Define function signatures
 
@@ -406,27 +382,6 @@ pub fn register_host_functions(
         },
     )?;
     */
-    
-    Ok(registry)
-}
 
-/// Simple host function registry (placeholder for wasmtime integration)
-pub struct HostFunctionRegistry {
-    functions: HashMap<String, Box<dyn Fn() + Send + Sync>>,
-}
-
-impl HostFunctionRegistry {
-    pub fn new() -> Self {
-        Self {
-            functions: HashMap::new(),
-        }
-    }
-    
-    pub fn register<F>(&mut self, module: &str, name: &str, _func: F) 
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let key = format!("{}.{}", module, name);
-        self.functions.insert(key, Box::new(_func));
-    }
+    Ok(())
 }
