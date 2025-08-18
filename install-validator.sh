@@ -9,6 +9,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 print_logo() {
@@ -153,6 +155,9 @@ set_defaults() {
     # Enable dashboard by default
     ENABLE_DASHBOARD=true
     
+    # Generate dashboard password
+    DASHBOARD_PASSWORD=$(openssl rand -hex 8)
+    
     echo ""
     echo -e "${GREEN}⚙️ Configuration Ready:${NC}"
     echo "   📁 Install: $INSTALL_PATH"
@@ -188,14 +193,23 @@ install_dependencies() {
     echo -e "${BLUE}📦 Setting up environment...${NC}"
     loading_animation "Preparing system" 3
     
+    # Check if we're root or need sudo
+    if [ "$EUID" -eq 0 ]; then
+        # Running as root, no sudo needed
+        SUDO=""
+    else
+        # Not root, use sudo
+        SUDO="sudo"
+    fi
+    
     # Detect OS and install accordingly
     if [ -f /etc/debian_version ]; then
         echo "🔄 Installing dependencies..."
-        (apt update -qq && apt install -y curl wget git build-essential pkg-config libssl-dev python3 clang libclang-dev llvm-dev cmake openssl >/dev/null 2>&1) &
+        ($SUDO apt update -qq && $SUDO apt install -y curl wget git build-essential pkg-config libssl-dev python3 clang libclang-dev llvm-dev cmake openssl >/dev/null 2>&1) &
         show_progress $!
     elif [ -f /etc/redhat-release ]; then
         echo "🔄 Installing dependencies..."
-        (yum update -y && yum install -y curl wget git gcc gcc-c++ make openssl-devel python3 clang llvm-devel cmake >/dev/null 2>&1) &
+        ($SUDO yum update -y && $SUDO yum install -y curl wget git gcc gcc-c++ make openssl-devel python3 clang llvm-devel cmake >/dev/null 2>&1) &
         show_progress $!
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         echo "🔄 Installing dependencies..."
@@ -238,56 +252,89 @@ install_rust() {
     echo ""
 }
 
-download_arthachain() {
-    echo -e "${BLUE}📥 Downloading ArthChain...${NC}"
+check_existing_node() {
+    echo -e "${BLUE}🔍 Checking for existing ArthaChain processes...${NC}"
     
+    # Check for existing ArthaChain processes
+    EXISTING_PROCESSES=$(ps aux | grep -i arthachain | grep -v grep | wc -l)
+    if [ $EXISTING_PROCESSES -gt 0 ]; then
+        echo -e "${YELLOW}⚠️ Found $EXISTING_PROCESSES existing ArthaChain process(es)${NC}"
+        ps aux | grep -i arthachain | grep -v grep
+        echo ""
+        echo -e "${YELLOW}Stop existing processes before starting validator? (y/n):${NC}"
+        read -r STOP_EXISTING
+        if [[ "$STOP_EXISTING" =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}🛑 Stopping existing processes...${NC}"
+            pkill -f arthachain
+            pkill -f testnet_api_server
+            sleep 3
+            echo -e "${GREEN}✅ Existing processes stopped${NC}"
+        fi
+    fi
+    echo ""
+}
+
+connect_to_network() {
+    echo -e "${BLUE}🌐 Setting up ArthaChain network connection...${NC}"
+    
+    # Create installation directory if it doesn't exist
     mkdir -p "$INSTALL_PATH"
     cd "$INSTALL_PATH"
     
-    if [ -d "ArthaChain" ]; then
-        cd ArthaChain
-        git pull origin main
-    else
+    # Check if ArthaChain is already installed
+    if [ ! -d "ArthaChain" ]; then
+        echo -e "${YELLOW}📥 Downloading ArthaChain...${NC}"
         git clone https://github.com/arthachain/ArthaChain.git
         cd ArthaChain
+    else
+        echo -e "${GREEN}✅ Found existing ArthaChain installation${NC}"
+        cd ArthaChain
+        git pull origin main 2>/dev/null || true
+    fi
+    
+    # Navigate to blockchain_node
+    if [ -d "blockchain_node" ]; then
+        cd blockchain_node
+        echo -e "${GREEN}✅ Ready to build validator${NC}"
+    else
+        echo -e "${RED}❌ blockchain_node directory not found in repository${NC}"
+        exit 1
     fi
 }
 
-build_validator() {
-    echo -e "${PURPLE}⚡ Compiling ArthChain Quantum Validator...${NC}"
+prepare_validator() {
+    echo -e "${PURPLE}⚡ Preparing ArthChain Validator...${NC}"
     echo ""
     
-    cd blockchain_node
     source ~/.cargo/env
     export PATH="$HOME/.cargo/bin:$PATH"
     
-    echo -e "${CYAN}🔥 Building the future of blockchain...${NC}"
-    echo ""
-    
-    # Professional build animation with ARTHACHAIN text
-    echo -e "${YELLOW}🔨 Compiling ArthChain validator binary...${NC}"
-    (cargo build --release --bin testnet_api_server >/dev/null 2>&1) &
-    BUILD_PID=$!
-    
-    # Show ARTHACHAIN in different colors while building
-    while ps -p $BUILD_PID > /dev/null; do
-        echo -e "   ${RED}ARTHACHAIN${NC} ${GREEN}ARTHACHAIN${NC} ${BLUE}ARTHACHAIN${NC} ${YELLOW}ARTHACHAIN${NC} ${PURPLE}ARTHACHAIN${NC} ${CYAN}ARTHACHAIN${NC}"
-        sleep 2
-    done
-    
-    echo ""
-    echo -e "${GREEN}🎉 BLOCKCHAIN VALIDATOR COMPILED! 🎉${NC}"
-    
-    # Verify build with animations
+    # Check if binary already exists
     if [ -f "target/release/testnet_api_server" ]; then
         BINARY_PATH="$(pwd)/target/release/testnet_api_server"
-        echo -e "${GREEN}✅ Validator binary ready at: $BINARY_PATH${NC}"
+        echo -e "${GREEN}✅ Found existing validator binary: $BINARY_PATH${NC}"
     elif [ -f "../target/release/testnet_api_server" ]; then
         BINARY_PATH="$(pwd)/../target/release/testnet_api_server"
-        echo -e "${GREEN}✅ Validator binary ready at: $BINARY_PATH${NC}"
+        echo -e "${GREEN}✅ Found existing validator binary: $BINARY_PATH${NC}"
     else
-        echo -e "${RED}❌ Build failed!${NC}"
-        exit 1
+        echo -e "${YELLOW}🔨 Compiling ArthChain validator binary...${NC}"
+        (cargo build --release --bin testnet_api_server >/dev/null 2>&1) &
+        BUILD_PID=$!
+        
+        # Show ARTHACHAIN in different colors while building
+        while ps -p $BUILD_PID > /dev/null; do
+            echo -e "   ${RED}ARTHACHAIN${NC} ${GREEN}ARTHACHAIN${NC} ${BLUE}ARTHACHAIN${NC} ${YELLOW}ARTHACHAIN${NC} ${PURPLE}ARTHACHAIN${NC} ${CYAN}ARTHACHAIN${NC}"
+            sleep 2
+        done
+        
+        # Verify build
+        if [ -f "target/release/testnet_api_server" ]; then
+            BINARY_PATH="$(pwd)/target/release/testnet_api_server"
+            echo -e "${GREEN}✅ Validator binary compiled: $BINARY_PATH${NC}"
+        else
+            echo -e "${RED}❌ Build failed!${NC}"
+            exit 1
+        fi
     fi
     
     echo ""
@@ -295,9 +342,16 @@ build_validator() {
 }
 
 create_config() {
-    echo -e "${BLUE}⚙️ Creating validator configuration...${NC}"
+    echo -e "${BLUE}⚙️ Using existing ArthaChain configuration...${NC}"
     
-    cat > validator_config.toml << EOF
+    # Check if node_config.toml exists
+    if [ -f "node_config.toml" ]; then
+        echo -e "${GREEN}✅ Found existing node_config.toml${NC}"
+        CONFIG_FILE="node_config.toml"
+    else
+        echo -e "${YELLOW}📝 Creating validator-specific config...${NC}"
+        # Create validator config that connects to hosted endpoints
+        cat > validator_config.toml << EOF
 [node]
 name = "validator-$(date +%s)"
 network_id = "arthachain-testnet-1"
@@ -306,11 +360,12 @@ data_dir = "./validator_data"
 [network]
 listen_addr = "0.0.0.0:$P2P_PORT"
 bootstrap_peers = [
-    "/ip4/103.160.27.49/tcp/30303",
-    "https://api.arthachain.in"
+    "https://api.arthachain.in",
+    "https://rpc.arthachain.in",
+    "/ip4/103.160.27.49/tcp/30303"
 ]
 enable_discovery = true
-genesis_sync = true
+genesis_sync = false
 sync_from_network = true
 
 [api]
@@ -328,43 +383,68 @@ join_existing_network = true
 backend = "rocksdb"
 path = "./validator_data/rocksdb"
 
-[dashboard]
-enabled = $ENABLE_DASHBOARD
-port = $DASHBOARD_PORT
-password = "$DASHBOARD_PASSWORD"
+[ai_engine]
+enable_neural_networks = true
+enable_fraud_detection = true
+enable_bci_interface = false
+
+[zk]
+enable_zkp = true
+enable_zkml = true
+proof_systems = ["plonk", "groth16"]
+curves = ["bn254", "bls12_381"]
+
+[wasm]
+enable_contracts = true
+gas_limit = 1000000000
+memory_limit = "256MB"
 EOF
+        CONFIG_FILE="validator_config.toml"
+    fi
+    
+    echo -e "${GREEN}✅ Configuration ready: $CONFIG_FILE${NC}"
 }
 
 create_scripts() {
     echo -e "${BLUE}📝 Creating management scripts...${NC}"
     loading_animation "Setting up scripts" 2
     
-    # Create scripts in the installation directory
-    cd "$INSTALL_PATH/ArthaChain"
+    # Create scripts in install directory for easy access
+    SCRIPTS_DIR="$INSTALL_PATH"
     
     # Start script with proper binary path
-    cat > start-validator.sh << EOF
+    cat > "$SCRIPTS_DIR/start-validator.sh" << EOF
 #!/bin/bash
 echo -e "${GREEN}🚀 Starting ArthChain Validator...${NC}"
 echo "💰 Wallet: $WALLET_ADDRESS"
-echo "📊 Dashboard: http://localhost:$DASHBOARD_PORT"
 echo "🔗 API: http://localhost:$API_PORT"
 echo "📡 P2P: $P2P_PORT"
 echo ""
 
-cd $INSTALL_PATH/ArthaChain/blockchain_node
+# Change to the blockchain_node directory
+cd "$INSTALL_PATH/ArthaChain/blockchain_node"
 source ~/.cargo/env
 
-# Use the correct binary path
-$BINARY_PATH --config validator_config.toml &
+# Check for running processes first
+RUNNING_PROCESSES=\$(ps aux | grep -i arthachain | grep -v grep | wc -l)
+if [ \$RUNNING_PROCESSES -gt 0 ]; then
+    echo -e "${YELLOW}⚠️ Found existing ArthaChain processes. Stopping them first...${NC}"
+    pkill -f arthachain
+    pkill -f testnet_api_server
+    sleep 3
+fi
+
+# Use the correct binary path and config
+echo -e "${BLUE}🔥 Starting validator with config: $CONFIG_FILE${NC}"
+$BINARY_PATH $CONFIG_FILE &
+echo \$! > "$INSTALL_PATH/validator.pid"
 sleep 5
 
 echo "✅ Validator started!"
 echo "📊 Status: curl http://localhost:$API_PORT/api/status"
-echo "🌐 Dashboard: http://localhost:$DASHBOARD_PORT"
-echo "🔐 Password: $DASHBOARD_PASSWORD"
+echo "🌐 Network: https://api.arthachain.in"
 EOF
-    chmod +x start-validator.sh
+    chmod +x "$SCRIPTS_DIR/start-validator.sh"
     
     # Ask for password at the end
     echo -e "${YELLOW}🔐 Set your dashboard password (or press ENTER for auto-generated):${NC}"
@@ -402,28 +482,44 @@ EOF
     done
     echo " ✅"
     
-    ./start-validator.sh
+    echo ""
+    echo -e "${GREEN}🎯 Validator setup complete! Use ./start-validator.sh to start${NC}"
     
     # Status script
-    cat > check-status.sh << EOF
+    cat > "$SCRIPTS_DIR/check-status.sh" << EOF
 #!/bin/bash
 echo "📊 ArthChain Validator Status:"
 echo "=============================="
-curl -s http://localhost:$API_PORT/api/status | python3 -m json.tool 2>/dev/null || echo "Validator not responding"
+if [ -f "$INSTALL_PATH/validator.pid" ]; then
+    PID=\$(cat "$INSTALL_PATH/validator.pid")
+    if ps -p \$PID > /dev/null; then
+        echo "✅ Validator is running (PID: \$PID)"
+        curl -s http://localhost:$API_PORT/api/status | python3 -m json.tool 2>/dev/null || echo "API starting up..."
+    else
+        echo "❌ Validator is not running"
+    fi
+else
+    echo "❌ Validator is not running"
+fi
 echo ""
 echo "🌐 Network Status:"
-curl -s https://api.arthachain.in/api/validators | python3 -c "import sys,json; data=json.load(sys.stdin); print(f'Validators: {data[\"active_count\"]} active')" 2>/dev/null
+curl -s https://api.arthachain.in/api/status 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Network API unavailable"
 EOF
-    chmod +x check-status.sh
+    chmod +x "$SCRIPTS_DIR/check-status.sh"
     
     # Stop script
-    cat > stop-validator.sh << EOF
+    cat > "$SCRIPTS_DIR/stop-validator.sh" << EOF
 #!/bin/bash
 echo "🛑 Stopping ArthChain Validator..."
-pkill -f testnet_api_server
+if [ -f "$INSTALL_PATH/validator.pid" ]; then
+    PID=\$(cat "$INSTALL_PATH/validator.pid")
+    kill \$PID 2>/dev/null
+    rm "$INSTALL_PATH/validator.pid"
+fi
+pkill -f testnet_api_server 2>/dev/null
 echo "✅ Validator stopped"
 EOF
-    chmod +x stop-validator.sh
+    chmod +x "$SCRIPTS_DIR/stop-validator.sh"
 }
 
 print_success() {
@@ -466,8 +562,9 @@ print_success() {
     echo ""
     
     echo -e "${CYAN}📋 Quick Commands:${NC}"
-    echo -e "   📊 Status: ${GREEN}./check-status.sh${NC}"
-    echo -e "   🛑 Stop: ${RED}./stop-validator.sh${NC}"
+    echo -e "   🚀 Start: ${GREEN}$INSTALL_PATH/start-validator.sh${NC}"
+    echo -e "   📊 Status: ${GREEN}$INSTALL_PATH/check-status.sh${NC}"
+    echo -e "   🛑 Stop: ${RED}$INSTALL_PATH/stop-validator.sh${NC}"
     echo ""
     
     echo -e "${PURPLE}🎊 Welcome to the ArthChain validator community! 🎊${NC}"
@@ -483,8 +580,9 @@ main() {
     install_dependencies
     install_rust
     generate_wallet
-    download_arthachain
-    build_validator
+    check_existing_node
+    connect_to_network
+    prepare_validator
     create_config
     create_scripts
     print_success
