@@ -1,0 +1,32 @@
+[Unit]
+Description=ArthaChain Validator Node
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arthachain
+Group=arthachain
+WorkingDirectory=/opt/arthachain/blockchain_node
+Environment="PATH=/home/arthachain/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/arthachain/blockchain_node/target/release/testnet_api_server /opt/arthachain/blockchain_node/node_config.toml
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/arthachain/node.log
+StandardError=append:/var/log/arthachain/error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/arthachain/blockchain_node/data /var/log/arthachain
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryLimit=16G
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target

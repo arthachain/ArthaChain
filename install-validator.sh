@@ -209,15 +209,33 @@ install_dependencies() {
 }
 
 install_rust() {
-    echo -e "${BLUE}🔧 Installing Rust...${NC}"
+    echo -e "${BLUE}🦀 Installing Rust Programming Language...${NC}"
+    echo ""
     
     if ! command -v rustc &> /dev/null; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo -e "${YELLOW}📥 Downloading Rust installer...${NC}"
+        
+        # Rust installation animation
+        echo -n "🦀 Installing Rust"
+        (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y >/dev/null 2>&1) &
+        RUST_PID=$!
+        
+        # Show RUST, RUST, RUST while installing
+        while ps -p $RUST_PID > /dev/null; do
+            echo -e " ${RED}RUST${GREEN}LANG${BLUE}RUST${YELLOW}LANG${PURPLE}RUST${CYAN}LANG${NC}"
+            sleep 1
+        done
+        
         source ~/.cargo/env
+        echo ""
+        echo -e "${GREEN}✅ Rust installed successfully!${NC}"
+    else
+        echo -e "${GREEN}✅ Rust already installed!${NC}"
     fi
     
     export PATH="$HOME/.cargo/bin:$PATH"
     echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+    echo ""
 }
 
 download_arthachain() {
@@ -246,19 +264,15 @@ build_validator() {
     echo -e "${CYAN}🔥 Building the future of blockchain...${NC}"
     echo ""
     
-    # Epic build animation
-    echo -n "🚀 Quantum compilation"
+    # Professional build animation with ARTHACHAIN text
+    echo -e "${YELLOW}🔨 Compiling ArthChain validator binary...${NC}"
     (cargo build --release --bin testnet_api_server >/dev/null 2>&1) &
     BUILD_PID=$!
     
-    # Show epic progress while building
+    # Show ARTHACHAIN in different colors while building
     while ps -p $BUILD_PID > /dev/null; do
-        for emoji in "⚡" "🔥" "💎" "🌟" "⭐" "✨" "💫" "🌠"; do
-            echo -n " $emoji"
-            sleep 1
-        done
-        echo -n " [Building...]"
-        echo ""
+        echo -e "   ${RED}ARTHACHAIN${NC} ${GREEN}ARTHACHAIN${NC} ${BLUE}ARTHACHAIN${NC} ${YELLOW}ARTHACHAIN${NC} ${PURPLE}ARTHACHAIN${NC} ${CYAN}ARTHACHAIN${NC}"
+        sleep 2
     done
     
     echo ""
