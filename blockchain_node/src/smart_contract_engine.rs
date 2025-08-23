@@ -4,12 +4,11 @@
 //! with advanced optimization, security features, and interoperability.
 
 #[cfg(feature = "evm")]
-use crate::evm::{EvmAddress, EvmExecutor, EvmRuntime, EvmTransaction};
+use crate::evm::{EvmAddress, EvmExecutor, EvmRuntime, EvmTransaction, types::EvmConfig};
 use crate::ledger::state::State;
 use crate::storage::Storage;
 use crate::types::{Address, Hash, Transaction};
-#[cfg(feature = "wasm")]
-use crate::wasm::{WasmExecutionConfig, WasmExecutionContext, WasmExecutionEngine, WasmStorage};
+
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -182,133 +181,11 @@ pub struct RuntimeMetrics {
     pub avg_memory_usage: u64,
 }
 
-/// Mock WASM engine for when WASM feature is disabled
-#[cfg(not(feature = "wasm"))]
-pub struct MockWasmEngine;
-
-#[cfg(not(feature = "wasm"))]
-impl MockWasmEngine {
-    pub fn new() -> Self {
-        Self
-    }
-    pub async fn deploy_contract(
-        &self,
-        _: &[u8],
-        _: &Address,
-        _: Arc<MockWasmStorage>,
-        _: u64,
-        _: Option<&[u8]>,
-    ) -> Result<ContractExecutionResult> {
-        Ok(ContractExecutionResult {
-            success: false,
-            return_data: vec![],
-            gas_used: 0,
-            logs: vec!["WASM feature not enabled".to_string()],
-            error: Some("WASM feature not enabled".to_string()),
-            execution_time_us: 0,
-            runtime: ContractRuntime::Wasm,
-            optimization_savings: 0,
-        })
-    }
-    pub async fn execute_function(
-        &self,
-        _: &str,
-        _: &str,
-        _: &[u8],
-        _: Arc<MockWasmStorage>,
-        _: MockWasmContext,
-        _: u64,
-    ) -> Result<ContractExecutionResult> {
-        Ok(ContractExecutionResult {
-            success: false,
-            return_data: vec![],
-            gas_used: 0,
-            logs: vec!["WASM feature not enabled".to_string()],
-            error: Some("WASM feature not enabled".to_string()),
-            execution_time_us: 0,
-            runtime: ContractRuntime::Wasm,
-            optimization_savings: 0,
-        })
-    }
-}
-
-/// Mock EVM runtime for when EVM feature is disabled
-#[cfg(not(feature = "evm"))]
-pub struct MockEvmRuntime;
-
-#[cfg(not(feature = "evm"))]
-impl MockEvmRuntime {
-    pub fn new() -> Self {
-        Self
-    }
-    pub async fn execute_transaction(&self, _: &MockEvmTransaction) -> Result<MockEvmResult> {
-        Ok(MockEvmResult {
-            success: false,
-            output: vec![],
-            gas_used: 0,
-        })
-    }
-}
-
-/// Mock WASM result type
-#[derive(Debug, Clone)]
-pub struct MockWasmResult {
-    pub success: bool,
-    pub return_data: Vec<u8>,
-    pub gas_used: u64,
-    pub logs: Vec<String>,
-    pub error: Option<String>,
-}
-
-#[cfg(not(feature = "wasm"))]
-pub struct MockWasmStorage;
-#[cfg(not(feature = "wasm"))]
-pub struct MockWasmContext;
-
-#[cfg(not(feature = "evm"))]
-#[derive(Debug, Clone)]
-pub struct MockEvmTransaction {
-    pub from: Address,
-    pub to: Option<Address>,
-    pub value: u128,
-    pub data: Vec<u8>,
-    pub gas_limit: u128,
-    pub gas_price: u128,
-    pub nonce: u128,
-}
-
-#[cfg(not(feature = "evm"))]
-pub struct MockEvmResult {
-    success: bool,
-    output: Vec<u8>,
-    gas_used: u64,
-}
-
-#[cfg(not(feature = "evm"))]
-impl MockEvmResult {
-    pub fn is_success(&self) -> bool {
-        self.success
-    }
-    pub fn output(&self) -> &[u8] {
-        &self.output
-    }
-    pub fn gas_used(&self) -> u64 {
-        self.gas_used
-    }
-}
-
 /// Universal Smart Contract Engine
 pub struct SmartContractEngine {
-    /// WASM execution engine
-    #[cfg(feature = "wasm")]
-    wasm_engine: Arc<WasmExecutionEngine>,
-    #[cfg(not(feature = "wasm"))]
-    wasm_engine: Arc<MockWasmEngine>,
     /// EVM execution engine
     #[cfg(feature = "evm")]
-    evm_runtime: Arc<EvmRuntime>,
-    #[cfg(not(feature = "evm"))]
-    evm_runtime: Arc<MockEvmRuntime>,
+    evm_runtime: Arc<Mutex<EvmRuntime>>,
     /// Storage interface
     storage: Arc<dyn Storage>,
     /// Contract registry
@@ -341,32 +218,26 @@ struct OptimizationResult {
 impl SmartContractEngine {
     /// Create a new smart contract engine
     pub async fn new(storage: Arc<dyn Storage>, config: SmartContractEngineConfig) -> Result<Self> {
-        // Initialize WASM engine if available
-        #[cfg(feature = "wasm")]
-        let wasm_engine = {
-            let wasm_config = WasmExecutionConfig {
-                max_memory_pages: 512,
-                default_gas_limit: config.default_gas_limit,
-                execution_timeout_ms: config.execution_timeout.as_millis() as u64,
-                enable_optimization: config.enable_optimization,
-                ..Default::default()
-            };
-            Arc::new(WasmExecutionEngine::new(wasm_config)?)
-        };
-        #[cfg(not(feature = "wasm"))]
-        let wasm_engine = Arc::new(MockWasmEngine::new());
 
         // Initialize EVM runtime if available
         #[cfg(feature = "evm")]
-        let evm_runtime = Arc::new(EvmRuntime::new(storage.clone()).await?);
-        #[cfg(not(feature = "evm"))]
-        let evm_runtime = Arc::new(MockEvmRuntime::new());
+        let evm_runtime = {
+            // Convert storage to HybridStorage
+            let hybrid_storage = match storage.as_any().downcast_ref::<crate::storage::hybrid_storage::HybridStorage>() {
+                Some(hybrid) => hybrid.clone()?,
+                None => {
+                    // Create a new HybridStorage if the current storage is not compatible
+                    crate::storage::hybrid_storage::HybridStorage::new("memory://".to_string(), 1024 * 1024)?
+                }
+            };
+            Arc::new(Mutex::new(EvmRuntime::new(Arc::new(hybrid_storage), EvmConfig::default())))
+        };
 
         // Create execution semaphore
         let execution_semaphore = Arc::new(Semaphore::new(config.max_concurrent_executions));
 
         Ok(Self {
-            wasm_engine,
+            #[cfg(feature = "evm")]
             evm_runtime,
             storage,
             contracts: Arc::new(RwLock::new(HashMap::new())),
@@ -404,57 +275,47 @@ impl SmartContractEngine {
         let contract_address = self.calculate_contract_address(deployer, &final_bytecode)?;
 
         // Execute deployment based on runtime
-        let result = match runtime {
+        let result: ContractExecutionResult = match runtime {
             ContractRuntime::Wasm => {
-                // Mock WASM storage for demo
-                // For demo purposes, simulate WASM deployment
-                let wasm_result = MockWasmResult {
-                    success: true,
-                    return_data: contract_address.as_bytes().to_vec(),
-                    gas_used: 5000,
-                    logs: vec![],
-                    error: None,
-                };
-
-                ContractExecutionResult {
-                    success: wasm_result.success,
-                    return_data: wasm_result.return_data,
-                    gas_used: wasm_result.gas_used,
-                    logs: wasm_result.logs,
-                    error: wasm_result.error,
-                    execution_time_us: start_time.elapsed().as_micros() as u64,
-                    runtime: ContractRuntime::Wasm,
-                    optimization_savings: 0,
-                }
+                return Err(anyhow!("WASM runtime not available"));
             }
             ContractRuntime::Evm => {
-                // Convert to EVM transaction
-                let evm_tx = MockEvmTransaction {
-                    from: deployer.clone(),
-                    to: None, // Contract creation
-                    value: 0u128,
-                    data: final_bytecode.clone(),
-                    gas_limit: self.config.default_gas_limit as u128,
-                    gas_price: 1u128,
-                    nonce: 0u128,
-                };
+                #[cfg(feature = "evm")]
+                {
+                    // Convert to real EVM transaction
+                    let evm_tx = crate::evm::types::EvmTransaction {
+                        from: crate::evm::types::EvmAddress::from_slice(deployer.as_bytes()),
+                        to: None, // Contract creation
+                        value: ethereum_types::U256::from(0u128),
+                        data: final_bytecode.clone(),
+                        gas_price: ethereum_types::U256::from(1u128),
+                        gas_limit: ethereum_types::U256::from(self.config.default_gas_limit as u128),
+                        nonce: ethereum_types::U256::from(0u128),
+                        chain_id: Some(1), // Mainnet
+                        signature: None,
+                    };
 
-                let evm_result = self.evm_runtime.execute_transaction(&evm_tx).await?;
+                    let evm_result = self.evm_runtime.lock().unwrap().execute(evm_tx).await?;
 
-                // Convert EVM result to our format
-                ContractExecutionResult {
-                    success: evm_result.is_success(),
-                    return_data: evm_result.output().to_vec(),
-                    gas_used: evm_result.gas_used(),
-                    logs: vec![], // EVM logs would be converted here
-                    error: if evm_result.is_success() {
-                        None
-                    } else {
-                        Some("EVM execution failed".to_string())
-                    },
-                    execution_time_us: start_time.elapsed().as_micros() as u64,
-                    runtime: ContractRuntime::Evm,
-                    optimization_savings,
+                    // Convert EVM result to our format
+                    ContractExecutionResult {
+                        success: evm_result.success,
+                        return_data: evm_result.return_data,
+                        gas_used: evm_result.gas_used,
+                        logs: vec![], // EVM logs would be converted here
+                        error: if evm_result.success {
+                            None
+                        } else {
+                            Some("EVM execution failed".to_string())
+                        },
+                        execution_time_us: start_time.elapsed().as_micros() as u64,
+                        runtime: ContractRuntime::Evm,
+                        optimization_savings,
+                    }
+                }
+                #[cfg(not(feature = "evm"))]
+                {
+                    return Err(anyhow!("EVM runtime not available"));
                 }
             }
             ContractRuntime::Native => {
@@ -509,57 +370,47 @@ impl SmartContractEngine {
                 .ok_or_else(|| anyhow!("Contract not found: {:?}", request.contract_address))?
         };
 
-        // Execute based on runtime type
-        let result = match contract_info.runtime {
+                // Execute based on runtime type
+        let result: ContractExecutionResult = match contract_info.runtime {
             ContractRuntime::Wasm => {
-                // Mock WASM storage and context for demo
-                // For demo purposes, simulate WASM execution
-                let wasm_result = MockWasmResult {
-                    success: true,
-                    return_data: vec![1, 2, 3, 4], // Mock return data
-                    gas_used: 1000,
-                    logs: vec![],
-                    error: None,
-                };
-
-                ContractExecutionResult {
-                    success: wasm_result.success,
-                    return_data: wasm_result.return_data,
-                    gas_used: wasm_result.gas_used,
-                    logs: wasm_result.logs,
-                    error: wasm_result.error,
-                    execution_time_us: start_time.elapsed().as_micros() as u64,
-                    runtime: ContractRuntime::Wasm,
-                    optimization_savings: 0, // TODO: Track optimization savings
-                }
+                return Err(anyhow!("WASM runtime not available"));
             }
             ContractRuntime::Evm => {
-                // Create EVM call transaction
-                let evm_tx = MockEvmTransaction {
-                    from: request.caller.clone(),
-                    to: Some(request.contract_address.clone()),
-                    value: request.value as u128,
-                    data: request.args,
-                    gas_limit: request.gas_limit as u128,
-                    gas_price: request.gas_price as u128,
-                    nonce: 0u128,
-                };
+                #[cfg(feature = "evm")]
+                {
+                    // Create real EVM call transaction
+                    let evm_tx = crate::evm::types::EvmTransaction {
+                        from: crate::evm::types::EvmAddress::from_slice(request.caller.as_bytes()),
+                        to: Some(crate::evm::types::EvmAddress::from_slice(request.contract_address.as_bytes())),
+                        value: ethereum_types::U256::from(request.value as u128),
+                        data: request.args,
+                        gas_price: ethereum_types::U256::from(request.gas_price as u128),
+                        gas_limit: ethereum_types::U256::from(request.gas_limit as u128),
+                        nonce: ethereum_types::U256::from(0u128),
+                        chain_id: Some(1), // Mainnet
+                        signature: None,
+                    };
 
-                let evm_result = self.evm_runtime.execute_transaction(&evm_tx).await?;
+                    let evm_result = self.evm_runtime.lock().unwrap().execute(evm_tx).await?;
 
-                ContractExecutionResult {
-                    success: evm_result.is_success(),
-                    return_data: evm_result.output().to_vec(),
-                    gas_used: evm_result.gas_used(),
-                    logs: vec![], // EVM logs would be converted here
-                    error: if evm_result.is_success() {
-                        None
-                    } else {
-                        Some("EVM execution failed".to_string())
-                    },
-                    execution_time_us: start_time.elapsed().as_micros() as u64,
-                    runtime: ContractRuntime::Evm,
-                    optimization_savings: 0,
+                    ContractExecutionResult {
+                        success: evm_result.success,
+                        return_data: evm_result.return_data,
+                        gas_used: evm_result.gas_used,
+                        logs: vec![], // EVM logs would be converted here
+                        error: if evm_result.success {
+                            None
+                        } else {
+                            Some("EVM execution failed".to_string())
+                        },
+                        execution_time_us: start_time.elapsed().as_micros() as u64,
+                        runtime: ContractRuntime::Evm,
+                        optimization_savings: 0,
+                    }
+                }
+                #[cfg(not(feature = "evm"))]
+                {
+                    return Err(anyhow!("EVM runtime not available"));
                 }
             }
             ContractRuntime::Native => {

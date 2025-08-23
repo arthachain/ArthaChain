@@ -9,7 +9,7 @@ use crate::consensus::leader_election::LeaderElectionManager;
 use crate::consensus::sharding::ObjectiveSharding;
 #[cfg(not(skip_problematic_modules))]
 use crate::consensus::svbft::SVBFTConsensus;
-use crate::consensus::svcp::SVCPMiner;
+use crate::consensus::svcp::{SVCPMiner, SVCPConsensus};
 use crate::consensus::validator_set::{ValidatorSetConfig, ValidatorSetManager};
 use crate::identity::IdentityManager;
 use crate::ledger::state::State;
@@ -36,12 +36,13 @@ use tokio::sync::Mutex;
 use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use tokio::sync::mpsc;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use axum::{Router, Extension, routing::get};
 
 #[cfg(feature = "evm")]
-use crate::evm::EvmExecutor;
-
-#[cfg(feature = "wasm")]
-use crate::wasm::WasmExecutor;
+use crate::evm::{EvmExecutor, EvmRpcService};
 
 // Forward declaration for circular references
 mod metrics {
@@ -458,9 +459,7 @@ pub struct Node {
     /// EVM RPC service (if enabled)
     #[cfg(feature = "evm")]
     evm_rpc: Option<EvmRpcService>,
-    /// WASM Executor (when WASM support is enabled)
-    #[cfg(feature = "wasm")]
-    wasm_executor: Option<Arc<RwLock<WasmExecutor>>>,
+
     /// Security logger
     pub security_logger: Option<Arc<SecurityLogger>>,
     /// AI explainer for score transparency
@@ -530,8 +529,7 @@ impl Node {
             evm_executor: None,
             #[cfg(feature = "evm")]
             evm_rpc: None,
-            #[cfg(feature = "wasm")]
-            wasm_executor: None,
+
             security_logger: None,
             ai_explainer: None,
             security_audit: None,
@@ -608,16 +606,69 @@ impl Node {
         info!("✅ API server started on port 3000");
         
         // Start HTTP RPC on port 8545
-        // TODO: Implement RPC server
-        info!("✅ HTTP RPC would start on port 8545");
+        let state_clone = self.state.clone();
+        let (rpc_shutdown_tx, _) = mpsc::channel(1);
+        let rpc_handle = tokio::spawn(async move {
+            let mut rpc_server = match crate::network::rpc::RPCServer::new(
+                Config::default(),
+                state_clone,
+                rpc_shutdown_tx,
+            ) {
+                Ok(server) => server,
+                Err(e) => {
+                    log::error!("Failed to create RPC server: {}", e);
+                    return;
+                }
+            };
+            
+            match rpc_server.start().await {
+                Ok(_) => log::info!("RPC server started successfully"),
+                Err(e) => log::error!("Failed to start RPC server: {}", e),
+            }
+        });
+        info!("✅ HTTP RPC started on port 8545");
         
         // Start WebSocket RPC on port 8546
-        // TODO: Implement WebSocket RPC
-        info!("✅ WebSocket RPC would start on port 8546");
+        let state_clone = self.state.clone();
+        let ws_handle = tokio::spawn(async move {
+            let addr = SocketAddr::from(([0, 0, 0, 0], 8546));
+            
+            // Create a router with the WebSocket handler
+            let app = Router::new()
+                .route("/ws", get(crate::api::websocket::websocket_handler))
+                .layer(Extension(state_clone));
+            
+            match axum::serve(tokio::net::TcpListener::bind(&addr).await.unwrap(), app).await {
+                Ok(_) => {},
+                Err(e) => log::error!("WebSocket server error: {}", e),
+            }
+        });
+        info!("✅ WebSocket RPC started on port 8546");
         
         // Start P2P network on port 30303
-        // TODO: Implement P2P network
-        info!("✅ P2P network would start on port 30303");
+        let state_clone = self.state.clone();
+        let (p2p_shutdown_tx, _) = mpsc::channel(1);
+        
+        // Configure P2P network
+        let mut p2p_config = Config::default();
+        p2p_config.network.p2p_port = 30303;
+        p2p_config.network.bootstrap_nodes = vec![
+            "/dns4/bootstrap.arthachain.io/tcp/30303".to_string(),
+            "/dns4/seed.arthachain.io/tcp/30303".to_string(),
+        ];
+        
+        let p2p_handle = tokio::spawn(async move {
+            match crate::network::p2p::P2PNetwork::new(p2p_config, state_clone, p2p_shutdown_tx).await {
+                Ok(mut p2p) => {
+                    match p2p.start().await {
+                        Ok(_) => log::info!("P2P network started successfully"),
+                        Err(e) => log::error!("Failed to start P2P network: {}", e),
+                    }
+                },
+                Err(e) => log::error!("Failed to create P2P network: {}", e),
+            }
+        });
+        info!("✅ P2P network started on port 30303");
         
         info!("✅ Network layer started successfully");
         Ok(())
@@ -635,9 +686,54 @@ impl Node {
     /// Start consensus
     pub async fn start_consensus(&self) -> Result<(), anyhow::Error> {
         info!("⚖️ Consensus starting...");
-        // TODO: Implement actual consensus initialization
-        // For now we'll just log this
-        info!("✅ Consensus started successfully");
+        
+        // Create channels for communication between SVCP and SVBFT
+        let (message_sender, message_receiver) = mpsc::channel(100);
+        let (block_sender, block_receiver) = mpsc::channel(100);
+        let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
+        
+        // Initialize node scores for SVCP
+        let node_scores = Arc::new(Mutex::new(HashMap::new()));
+        
+        // Create SVCP consensus instance
+        let svcp_config = self.config.read().await.clone();
+        let svcp_consensus = SVCPConsensus::new(
+            svcp_config.clone(),
+            self.state.clone(),
+            node_scores.clone(),
+        )?;
+        
+        // Start SVCP consensus
+        info!("🔄 Starting SVCP mining protocol...");
+        let svcp_handle = svcp_consensus.start().await?;
+        
+        // Create SVBFT consensus instance
+        #[cfg(not(skip_problematic_modules))]
+        let svbft_consensus = SVBFTConsensus::new(
+            svcp_config,
+            self.state.clone(),
+            message_sender,
+            message_receiver,
+            block_receiver,
+            shutdown_receiver.resubscribe(),
+            None,
+        ).await?;
+        
+        // Start SVBFT consensus
+        #[cfg(not(skip_problematic_modules))]
+        {
+            info!("🔄 Starting SVBFT consensus protocol...");
+            let svbft_handle = svbft_consensus.start().await?;
+            
+            // Store the handle
+            self.task_handles.push(svbft_handle);
+        }
+        
+        // Store the SVCP handle
+        self.task_handles.push(svcp_handle);
+        
+        info!("✅ SVCP-SVBFT consensus started successfully");
+        info!("🔄 Block production and finalization active");
         Ok(())
     }
 

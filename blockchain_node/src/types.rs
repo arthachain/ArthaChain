@@ -176,6 +176,11 @@ impl Hash {
     pub fn to_hex(&self) -> String {
         hex::encode(&self.0)
     }
+
+    /// Convert to EVM-compatible hex string with 0x prefix
+    pub fn to_evm_hex(&self) -> String {
+        format!("0x{}", hex::encode(&self.0))
+    }
 }
 
 impl AsRef<[u8]> for Hash {
@@ -186,7 +191,7 @@ impl AsRef<[u8]> for Hash {
 
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
+        write!(f, "{}", self.to_evm_hex())
     }
 }
 
@@ -243,6 +248,11 @@ impl Address {
         hex::encode(&self.0)
     }
 
+    /// Get address as EVM-compatible hex string with 0x prefix
+    pub fn to_evm_hex(&self) -> String {
+        format!("0x{}", hex::encode(&self.0))
+    }
+
     pub fn as_ref(&self) -> &[u8] {
         &self.0
     }
@@ -250,7 +260,7 @@ impl Address {
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
+        write!(f, "{}", self.to_evm_hex())
     }
 }
 

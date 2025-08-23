@@ -550,6 +550,36 @@ impl AdvancedFraudDetection {
         })
     }
 
+    /// Create a simple mock fraud detection model for testing/fallback
+    pub async fn new_simple() -> Self {
+        // Create a simple mock neural network
+        let config = create_fraud_detection_config();
+        let model = NeuralBase::new_sync(config).unwrap_or_else(|_| {
+            // Create a simple fallback model if the main one fails
+            let simple_config = NeuralConfig::default();
+            NeuralBase::new_sync(simple_config).unwrap_or_else(|_| {
+                // If even the fallback fails, panic as this is critical
+                panic!("Failed to create any neural network model")
+            })
+        });
+
+        // Create quantum-resistant Merkle tree
+        let quantum_merkle = QuantumMerkleTree::new();
+
+        // Create feature extractor
+        let feature_extractor = FeatureExtractor::new();
+
+        Self {
+            model,
+            tx_history: Arc::new(RwLock::new(HashMap::new())),
+            risk_scores: Arc::new(RwLock::new(HashMap::new())),
+            quantum_merkle: Arc::new(RwLock::new(quantum_merkle)),
+            detection_history: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
+            feature_extractor: Arc::new(feature_extractor),
+            address_profiles: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
     /// Detect fraud in a transaction
     pub async fn detect_fraud(
         &self,

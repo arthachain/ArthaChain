@@ -10,6 +10,7 @@ use libp2p::PeerId;
 use log::warn;
 use serde::{Deserialize, Serialize};
 
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1054,6 +1055,10 @@ impl Storage for MockStorage {
 
     async fn close(&self) -> Result<(), crate::storage::StorageError> {
         Ok(())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

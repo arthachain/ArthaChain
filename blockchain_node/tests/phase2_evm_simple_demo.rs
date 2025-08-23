@@ -124,13 +124,13 @@ fn test_phase23_evm_compatibility_demo() {
     println!("\n⚙️ Testing EVM Configuration...");
 
     let evm_config = blockchain_node::evm::EvmConfig {
-        chain_id: 1337,
+        chain_id: 201766,
         default_gas_price: blockchain_node::evm::DEFAULT_GAS_PRICE,
         default_gas_limit: blockchain_node::evm::DEFAULT_GAS_LIMIT,
         precompiles: std::collections::HashMap::new(),
     };
 
-    assert_eq!(evm_config.chain_id, 1337);
+    assert_eq!(evm_config.chain_id, 201766);
     assert_eq!(evm_config.default_gas_price, 20_000_000_000);
 
     println!("   ✅ Chain ID: {}", evm_config.chain_id);

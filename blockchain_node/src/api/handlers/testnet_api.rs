@@ -99,6 +99,19 @@ pub async fn get_recent_blocks(
 
     let latest_height = state.get_height().unwrap_or(0);
     let limit = params.limit.min(50); // Cap at 50 blocks
+    
+    if latest_height == 0 {
+        // Blockchain is empty - return genesis block info
+        let genesis_block = ExplorerBlockResponse {
+            height: 0,
+            hash: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            tx_count: 0,
+            timestamp: "Genesis".to_string(),
+            validator: "Genesis Validator".to_string(),
+        };
+        return Ok(Json(vec![genesis_block]));
+    }
+    
     let start_height = latest_height.saturating_sub(limit as u64);
 
     let mut blocks = Vec::new();
@@ -107,13 +120,10 @@ pub async fn get_recent_blocks(
         if let Some(block) = state.get_block_by_height(height) {
             let explorer_block = ExplorerBlockResponse {
                 height: block.header.height,
-                hash: format_hash(&hex::encode(block.hash().unwrap_or_default().as_bytes())),
+                hash: format_hash(&block.hash().unwrap_or_default().to_evm_hex()),
                 tx_count: block.transactions.len(),
                 timestamp: format_timestamp_relative(block.header.timestamp),
-                validator: format!(
-                    "0x{}...",
-                    &hex::encode(&block.header.producer.to_bytes())[0..8]
-                ), // Real producer
+                validator: format_address(&hex::encode(&block.header.producer.to_bytes())),
             };
             blocks.push(explorer_block);
         }
@@ -140,6 +150,11 @@ pub async fn get_recent_transactions(
     // Try to get real transactions from recent blocks
     let latest_height = state.get_height().unwrap_or(0);
 
+    if latest_height == 0 {
+        // Blockchain is empty - return empty transaction list with info
+        return Ok(Json(transactions));
+    }
+
     for height in (latest_height.saturating_sub(10)..=latest_height).rev() {
         if let Some(block) = state.get_block_by_height(height) {
             for (i, tx) in block.transactions.iter().enumerate() {
@@ -148,7 +163,7 @@ pub async fn get_recent_transactions(
                 }
 
                 let explorer_tx = ExplorerTransactionResponse {
-                    hash: format_hash(&hex::encode(tx.hash().unwrap_or_default().as_bytes())),
+                    hash: format_hash(&tx.hash().unwrap_or_default().to_evm_hex()),
                     from: format_address(&hex::encode(&tx.from)),
                     to: format_address(&hex::encode(&tx.to)),
                     value: format!(
@@ -183,18 +198,20 @@ pub fn create_cors_layer() -> CorsLayer {
 // Helper functions for formatting
 
 fn format_hash(hash: &str) -> String {
-    if hash.len() > 10 {
-        format!("{}...", &hash[0..10])
-    } else {
+    // Return full hash with 0x prefix for EVM compatibility
+    if hash.starts_with("0x") {
         hash.to_string()
+    } else {
+        format!("0x{}", hash)
     }
 }
 
 fn format_address(address: &str) -> String {
-    if address.len() > 8 {
-        format!("{}...", &address[0..8])
-    } else {
+    // Return full address with 0x prefix for EVM compatibility
+    if address.starts_with("0x") {
         address.to_string()
+    } else {
+        format!("0x{}", address)
     }
 }
 

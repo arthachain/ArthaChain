@@ -277,12 +277,17 @@ impl Transaction {
 
     /// Calculate transaction hash
     fn calculate_hash(&self) -> Result<Hash> {
-        let mut tx_copy = self.clone();
-        tx_copy.id = Hash::default();
-        tx_copy.signature = None;
-
-        let serialized = bincode::serialize(&tx_copy)?;
-        Ok(Hash::from_data(&serialized))
+        // Create a hash from the transaction data excluding id and signature
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&self.from);
+        hasher.update(&self.to);
+        hasher.update(&self.amount.to_le_bytes());
+        hasher.update(&self.fee.to_le_bytes());
+        hasher.update(&self.data);
+        hasher.update(&self.nonce.to_le_bytes());
+        
+        let hash_bytes = hasher.finalize();
+        Ok(Hash::new(hash_bytes.as_bytes().to_vec()))
     }
 
     /// Get transaction hash

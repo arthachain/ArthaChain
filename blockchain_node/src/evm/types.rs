@@ -18,6 +18,17 @@ pub struct EvmConfig {
     pub precompiles: HashMap<EvmAddress, PrecompileFunction>,
 }
 
+impl Default for EvmConfig {
+    fn default() -> Self {
+        Self {
+            chain_id: 1,
+            default_gas_price: 20_000_000_000, // 20 gwei
+            default_gas_limit: 21_000, // Standard gas limit
+            precompiles: HashMap::new(),
+        }
+    }
+}
+
 /// Type for precompiled contract functions
 pub type PrecompileFunction = fn(&[u8], u64) -> Result<(Vec<u8>, u64), EvmError>;
 

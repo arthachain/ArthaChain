@@ -7,6 +7,7 @@ use log::debug;
 use reqwest::Client;
 use rocksdb::{Options, DB};
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -219,6 +220,10 @@ impl Storage for SvdbStorage {
             .map_err(|_| StorageError::Other("Lock error".to_string()))?;
         *db_write = None;
         Ok(())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

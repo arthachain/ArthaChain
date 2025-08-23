@@ -30,3 +30,4 @@ pub use backend::{EvmAccount, EvmBackend};
 pub use executor::EvmExecutor;
 pub use runtime::{EvmExecutionContext, EvmRuntime, StepResult};
 pub use types::{EvmAddress, EvmConfig, EvmError, EvmExecutionResult, EvmLog, EvmTransaction};
+pub use rpc::EvmRpcService;

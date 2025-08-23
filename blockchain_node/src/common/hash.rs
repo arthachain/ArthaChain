@@ -48,11 +48,16 @@ impl Hash {
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
     }
+
+    /// Convert to EVM-compatible hexadecimal string with 0x prefix
+    pub fn to_evm_hex(&self) -> String {
+        format!("0x{}", hex::encode(self.0))
+    }
 }
 
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
+        write!(f, "{}", self.to_evm_hex())
     }
 }
 

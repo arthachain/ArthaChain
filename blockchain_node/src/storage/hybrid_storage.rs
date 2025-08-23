@@ -1,5 +1,6 @@
 use super::{Result, Storage, StorageInit};
 use async_trait::async_trait;
+use std::any::Any;
 
 type StorageResult<T> = Result<T>;
 
@@ -28,6 +29,21 @@ impl HybridStorage {
             rocksdb,
             svdb,
             size_threshold,
+        })
+    }
+    
+    /// Clone the hybrid storage (creates new instances)
+    pub fn clone(&self) -> anyhow::Result<Self> {
+        // Create new storage instances for the clone
+        let rocksdb = crate::storage::rocksdb_storage::RocksDbStorage::new();
+        let svdb = crate::storage::svdb_storage::SvdbStorage::new("memory://".to_string())?;
+        let rocksdb: Box<dyn Storage> = Box::new(rocksdb);
+        let svdb: Box<dyn Storage> = Box::new(svdb);
+        
+        Ok(Self {
+            rocksdb,
+            svdb,
+            size_threshold: self.size_threshold,
         })
     }
 }
@@ -97,6 +113,10 @@ impl Storage for HybridStorage {
         self.rocksdb.close().await?;
         self.svdb.close().await?;
         Ok(())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

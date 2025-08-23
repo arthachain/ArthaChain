@@ -788,6 +788,10 @@ impl Storage for ReplicatedStorage {
         // Close all replicas - simplified implementation
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 // Additional helper methods for replicated storage (not part of Storage trait)

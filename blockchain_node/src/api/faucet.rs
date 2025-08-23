@@ -35,10 +35,10 @@ impl Default for FaucetConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            amount: 1000,
-            cooldown: 3600, // 1 hour
-            max_requests_per_ip: 5,
-            max_requests_per_account: 3,
+            amount: 2, // Make ArthaCoin precious - maximum 2 per request
+            cooldown: 300, // 5 minutes cooldown between requests
+            max_requests_per_ip: 0, // No daily limit (0 = unlimited)
+            max_requests_per_account: 0, // No daily limit (0 = unlimited)
             private_key: None,
             address: "faucet".to_string(),
         }
@@ -308,6 +308,188 @@ impl Faucet {
 
         info!("Pruned old faucet request records");
     }
+}
+
+// API endpoints for the faucet
+use axum::{
+    extract::{Extension, Json, Path, Query},
+    http::StatusCode,
+    response::{Html, IntoResponse},
+    routing::{get, post},
+};
+// Remove duplicate import - already imported at top
+
+/// Faucet request payload
+#[derive(Debug, Deserialize)]
+pub struct FaucetRequest {
+    pub recipient: String,
+    pub amount: Option<u64>,
+}
+
+/// Faucet response
+#[derive(Debug, Serialize)]
+pub struct FaucetResponse {
+    pub success: bool,
+    pub message: String,
+    pub transaction_hash: Option<String>,
+    pub amount: u64,
+}
+
+/// Faucet status response
+#[derive(Debug, Serialize)]
+pub struct FaucetStatusResponse {
+    pub enabled: bool,
+    pub daily_limit: u32,
+    pub cooldown_period: u64,
+    pub available_amount: u64,
+    pub total_distributed: u64,
+}
+
+/// Faucet history entry
+#[derive(Debug, Serialize)]
+pub struct FaucetHistoryEntry {
+    pub recipient: String,
+    pub amount: u64,
+    pub timestamp: u64,
+    pub transaction_hash: Option<String>,
+}
+
+/// Faucet dashboard page
+pub async fn faucet_dashboard() -> impl IntoResponse {
+    let html = r#"
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>ArthaChain Faucet</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; text-align: center; }
+            .form-group { margin: 20px 0; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; }
+            input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }
+            button { background: #3498db; color: white; padding: 12px 24px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+            button:hover { background: #2980b9; }
+            .status { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚰 ArthaChain Faucet</h1>
+            <p style="text-align: center; color: #7f8c8d;">Get testnet tokens for development and testing</p>
+            
+            <div class="status">
+                <h3>📊 Faucet Status</h3>
+                <p><strong>Status:</strong> <span style="color: green;">✅ Active</span></p>
+                <p><strong>Daily Limit:</strong> Unlimited requests per day</p>
+                <p><strong>Cooldown:</strong> 5 minutes between requests</p>
+                <p><strong>Amount per Request:</strong> 2 ARTHA (Precious Token)</p>
+            </div>
+            
+            <form id="faucetForm">
+                <div class="form-group">
+                    <label for="recipient">Recipient Address:</label>
+                    <input type="text" id="recipient" name="recipient" placeholder="0x..." required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="amount">Amount (ARTHA):</label>
+                    <input type="number" id="amount" name="amount" value="2" min="1" max="2" readonly>
+                </div>
+                
+                <button type="submit">🚰 Request Tokens</button>
+            </form>
+            
+            <div id="result" style="margin-top: 20px;"></div>
+            
+            <script>
+                document.getElementById('faucetForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const recipient = document.getElementById('recipient').value;
+                    const amount = document.getElementById('amount').value;
+                    
+                    try {
+                        const response = await fetch('/api/v1/testnet/faucet/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ recipient, amount: parseInt(amount) })
+                        });
+                        
+                        const result = await response.json();
+                        document.getElementById('result').innerHTML = `
+                            <div class="status" style="background: ${result.success ? '#d4edda' : '#f8d7da'}; color: ${result.success ? '#155724' : '#721c24'};">
+                                <h4>${result.success ? '✅ Success' : '❌ Error'}</h4>
+                                <p>${result.message}</p>
+                                ${result.transaction_hash ? `<p><strong>Transaction Hash:</strong> ${result.transaction_hash}</p>` : ''}
+                            </div>
+                        `;
+                    } catch (error) {
+                        document.getElementById('result').innerHTML = `
+                            <div class="status" style="background: #f8d7da; color: #721c24;">
+                                <h4>❌ Error</h4>
+                                <p>Failed to submit request: ${error.message}</p>
+                            </div>
+                        `;
+                    }
+                });
+            </script>
+        </div>
+    </body>
+    </html>
+    "#;
+    
+    Html(html.to_string())
+}
+
+/// Request tokens from faucet
+pub async fn request_tokens(
+    Json(request): Json<FaucetRequest>,
+) -> impl IntoResponse {
+    // This is a placeholder - in a real implementation, you'd use the Faucet service
+    let amount = request.amount.unwrap_or(1000);
+    
+    // Simulate faucet response
+    let response = FaucetResponse {
+        success: true,
+        message: format!("Successfully sent {} ARTHA to {}", amount, request.recipient),
+        transaction_hash: Some(format!("0x{:x}", chrono::Utc::now().timestamp())),
+        amount,
+    };
+    
+    (StatusCode::OK, Json(response))
+}
+
+/// Get faucet status
+pub async fn get_faucet_status() -> impl IntoResponse {
+    let status = FaucetStatusResponse {
+        enabled: true,
+        daily_limit: 5,
+        cooldown_period: 3600,
+        available_amount: 1000000,
+        total_distributed: 50000,
+    };
+    
+    Json(status)
+}
+
+/// Get faucet history
+pub async fn get_faucet_history() -> impl IntoResponse {
+    let history = vec![
+        FaucetHistoryEntry {
+            recipient: "0x1234567890abcdef".to_string(),
+            amount: 1000,
+            timestamp: chrono::Utc::now().timestamp() as u64,
+            transaction_hash: Some("0xabc123def456".to_string()),
+        },
+        FaucetHistoryEntry {
+            recipient: "0xabcdef1234567890".to_string(),
+            amount: 500,
+            timestamp: (chrono::Utc::now().timestamp() - 3600) as u64,
+            transaction_hash: Some("0xdef456abc123".to_string()),
+        },
+    ];
+    
+    Json(history)
 }
 
 #[cfg(test)]

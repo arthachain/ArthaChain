@@ -49,14 +49,14 @@ impl TransactionResponse {
         confirmations: u64,
     ) -> Self {
         Self {
-            hash: hex::encode(tx.hash().as_ref()),
+            hash: format!("0x{}", hex::encode(tx.hash().as_ref())),
             sender: tx.sender.clone(),
             recipient: Some(tx.recipient.clone()),
             amount: tx.amount,
             fee: tx.gas_price * tx.gas_limit, // Use gas_price * gas_limit as fee
             nonce: tx.nonce,
             timestamp: tx.timestamp,
-            block_hash: block_hash.map(|h| hex::encode(h.as_ref())),
+            block_hash: block_hash.map(|h| format!("0x{}", hex::encode(h.as_ref()))),
             block_height,
             confirmations,
             tx_type: match tx.tx_type {
@@ -80,7 +80,7 @@ impl TransactionResponse {
             data: if tx.data.is_empty() {
                 None
             } else {
-                Some(hex::encode(&tx.data))
+                Some(format!("0x{}", hex::encode(&tx.data)))
             },
         }
     }

@@ -6,8 +6,7 @@
 #[cfg(feature = "evm")]
 use crate::evm::EvmExecutionResult;
 use crate::types::{Address, Hash};
-#[cfg(feature = "wasm")]
-use crate::wasm::WasmExecutionResult;
+
 use anyhow::{anyhow, Result};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};

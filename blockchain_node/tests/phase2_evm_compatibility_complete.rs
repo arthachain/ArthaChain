@@ -25,7 +25,7 @@ async fn test_phase23_complete_evm_compatibility() {
 
     let storage = Arc::new(RocksDbStorage::new(":memory:").unwrap());
     let config = EvmExecutionConfig {
-        chain_id: 1337, // ArthaChain testnet
+        chain_id: 201766, // ArthaChain testnet
         default_gas_price: DEFAULT_GAS_PRICE,
         default_gas_limit: DEFAULT_GAS_LIMIT,
         block_gas_limit: 30_000_000,
@@ -386,7 +386,7 @@ fn test_evm_constants_configuration() {
 
     // Test configuration
     let config = EvmExecutionConfig::default();
-    assert_eq!(config.chain_id, 1337);
+    assert_eq!(config.chain_id, 201766);
     assert_eq!(config.default_gas_price, 20_000_000_000);
     assert_eq!(config.default_gas_limit, 21_000);
     assert_eq!(config.block_gas_limit, 30_000_000);

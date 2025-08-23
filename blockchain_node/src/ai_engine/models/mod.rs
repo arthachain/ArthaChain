@@ -32,6 +32,11 @@ pub use tensorflow_integration::{
 };
 pub use types::Experience;
 
+// Python models are available through PyO3 integration
+// - decoder.py: NeuralDecoder
+// - spike_detector.py: SpikeDetector  
+// - adaptive_network.py: AdaptiveNetwork
+
 #[derive(Debug, Clone)]
 pub struct FilterParams {
     pub high_pass: f32,

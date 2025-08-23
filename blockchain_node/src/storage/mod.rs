@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 
 use std::fmt;
 
@@ -88,6 +89,9 @@ pub trait Storage: Send + Sync {
     async fn get_stats(&self) -> Result<StorageStats>;
     async fn flush(&self) -> Result<()>;
     async fn close(&self) -> Result<()>;
+    
+    /// Get a reference to the concrete type
+    fn as_any(&self) -> &dyn Any;
 }
 
 // Storage initialization trait
@@ -95,6 +99,8 @@ pub trait Storage: Send + Sync {
 pub trait StorageInit {
     async fn init(&self, config: &StorageConfig) -> Result<()>;
 }
+
+
 
 // Additional storage types
 #[derive(Debug, Clone)]

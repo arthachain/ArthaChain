@@ -3,7 +3,7 @@ pub use crate::api::handlers::accounts::{
     AccountResponse, TransactionListParams, TransactionListResponse,
 };
 pub use crate::api::handlers::blocks::BlockResponse;
-pub use crate::api::handlers::consensus::ConsensusStatusResponse;
+
 pub use crate::api::handlers::status::{PeerInfo, PeerListResponse, StatusResponse};
 pub use crate::api::handlers::transactions::{
     SubmitTransactionRequest, SubmitTransactionResponse, TransactionResponse,

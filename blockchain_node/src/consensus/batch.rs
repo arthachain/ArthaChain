@@ -33,8 +33,8 @@ impl BatchProcessor {
     pub fn add_transaction(&mut self, tx: CrossShardReference) {
         // Since there's no priority field, we'll use the first shard in involved_shards as priority
         // This is just an example - you might want to implement a different prioritization strategy
-        let priority = if let Some(shard) = tx.involved_shards.first() {
-            (*shard % 256) as u8
+        let priority = if let Some(_shard) = tx.involved_shards.first() {
+            (_shard % 256) as u8
         } else {
             0 // Default priority if no shards involved
         };

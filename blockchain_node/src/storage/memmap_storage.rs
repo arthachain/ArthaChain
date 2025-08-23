@@ -4,6 +4,7 @@ use memmap2::{MmapMut, MmapOptions};
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 
+use std::any::Any;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
@@ -883,6 +884,10 @@ impl Storage for MemMapStorage {
         }
 
         Ok(())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

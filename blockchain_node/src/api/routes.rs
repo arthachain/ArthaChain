@@ -95,7 +95,7 @@ use crate::api::handlers::status;
 use crate::api::transaction::TransactionRoutes;
 use crate::ledger::state::State;
 use crate::network::p2p::P2PNetwork;
-use crate::transaction::mempool::EnhancedMempool;
+use crate::transaction::mempool::Mempool;
 
 use axum::{
     http::StatusCode,
@@ -141,7 +141,7 @@ pub async fn create_router() -> Router {
 pub async fn create_monitoring_router(
     state: Arc<RwLock<State>>,
     _p2p_network: Option<Arc<P2PNetwork>>,
-    mempool: Option<Arc<EnhancedMempool>>,
+    mempool: Option<Arc<Mempool>>,
 ) -> Router {
     // Create network monitoring service without P2P network to avoid Sync issues
     // We explicitly don't include the P2P network since it's not Sync

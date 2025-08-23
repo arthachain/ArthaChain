@@ -248,6 +248,9 @@ pub mod state;
 // Gas optimization
 pub mod gas_optimization;
 
+// Gas-free applications
+pub mod gas_free;
+
 // Smart contract engine
 pub mod smart_contract_engine;
 

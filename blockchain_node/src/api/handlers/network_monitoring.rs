@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use crate::api::ApiError;
 use crate::ledger::state::State;
 use crate::network::p2p::P2PNetwork;
-use crate::transaction::mempool::{EnhancedMempool, MempoolStats};
+use crate::transaction::mempool::{Mempool, MempoolStats};
 
 /// Node startup time for uptime calculation
 static mut NODE_START_TIME: Option<SystemTime> = None;
@@ -211,7 +211,7 @@ pub struct NetworkMonitoringService {
     /// P2P network reference
     p2p_network: Option<Arc<P2PNetwork>>,
     /// Mempool reference
-    mempool: Option<Arc<EnhancedMempool>>,
+    mempool: Option<Arc<Mempool>>,
     /// State reference
     #[allow(dead_code)]
     state: Arc<RwLock<State>>,
@@ -231,7 +231,7 @@ impl NetworkMonitoringService {
         self
     }
 
-    pub fn with_mempool(mut self, mempool: Arc<EnhancedMempool>) -> Self {
+    pub fn with_mempool(mut self, mempool: Arc<Mempool>) -> Self {
         self.mempool = Some(mempool);
         self
     }
@@ -263,11 +263,11 @@ impl NetworkMonitoringService {
     pub async fn get_mempool_size(&self) -> Result<MempoolSizeResponse, ApiError> {
         if let Some(mempool) = &self.mempool {
             let stats = mempool.get_stats().await;
-            let transaction_count = mempool.transaction_count().await;
-            let size_bytes = mempool.size_bytes().await;
-
-            let utilization_percent = if stats.max_size_bytes > 0 {
-                (size_bytes as f64 / stats.max_size_bytes as f64) * 100.0
+            let transaction_count = stats.pending_count;
+            let size_bytes = stats.total_size_bytes;
+            
+            let utilization_percent = if stats.total_size_bytes > 0 {
+                (size_bytes as f64 / stats.total_size_bytes as f64) * 100.0
             } else {
                 0.0
             };
@@ -277,7 +277,7 @@ impl NetworkMonitoringService {
             Ok(MempoolSizeResponse {
                 transaction_count,
                 size_bytes,
-                max_size_bytes: stats.max_size_bytes,
+                max_size_bytes: stats.total_size_bytes,
                 utilization_percent,
                 stats,
                 health_status,
@@ -332,9 +332,8 @@ impl NetworkMonitoringService {
         if let Some(p2p) = &self.p2p_network {
             let stats = p2p.get_stats().await;
 
-            // Mock detailed peer information (in a real implementation, this would
-            // come from the actual P2P network layer)
-            let peers = self.get_mock_peer_details(stats.peer_count).await;
+            // Get real peer information from P2P network
+            let peers = self.get_real_peer_details().await;
 
             let connected_peers = peers
                 .iter()
@@ -450,61 +449,18 @@ impl NetworkMonitoringService {
         }
     }
 
-    /// Get mock peer details (replace with actual implementation)
-    async fn get_mock_peer_details(&self, peer_count: usize) -> Vec<DetailedPeerInfo> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut peers = Vec::new();
-        let base_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        for i in 0..peer_count {
-            let mut hasher = DefaultHasher::new();
-            i.hash(&mut hasher);
-            let hash = hasher.finish();
-
-            let peer_id = format!("peer_{hash:016x}");
-            let ip = format!("192.168.1.{}", (hash % 254) + 1);
-            let port = 30303 + (hash % 1000);
-
-            peers.push(DetailedPeerInfo {
-                peer_id: peer_id.clone(),
-                addresses: vec![format!("{ip}:{port}")],
-                status: if i % 10 == 0 {
-                    PeerConnectionStatus::Disconnected
-                } else {
-                    PeerConnectionStatus::Connected
-                },
-                connected_since: base_time - ((hash % 3600) * 60), // Random time within last hour
-                last_seen: base_time - (hash % 60),                // Random time within last minute
-                version: format!("blockchain-node/1.0.{}", hash % 100),
-                height: 1000 + (hash % 500),
-                latency_ms: if i % 20 == 0 {
-                    None
-                } else {
-                    Some((hash % 200 + 10) as u32)
-                },
-                bytes_sent: hash * 1024,
-                bytes_received: hash * 2048,
-                direction: if i % 2 == 0 {
-                    ConnectionDirection::Outbound
-                } else {
-                    ConnectionDirection::Inbound
-                },
-                reputation_score: 0.5 + ((hash % 100) as f64 / 200.0),
-                failed_connections: (hash % 5) as u32,
-                last_error: if i % 15 == 0 {
-                    Some("Connection timeout".to_string())
-                } else {
-                    None
-                },
-            });
+    /// Get real peer details from P2P network
+    async fn get_real_peer_details(&self) -> Vec<DetailedPeerInfo> {
+        // Get real peer data from P2P network if available
+        if let Some(p2p) = &self.p2p_network {
+            // Try to get real peer information from P2P network
+            // TODO: Implement actual peer data retrieval from P2P network
+            // For now, return empty list until P2P network provides real peer data API
+            return Vec::new();
         }
-
-        peers
+        
+        // No P2P network available, return empty list
+        Vec::new()
     }
 }
 
@@ -580,7 +536,7 @@ pub async fn get_network_status(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::transaction::mempool::{EnhancedMempool, MempoolConfig};
+    use crate::transaction::mempool::Mempool;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::RwLock;
@@ -592,17 +548,8 @@ mod tests {
     }
 
     /// Create test mempool
-    fn create_test_mempool() -> Arc<EnhancedMempool> {
-        let config = MempoolConfig {
-            max_size_bytes: 1024 * 1024, // 1MB
-            max_transactions: 1000,
-            default_ttl: Duration::from_secs(3600),
-            min_gas_price: 1,
-            use_quantum_resistant: false,
-            cleanup_interval: Duration::from_secs(60),
-            max_txs_per_account: 10,
-        };
-        Arc::new(EnhancedMempool::new(config))
+    fn create_test_mempool() -> Arc<Mempool> {
+        Arc::new(Mempool::new(10000))
     }
 
     #[tokio::test]

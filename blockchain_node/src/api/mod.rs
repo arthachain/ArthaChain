@@ -168,7 +168,7 @@ impl ApiServer {
             .route("/api/consensus/commit", post(commit))
             .route("/api/consensus/revert", post(revert))
             // Add missing validators routes
-            .route("/api/validators", get(handlers::validators::get_validators))
+            .route("/api/validators", get(handlers::validators::get_validators_list))
             .route(
                 "/api/validators/:address",
                 get(handlers::validators::get_validator_by_address),

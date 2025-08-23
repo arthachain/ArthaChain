@@ -1,0 +1,30 @@
+[package]
+name = "ndarray-rand"
+version = "0.15.0"
+edition = "2018"
+authors = ["bluss"]
+license = "MIT OR Apache-2.0"
+
+repository = "https://github.com/rust-ndarray/ndarray"
+documentation = "https://docs.rs/ndarray-rand/"
+readme = "README.md"
+
+description = "Constructors for randomized arrays. `rand` integration for `ndarray`."
+
+keywords = ["multidimensional", "matrix", "rand", "ndarray"]
+
+[dependencies]
+ndarray = { workspace = true }
+
+rand = { workspace = true }
+rand_distr = { workspace = true }
+quickcheck = { workspace = true, optional = true }
+
+[dev-dependencies]
+rand_isaac = "0.3.0"
+quickcheck = { workspace = true }
+
+[package.metadata.release]
+no-dev-version = true
+tag-name = "ndarray-rand-{{version}}"
+

@@ -1,6 +1,7 @@
 use crate::storage::{Storage, StorageInit};
 use async_trait::async_trait;
 use rocksdb::{Options, DB};
+use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -187,6 +188,10 @@ impl Storage for RocksDbStorage {
     async fn close(&self) -> crate::storage::Result<()> {
         // RocksDB handles closing automatically on drop
         Ok(())
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

@@ -43,9 +43,10 @@ impl Client {
         Self
     }
 
-    pub async fn query(&self, _addr: SocketAddr) -> Result<MockResponse> {
-        // Mock implementation
-        Ok(MockResponse)
+    pub async fn query(&self, _addr: SocketAddr) -> Result<StunResponse> {
+        // STUN implementation disabled due to dependency issues
+        // Return a default response indicating STUN is not available
+        Ok(StunResponse::default())
     }
 }
 
@@ -55,10 +56,17 @@ impl Default for ClientConfig {
     }
 }
 
-pub struct MockResponse;
+/// STUN response placeholder (STUN dependencies disabled)
+#[derive(Debug, Default)]
+pub struct StunResponse {
+    /// Indicates if STUN is available
+    pub available: bool,
+}
 
-impl MockResponse {
+impl StunResponse {
+    /// Get attribute from STUN response
     pub fn get_attribute<T>(&self) -> Option<T> {
+        // STUN functionality disabled - return None
         None
     }
 }
@@ -76,19 +84,25 @@ impl Device {
         _description: &str,
         _duration: u32,
     ) -> Result<()> {
-        // Mock implementation
+        // UPnP implementation disabled due to dependency issues
+        // Return success but no actual port mapping is created
+        warn!("UPnP port mapping requested but UPnP dependencies are disabled");
         Ok(())
     }
 
     pub fn remove_port_mapping(&self, _external_port: u16) -> Result<()> {
-        // Mock implementation
+        // UPnP implementation disabled due to dependency issues
+        // Return success but no actual port mapping is removed
+        warn!("UPnP port mapping removal requested but UPnP dependencies are disabled");
         Ok(())
     }
 }
 
-// Mock discovery function
+/// UPnP device discovery (UPnP dependencies disabled)
 pub fn discover(_device_type: DeviceType, _timeout: Duration) -> Result<Vec<Device>> {
-    // Return empty vector for now
+    // UPnP discovery disabled due to dependency issues
+    // Return empty vector indicating no UPnP devices found
+    warn!("UPnP device discovery requested but UPnP dependencies are disabled");
     Ok(Vec::new())
 }
 

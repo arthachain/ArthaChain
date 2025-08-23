@@ -1,0 +1,174 @@
+tunnel: 699e9235-b43c-4bf9-88f2-6a308b2e41ca
+credentials-file: /Users/sainathtangallapalli/.cloudflared/699e9235-b43c-4bf9-88f2-6a308b2e41ca.json
+
+# Enterprise-grade configuration
+ingress:
+  # Main API endpoints - Core Infrastructure
+  - hostname: api.arthachain.in
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+      - name: X-Cloudflare-Proxy
+        value: "true"
+
+  # Testnet specific endpoints - Development & Testing
+  - hostname: testnet.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # RPC endpoint for wallets - Financial Applications
+  - hostname: rpc.arthachain.in
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Explorer endpoint - Blockchain Analytics
+  - hostname: explorer.arthachain.in
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Real-time metrics - Monitoring & Analytics
+  - hostname: metrics.arthachain.in
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # WebSocket dedicated endpoint - Real-time Applications
+  - hostname: ws.arthachain.in
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Faucet endpoint - Test Token Distribution
+  - hostname: faucet.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Validator endpoint - Network Governance
+  - hostname: validators.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Shards endpoint - Sharding Information
+  - hostname: shards.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Status endpoint - System Health
+  - hostname: status.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Gas-Free Applications endpoint - Enterprise Gas-Free Management
+  - hostname: gas-free.arthachain.in
+    service: http://localhost:8081
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      readTimeout: 60s
+    headers:
+      - name: X-Forwarded-Proto
+        value: "https"
+      - name: X-Real-IP
+        value: "{{cf-connecting-ip}}"
+      - name: X-Forwarded-For
+        value: "{{cf-connecting-ip}}"
+
+  # Catch-all for any other subdomains
+  - service: http_status:404

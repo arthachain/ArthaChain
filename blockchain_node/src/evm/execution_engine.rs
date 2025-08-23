@@ -62,7 +62,7 @@ pub enum EvmVersion {
 impl Default for EvmExecutionConfig {
     fn default() -> Self {
         Self {
-            chain_id: 1337,                    // ArthaChain testnet
+            chain_id: 201766,                    // ArthaChain testnet
             default_gas_price: 20_000_000_000, // 20 gwei
             default_gas_limit: 21_000,
             block_gas_limit: 30_000_000,       // 30M gas per block
@@ -745,7 +745,7 @@ mod tests {
             gas_limit: U256::from(100000),
             gas_price: U256::from(20_000_000_000),
             nonce: U256::zero(),
-            chain_id: Some(1337),
+            chain_id: Some(201766),
             signature: None,
         };
 

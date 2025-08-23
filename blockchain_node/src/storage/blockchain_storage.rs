@@ -7,6 +7,7 @@ use blake3;
 use sha3;
 use sha3::Digest;
 
+use std::any::Any;
 use std::collections::HashMap;
 
 use std::sync::{Arc, Mutex};
@@ -141,6 +142,10 @@ impl Storage for BlockchainStorage {
 
     async fn close(&self) -> crate::storage::Result<()> {
         self.rocksdb.close().await
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

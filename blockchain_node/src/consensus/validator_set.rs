@@ -35,6 +35,16 @@ pub struct ValidatorSetConfig {
     pub rotation_interval: u64,
 }
 
+impl Default for ValidatorSetConfig {
+    fn default() -> Self {
+        Self {
+            min_validators: 1,
+            max_validators: 100,
+            rotation_interval: 1000,
+        }
+    }
+}
+
 /// Performance metrics for a validator
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorMetrics {

@@ -42,13 +42,13 @@ impl From<&Block> for BlockResponse {
     fn from(block: &Block) -> Self {
         let block_hash = block.hash().unwrap_or_default();
         Self {
-            hash: block_hash.to_hex(),
+            hash: block_hash.to_evm_hex(),
             height: block.header.height,
-            prev_hash: hex::encode(block.header.previous_hash.to_bytes()),
+            prev_hash: format!("0x{}", hex::encode(block.header.previous_hash.to_bytes())),
             timestamp: block.header.timestamp,
             tx_count: block.transactions.len(),
-            merkle_root: hex::encode(block.header.merkle_root.as_bytes()),
-            proposer: hex::encode(block.header.producer.as_bytes()),
+            merkle_root: format!("0x{}", hex::encode(block.header.merkle_root.as_bytes())),
+            proposer: format!("0x{}", hex::encode(block.header.producer.as_bytes())),
             // Approximate size based on transactions
             size: block.transactions.len() * 256 + 1024, // Base header size + approx tx size
         }
@@ -76,13 +76,23 @@ pub async fn get_latest_block(
 ) -> Result<Json<BlockResponse>, ApiError> {
     let state = state.read().await;
 
-    state
-        .latest_block()
-        .map(|block| Json(BlockResponse::from(block)))
-        .ok_or_else(|| ApiError {
-            status: 404,
-            message: "No blocks in the chain".to_string(),
-        })
+    match state.latest_block() {
+        Some(block) => Ok(Json(BlockResponse::from(block))),
+        None => {
+            // Blockchain is empty - return genesis block
+            let genesis_block = BlockResponse {
+                hash: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                height: 0,
+                prev_hash: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                tx_count: 0,
+                merkle_root: "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                proposer: "Genesis Validator".to_string(),
+                size: 1024,
+            };
+            Ok(Json(genesis_block))
+        }
+    }
 }
 
 /// Get a block by its hash

@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -743,6 +744,10 @@ impl Storage for SecureStorage {
 
     async fn close(&self) -> Result<()> {
         self.storage.close().await
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

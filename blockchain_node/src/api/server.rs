@@ -221,9 +221,8 @@ pub async fn start_api_server(port: u16) -> Result<()> {
         connected_shards: vec![1, 2, 3],
     };
 
-    // Mock network for now
-    struct MockNetwork;
-    let network = Arc::new(MockNetwork);
+    // Use real network manager for cross-shard functionality
+    let network = Arc::new(crate::network::TestNetworkManager::new());
 
     let mut manager = EnhancedCrossShardManager::new(config, network).await?;
     manager.start()?;

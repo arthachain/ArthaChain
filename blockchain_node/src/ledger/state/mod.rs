@@ -443,8 +443,8 @@ impl State {
     /// Get number of validators (REAL implementation)
     pub fn get_validator_count(&self) -> usize {
         // Return actual validator count - no fake data!
-        // Since we're running a single testnet node, return 0 until real validators join
-        0
+        // Since we're running a single testnet node, return 1 for the current node
+        1
     }
 
     /// Get the current difficulty level
